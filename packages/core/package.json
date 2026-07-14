@@ -1,0 +1,26 @@
+{
+  "name": "@agent-nexus/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure-TS domain core for AgentNexus — entities and repository ports, zero I/O or framework dependencies.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(lint placeholder) add eslint/oxlint config\"",
+    "test": "echo \"(test placeholder) add vitest\""
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

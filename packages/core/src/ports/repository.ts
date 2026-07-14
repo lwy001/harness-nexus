@@ -1,0 +1,78 @@
+/**
+ * Repository ports — the contracts storage drivers implement.
+ *
+ * The core package defines ONLY these interfaces. Concrete implementations
+ * (SQLite default, in-memory for tests, a future Postgres adapter) live in
+ * `@agent-nexus/server` under `src/infra/storage/*`. Nothing in `core` may
+ * import a concrete driver.
+ *
+ * When adding a new domain aggregate, add its repository here and a matching
+ * implementation in every storage driver.
+ */
+
+import type {
+  McpServer,
+  PersonalAccessToken,
+  Profile,
+  Resource,
+  User,
+} from '../domain/index.js';
+
+export interface ResourceRepository {
+  findById(id: string): Promise<Resource | null>;
+  findByKey(key: string, scope: 'global' | 'personal', ownerId?: string): Promise<Resource | null>;
+  list(filter?: ResourceListFilter): Promise<Resource[]>;
+  save(resource: Resource): Promise<Resource>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ResourceListFilter {
+  kind?: Resource['kind'];
+  scope?: 'global' | 'personal';
+  ownerId?: string;
+  target?: Resource['targets'][number];
+}
+
+export interface ProfileRepository {
+  findById(id: string): Promise<Profile | null>;
+  findByName(name: string, scope: 'global' | 'personal', ownerId?: string): Promise<Profile | null>;
+  list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<Profile[]>;
+  save(profile: Profile): Promise<Profile>;
+  delete(id: string): Promise<void>;
+}
+
+export interface UserRepository {
+  findById(id: string): Promise<User | null>;
+  findByUsername(username: string): Promise<User | null>;
+  list(): Promise<User[]>;
+  save(user: User): Promise<User>;
+  delete(id: string): Promise<void>;
+}
+
+export interface PersonalAccessTokenRepository {
+  findById(id: string): Promise<PersonalAccessToken | null>;
+  findByTokenHash(tokenHash: string): Promise<PersonalAccessToken | null>;
+  listByUser(userId: string): Promise<PersonalAccessToken[]>;
+  save(token: PersonalAccessToken): Promise<PersonalAccessToken>;
+  touchLastUsed(id: string, at: string): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface McpServerRepository {
+  findById(id: string): Promise<McpServer | null>;
+  list(filter?: { scope?: 'global' | 'personal'; ownerId?: string; proxied?: boolean }): Promise<McpServer[]>;
+  save(server: McpServer): Promise<McpServer>;
+  delete(id: string): Promise<void>;
+}
+
+/**
+ * Aggregate of all repositories. A storage driver provides one of these; the
+ * server composes it into its modules via dependency injection.
+ */
+export interface UnitOfWork {
+  resources: ResourceRepository;
+  profiles: ProfileRepository;
+  users: UserRepository;
+  tokens: PersonalAccessTokenRepository;
+  mcpServers: McpServerRepository;
+}

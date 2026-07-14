@@ -1,0 +1,82 @@
+# AgentNexus — cross-package task orchestration
+# Usage:
+#   task dev        # start all packages in watch mode (parallel)
+#   task build      # build every package
+#   task test       # run tests across packages
+#   task lint       # lint everything
+#   task format     # format with prettier
+#   task clean      # remove build artifacts and node_modules
+#
+# Install task: https://taskfile.dev/installation/
+# Prereq: run `pnpm install` first to populate workspace deps.
+
+version: "3"
+
+vars:
+  PNPM: pnpm
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install workspace dependencies
+    cmds:
+      - "{{.PNPM}} install --frozen-lockfile"
+
+  install:dev:
+    desc: Install workspace dependencies (dev, updates lockfile)
+    cmds:
+      - "{{.PNPM}} install"
+
+  dev:
+    desc: Start all packages in watch mode (parallel)
+    cmds:
+      - "{{.PNPM}} -r --parallel run dev"
+
+  dev:server:
+    desc: Start only the API server in watch mode
+    cmds:
+      - "{{.PNPM}} --filter @agent-nexus/server run dev"
+
+  dev:web:
+    desc: Start only the web SPA (Vite dev server)
+    cmds:
+      - "{{.PNPM}} --filter @agent-nexus/web run dev"
+
+  build:
+    desc: Build every package
+    cmds:
+      - "{{.PNPM}} -r run build"
+
+  test:
+    desc: Run tests across all packages
+    cmds:
+      - "{{.PNPM}} -r run test"
+
+  typecheck:
+    desc: Type-check every package
+    cmds:
+      - "{{.PNPM}} -r run typecheck"
+
+  lint:
+    desc: Lint every package
+    cmds:
+      - "{{.PNPM}} -r run lint"
+
+  format:
+    desc: Format the whole repo with Prettier
+    cmds:
+      - "{{.PNPM}} run format"
+
+  format:check:
+    desc: Check formatting without writing
+    cmds:
+      - "{{.PNPM}} run format:check"
+
+  clean:
+    desc: Remove build artifacts and node_modules
+    cmds:
+      - "{{.PNPM}} run clean"

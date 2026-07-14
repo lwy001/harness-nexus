@@ -1,0 +1,37 @@
+{
+  "name": "@agent-nexus/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AgentNexus API server — Fastify HTTP API, MCP proxy transport, and storage drivers.",
+  "type": "module",
+  "main": "./dist/server.js",
+  "bin": {
+    "agent-nexus-server": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(lint placeholder) add eslint/oxlint config\"",
+    "test": "echo \"(test placeholder) add vitest\""
+  },
+  "dependencies": {
+    "@agent-nexus/core": "workspace:*",
+    "@agent-nexus/shared": "workspace:*",
+    "@fastify/cors": "^9.4.0",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/sensible": "^5.5.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.3.0",
+    "fastify": "^4.28.1",
+    "pino": "^9.5.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.8.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

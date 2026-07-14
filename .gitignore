@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Bundler / Vite
+.turbo/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Env / local config
+.env
+.env.*
+!.env.example
+
+# Runtime data (SQLite, uploads, cache)
+data/
+*.sqlite
+*.sqlite-journal
+*.db
+uploads/
+cache/
+
+# ZCode agent session state (plans, caches, etc.)
+.zcode/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Profiles installed locally by the CLI (user-machines only, never committed)
+.installed-profiles/
