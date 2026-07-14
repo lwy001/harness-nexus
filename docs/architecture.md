@@ -22,7 +22,7 @@ packages/cli ─┐                                                  ▼
 packages/acp─┘        (domain + ports)            implements ports
 ```
 
-- **`packages/core`** — pure domain types + repository *ports* (interfaces). No
+- **`packages/core`** — pure domain types + repository _ports_ (interfaces). No
   I/O, no framework imports. This is what makes storage pluggable.
 - **`packages/shared`** — zod schemas + cross-package utils. The single source of
   truth for the profile/resource manifest shape.

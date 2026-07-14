@@ -5,9 +5,6 @@
  * (SQLite default, in-memory for tests, a future Postgres adapter) live in
  * `@agent-nexus/server` under `src/infra/storage/*`. Nothing in `core` may
  * import a concrete driver.
- *
- * When adding a new domain aggregate, add its repository here and a matching
- * implementation in every storage driver.
  */
 
 import type {
@@ -15,6 +12,7 @@ import type {
   PersonalAccessToken,
   Profile,
   Resource,
+  SystemSettings,
   User,
 } from '../domain/index.js';
 
@@ -45,6 +43,10 @@ export interface UserRepository {
   findById(id: string): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
   list(): Promise<User[]>;
+  /** Total user count — used to detect the bootstrap (first) registration. */
+  count(): Promise<number>;
+  /** Count users with a given role — used for last-admin protection. */
+  countByRole(role: User['role']): Promise<number>;
   save(user: User): Promise<User>;
   delete(id: string): Promise<void>;
 }
@@ -58,9 +60,19 @@ export interface PersonalAccessTokenRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface SystemSettingsRepository {
+  /** Always returns a value; drivers seed defaults on first access. */
+  get(): Promise<SystemSettings>;
+  save(settings: SystemSettings): Promise<SystemSettings>;
+}
+
 export interface McpServerRepository {
   findById(id: string): Promise<McpServer | null>;
-  list(filter?: { scope?: 'global' | 'personal'; ownerId?: string; proxied?: boolean }): Promise<McpServer[]>;
+  list(filter?: {
+    scope?: 'global' | 'personal';
+    ownerId?: string;
+    proxied?: boolean;
+  }): Promise<McpServer[]>;
   save(server: McpServer): Promise<McpServer>;
   delete(id: string): Promise<void>;
 }
@@ -74,5 +86,6 @@ export interface UnitOfWork {
   profiles: ProfileRepository;
   users: UserRepository;
   tokens: PersonalAccessTokenRepository;
+  settings: SystemSettingsRepository;
   mcpServers: McpServerRepository;
 }

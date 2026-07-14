@@ -27,7 +27,7 @@ PAT, and later ACP bridging, channels, and a knowledge base.
 
 - One language keeps the team's context-switching low and lets the CLI/SDK reuse
   core domain types directly.
-- Putting repository *ports* in core (not implementations) is the key rule that
+- Putting repository _ports_ in core (not implementations) is the key rule that
   keeps storage pluggable — any edit adding I/O to core is a regression.
 - The `mcp-proxy` directory name is retained for now; a rename to `agentnexus`
   can happen independently since the npm scope is already `@agent-nexus`.

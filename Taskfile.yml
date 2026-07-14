@@ -10,7 +10,7 @@
 # Install task: https://taskfile.dev/installation/
 # Prereq: run `pnpm install` first to populate workspace deps.
 
-version: "3"
+version: '3'
 
 vars:
   PNPM: pnpm
@@ -24,59 +24,59 @@ tasks:
   install:
     desc: Install workspace dependencies
     cmds:
-      - "{{.PNPM}} install --frozen-lockfile"
+      - '{{.PNPM}} install --frozen-lockfile'
 
   install:dev:
     desc: Install workspace dependencies (dev, updates lockfile)
     cmds:
-      - "{{.PNPM}} install"
+      - '{{.PNPM}} install'
 
   dev:
     desc: Start all packages in watch mode (parallel)
     cmds:
-      - "{{.PNPM}} -r --parallel run dev"
+      - '{{.PNPM}} -r --parallel run dev'
 
   dev:server:
     desc: Start only the API server in watch mode
     cmds:
-      - "{{.PNPM}} --filter @agent-nexus/server run dev"
+      - '{{.PNPM}} --filter @agent-nexus/server run dev'
 
   dev:web:
     desc: Start only the web SPA (Vite dev server)
     cmds:
-      - "{{.PNPM}} --filter @agent-nexus/web run dev"
+      - '{{.PNPM}} --filter @agent-nexus/web run dev'
 
   build:
     desc: Build every package
     cmds:
-      - "{{.PNPM}} -r run build"
+      - '{{.PNPM}} -r run build'
 
   test:
     desc: Run tests across all packages
     cmds:
-      - "{{.PNPM}} -r run test"
+      - '{{.PNPM}} -r run test'
 
   typecheck:
     desc: Type-check every package
     cmds:
-      - "{{.PNPM}} -r run typecheck"
+      - '{{.PNPM}} -r run typecheck'
 
   lint:
     desc: Lint every package
     cmds:
-      - "{{.PNPM}} -r run lint"
+      - '{{.PNPM}} -r run lint'
 
   format:
     desc: Format the whole repo with Prettier
     cmds:
-      - "{{.PNPM}} run format"
+      - '{{.PNPM}} run format'
 
   format:check:
     desc: Check formatting without writing
     cmds:
-      - "{{.PNPM}} run format:check"
+      - '{{.PNPM}} run format:check'
 
   clean:
     desc: Remove build artifacts and node_modules
     cmds:
-      - "{{.PNPM}} run clean"
+      - '{{.PNPM}} run clean'

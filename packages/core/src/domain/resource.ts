@@ -10,13 +10,7 @@
  */
 
 /** The kinds of managed assets an Agent tool can consume. */
-export type ResourceKind =
-  | 'skill'
-  | 'hook'
-  | 'sub_agent'
-  | 'rule'
-  | 'mcp'
-  | 'command';
+export type ResourceKind = 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'command';
 
 /** Tools a resource/profile can be installed into. */
 export type AgentTarget = 'claude-code' | 'zcode' | 'hermes' | 'generic';

@@ -1,21 +1,28 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createHash } from 'node:crypto';
+import type { JwtService } from '../infra/jwt.js';
+import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
 
 /**
- * Authentication plugin.
+ * Authentication & authorization — registered on the ROOT instance (not inside
+ * an encapsulated plugin) so the `onRequest` hook applies to every route. In
+ * Fastify, hooks added within `app.register(plugin)` only apply to that plugin's
+ * child context, not sibling route plugins — registering at the root fixes that.
  *
- * Supports two credential kinds:
- *   - PAT:  `Authorization: Bearer anpat_<token>`  (personal access token)
- *   - JWT:  session tokens issued by the users module (TODO)
+ * Two credential channels (see docs/auth.md):
+ *   - JWT access token  → verified by jose, stateless
+ *   - PAT `anpat_…`     → sha256 lookup in the tokens repository
  *
- * On success, decorates `request.user` with the resolved user id and roles.
- * Unauthenticated requests pass through with `request.user = null`; individual
- * route modules enforce authorization (RBAC) via `requireAuth` / `requireRole`.
+ * The hook resolves either into `req.user = { id, role }` or leaves it null.
+ * Route guards (`requireAuth` / `requireAdmin`) then enforce access — they are
+ * attached per-route as preHandlers, not globally.
+ *
+ * Disabled users: JWTs are stateless, so a disabled user's token is not
+ * intrinsically invalid. We do a fresh user lookup on each protected request to
+ * reject disabled accounts. PAT lookups include this via the user row.
  */
-export async function authPlugin(app: FastifyInstance): Promise<void> {
-  // hash a PAT the same way it is stored
-  const hashToken = (raw: string): string =>
-    createHash('sha256').update(raw).digest('hex');
+export function registerAuthHook(app: FastifyInstance): void {
+  const jwt: JwtService = app.jwt;
+  const uow = app.uow;
 
   app.addHook('onRequest', async (req: FastifyRequest, _reply: FastifyReply) => {
     const header = req.headers.authorization;
@@ -25,33 +32,63 @@ export async function authPlugin(app: FastifyInstance): Promise<void> {
     }
     const raw = header.slice('Bearer '.length).trim();
 
-    // PAT format: anpat_<opaque>. Anything else is treated as a (future) JWT.
-    if (raw.startsWith('anpat_')) {
-      const record = await app.uow.tokens.findByTokenHash(hashToken(raw));
+    if (raw.startsWith(PAT_PREFIX)) {
+      const record = await uow.tokens.findByTokenHash(hashToken(raw));
       if (record && (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())) {
-        const user = await app.uow.users.findById(record.userId);
+        const user = await uow.users.findById(record.userId);
         if (user && user.status === 'active') {
-          req.user = { id: user.id, roles: user.roles };
-          // fire-and-forget usage tracking
-          void app.uow.tokens.touchLastUsed(record.id, new Date().toISOString());
+          req.user = { id: user.id, role: user.role };
+          void uow.tokens.touchLastUsed(record.id, new Date().toISOString());
           return;
         }
       }
+      req.user = null;
+      return;
     }
 
-    // TODO: JWT session-token verification
-
+    // Treat anything else as a JWT.
+    try {
+      const payload = await jwt.verifyAccessToken(raw);
+      const user = await uow.users.findById(payload.sub);
+      if (user && user.status === 'active') {
+        req.user = { id: user.id, role: user.role };
+        return;
+      }
+    } catch {
+      // invalid/expired JWT → treat as anonymous
+    }
     req.user = null;
   });
 }
 
-// ---- shared types ----
-declare module 'fastify' {
-  interface FastifyInstance {
-    // UnitOfWork is attached in buildApp; re-declared here would need core import.
-    // See infra/storage/index.ts for the concrete decoration type.
+// ---- per-route guard helpers (decorated in app.ts) ----
+// These are attached to the instance in buildApp via app.decorate.
+
+export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!req.user) {
+    await reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+    return reply as unknown as void;
   }
+}
+
+export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!req.user) {
+    await reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+    return reply as unknown as void;
+  }
+  if (req.user.role !== 'admin') {
+    await reply.code(403).send({ error: 'FORBIDDEN', message: 'Admin role required' });
+    return reply as unknown as void;
+  }
+}
+
+declare module 'fastify' {
   interface FastifyRequest {
-    user: { id: string; roles: string[] } | null;
+    user: { id: string; role: 'admin' | 'user' } | null;
+  }
+  interface FastifyInstance {
+    jwt: JwtService;
+    requireAuth: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }

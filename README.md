@@ -46,11 +46,22 @@ docs/          architecture, MCP proxy, profiles, roadmap, ADRs
 
 ```bash
 pnpm install            # install workspace deps
+
+# Required: a JWT secret to sign access tokens (≥16 chars)
+export JWT_SECRET="$(openssl rand -base64 48)"
+
+# Optional: ephemeral run without a database file
+export STORAGE_DRIVER=memory
+
 task dev                # start everything in watch mode (needs task: https://taskfile.dev)
 # or, without task:
-pnpm dev:server         # API on :7477  (use STORAGE_DRIVER=memory for an ephemeral run)
+pnpm dev:server         # API on :7477
 pnpm dev:web            # web UI on :5173
 ```
 
-Status: skeleton only — no business logic is implemented yet. See
-[`docs/roadmap.md`](docs/roadmap.md).
+The first user to register becomes the admin. Manage users and the registration
+switch from the web UI (`/admin/users`, `/admin/settings`).
+
+**Phase 1** (users, two roles, JWT + PAT auth, registration switch, permission
+interceptors, SQLite driver, web auth UI) is implemented. See
+[`docs/auth.md`](docs/auth.md) and [`docs/roadmap.md`](docs/roadmap.md).

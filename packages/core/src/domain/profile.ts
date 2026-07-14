@@ -1,4 +1,4 @@
-import type { AgentTarget, ResourceKind } from './resource.js';
+import type { ResourceKind } from './resource.js';
 
 /**
  * A Profile is a named, versioned bundle combining resources (MCP servers,

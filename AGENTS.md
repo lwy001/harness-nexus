@@ -44,7 +44,7 @@ docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
 
 ## Architecture rules (enforced — a regression if violated)
 
-1. **`packages/core` stays pure.** Only domain types and repository *interfaces*
+1. **`packages/core` stays pure.** Only domain types and repository _interfaces_
    (ports). Never import Fastify, the MCP SDK, `better-sqlite3`, or any storage
    driver here. Concrete repository implementations live ONLY under
    `packages/server/src/infra/storage/*`.
@@ -115,10 +115,50 @@ Before touching these, read the linked doc:
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 
+## Authentication & authorization (permission interceptors)
+
+Full design in `docs/auth.md` — read it before touching auth. Summary for daily work:
+
+- **Two roles only:** `admin` and `user`. Each user has exactly one role
+  (`User.role`, not an array). Branch all access decisions on this field.
+- **Two credential channels**, both via `Authorization: Bearer <credential>`:
+  - **JWT access token** (primary, for the web UI) — signed with `JWT_SECRET`,
+    verified statelessly by `jose`. Lifetime `JWT_ACCESS_TTL` (default `7d`).
+  - **PAT** — `anpat_<base64url(32)>`, stored as sha256. For CLI/automation.
+- **Backend interceptors** (`packages/server/src/plugins/auth.ts`):
+  - `onRequest` (registered on the **root** instance, not inside a child plugin
+    context — Fastify hooks added in `app.register()` only apply to that scope)
+    resolves either channel into `req.user = { id, role } | null`.
+  - `app.requireAuth` / `app.requireAdmin` are **per-route preHandlers**:
+    `{ preHandler: [app.requireAdmin] }`. 401 when anonymous, 403 when non-admin.
+- **Frontend interceptors** (`apps/web/src/guards.tsx`):
+  - `<RequireAuth>` redirects to `/login` when unauthenticated.
+  - `<RequireAdmin>` renders a 403 view for non-admins.
+  - The SDK wrapper logs out on any 401 response (`withAuthGuard` in `auth.tsx`).
+- **Registration switch:** `SystemSettings.allowRegistration` (default open) gates
+  `POST /api/auth/register`. `POST /api/users` (admin) bypasses it. The first user
+  to register becomes the bootstrap admin. Admin toggles via
+  `PUT /api/settings/registration`.
+- **Safety rails:** last-admin protection (no deleting/demoting the final admin,
+  409 `LAST_ADMIN`) and no self-delete (409 `NO_SELF_DELETE`). Disabled users'
+  tokens are rejected by a fresh user lookup on each protected request.
+- **Global vs personal scoping** (future): resources/profiles/MCP servers carry
+  `scope: 'global' | 'personal'` and `ownerId`. The role check above is the
+  _instance-level_ gate; per-resource ownership checks layer on top when those
+  modules land.
+
+## Required environment
+
+`JWT_SECRET` is **required** (≥16 chars) — the server refuses to boot without it.
+For local dev: `JWT_SECRET="$(openssl rand -base64 48)"`. For an ephemeral run
+without SQLite, also set `STORAGE_DRIVER=memory`.
+
 ## Current status & roadmap
 
-Only the skeleton exists. Phase 1+ in `docs/roadmap.md` is unimplemented. When
-you add the first real logic for a pillar, also add tests (vitest, not yet wired)
-and update the relevant `docs/` file. Things explicitly NOT done: SQLite driver
-body, MCP registry/aggregation, CLI install writers, ECC/Superpower adapters,
-JWT sessions, the ACP bridge, Channels, LLM-WIKI, memory/notes.
+Phase 1 is implemented: users, two roles, JWT + PAT auth, the registration
+switch, front- and back-end interceptors, the SQLite driver (with migrations),
+and the web auth UI. See `docs/roadmap.md` for what remains. Still NOT done: MCP
+registry/aggregation, CLI install writers, ECC/Superpower adapters, the ACP
+bridge, Channels, LLM-WIKI, memory/notes. When you add the first real logic for
+a pillar, also add tests (vitest, not yet wired) and update the relevant
+`docs/` file.

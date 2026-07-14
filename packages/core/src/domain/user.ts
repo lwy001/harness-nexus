@@ -1,31 +1,38 @@
-/** User and access-control entities. Skeleton — fields will grow. */
+/** User and access-control entities. */
 
-export type Role = 'admin' | 'maintainer' | 'user';
+/**
+ * The two roles. Phase 1 supports exactly these; authorization branches on this
+ * single field. See docs/auth.md.
+ */
+export type Role = 'admin' | 'user';
 
 export interface User {
   id: string;
   username: string;
   email?: string;
-  /** Hashed, never plaintext. Hashing happens in the server layer. */
+  /** argon2id hash. Null only for future passwordless accounts. */
   passwordHash: string | null;
-  roles: Role[];
+  /** Exactly one role per user (not an array). */
+  role: Role;
   status: 'active' | 'disabled';
   createdAt: string;
   updatedAt: string;
 }
 
 /**
- * Personal Access Token. The raw token is shown once at creation; only its hash
- * is stored. `prefix` (first 8 chars) is kept for UI recognition.
+ * Personal Access Token. The raw token is shown once at creation; only its
+ * sha256 hash is stored. `prefix` (first chars) is kept for UI recognition.
+ * Format: `anpat_<base64url(32 random bytes)>`.
  */
 export interface PersonalAccessToken {
   id: string;
   userId: string;
   name: string;
-  /** SHA-256 of the full token. */
+  /** sha256 of the full `anpat_…` token. */
   tokenHash: string;
-  /** First characters of the raw token, for display only. */
+  /** First chars of the raw token, for display only. */
   prefix: string;
+  /** Free-form scope tags; reserved for finer-grained checks beyond Phase 1. */
   scopes: string[];
   expiresAt: string | null;
   lastUsedAt: string | null;

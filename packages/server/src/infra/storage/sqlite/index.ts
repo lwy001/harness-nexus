@@ -1,14 +1,31 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { UnitOfWork } from '@agent-nexus/core';
+import { runMigrations } from './migrations.js';
+import { sqliteUserRepository, sqlitePatRepository, sqliteSettingsRepository } from './repos.js';
+import { memoryResourceProfileMcpStub } from '../stub-repos.js';
 
 /**
  * SQLite storage driver (default).
  *
- * Uses `better-sqlite3` (synchronous, single-file). Migrations live alongside
- * this file. Implementations are TODO; when adding them, ensure every method
- * matches the interface in core and that scope/owner filtering is correct.
+ * Opens a single connection (better-sqlite3 is synchronous), runs migrations,
+ * and returns a UnitOfWork. Resources/profiles/mcpServers are still stubs in
+ * Phase 1 — see ../stub-repos.ts.
  */
-export function createSqliteUnitOfWork(_dbPath: string): UnitOfWork {
-  // TODO: open DB, run migrations from ./migrations, then return real impls.
-  // For now, delegate to the in-memory shape so the server boots pre-impl.
-  throw new Error('SQLite driver not yet implemented — set STORAGE_DRIVER=memory');
+export function createSqliteUnitOfWork(dbPath: string): UnitOfWork {
+  if (dbPath !== ':memory:') {
+    mkdirSync(dirname(dbPath), { recursive: true });
+  }
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  runMigrations(db);
+
+  return {
+    ...memoryResourceProfileMcpStub(),
+    users: sqliteUserRepository(db),
+    tokens: sqlitePatRepository(db),
+    settings: sqliteSettingsRepository(db),
+  };
 }
