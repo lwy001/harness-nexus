@@ -13,6 +13,8 @@ import { authRoutes } from './modules/auth.js';
 import { usersRoutes } from './modules/users.js';
 import { patsRoutes } from './modules/pats.js';
 import { settingsRoutes } from './modules/settings.js';
+import { credentialsRoutes } from './modules/credentials.js';
+import { mcpServersRoutes } from './modules/mcp-servers.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 
 /**
@@ -53,6 +55,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   app.decorate('jwt', jwt);
   app.decorate('requireAuth', requireAuth);
   app.decorate('requireAdmin', requireAdmin);
+  app.decorate('credentialEncryptionKey', config.credentialEncryptionKey);
 
   // Auth hook must be registered on the root instance (not inside a child
   // plugin context) so it applies to all routes. See plugins/auth.ts.
@@ -82,7 +85,9 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await settingsRoutes(api);
     await usersRoutes(api);
     await patsRoutes(api);
-    // TODO: resources / profiles / mcp-servers route modules
+    await credentialsRoutes(api);
+    await mcpServersRoutes(api);
+    // TODO: resources / profiles route modules
   });
 
   await mountMcpProxy(app);

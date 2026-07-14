@@ -16,6 +16,8 @@ export interface ServerConfig {
   jwtIssuer: string;
   /** JWT access-token lifetime, as a jose-compatible string/number. */
   jwtAccessTtl: string;
+  /** Key material for encrypting Credential secrets (AES-256-GCM). */
+  credentialEncryptionKey: string;
 }
 
 export class ConfigError extends Error {
@@ -44,5 +46,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jwtSecret,
     jwtIssuer: env.JWT_ISSUER ?? 'agentnexus',
     jwtAccessTtl: env.JWT_ACCESS_TTL ?? '7d',
+    credentialEncryptionKey: env.CREDENTIAL_ENCRYPTION_KEY ?? jwtSecret,
   };
 }

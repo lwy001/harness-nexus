@@ -8,6 +8,7 @@
  */
 
 import type {
+  Credential,
   McpServer,
   PersonalAccessToken,
   Profile,
@@ -77,6 +78,13 @@ export interface McpServerRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface CredentialRepository {
+  findById(id: string): Promise<Credential | null>;
+  list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<Credential[]>;
+  save(credential: Credential): Promise<Credential>;
+  delete(id: string): Promise<void>;
+}
+
 /**
  * Aggregate of all repositories. A storage driver provides one of these; the
  * server composes it into its modules via dependency injection.
@@ -88,4 +96,5 @@ export interface UnitOfWork {
   tokens: PersonalAccessTokenRepository;
   settings: SystemSettingsRepository;
   mcpServers: McpServerRepository;
+  credentials: CredentialRepository;
 }

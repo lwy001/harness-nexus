@@ -8,6 +8,8 @@ import { RegisterPage } from '@/pages/Register';
 import { DashboardPage } from '@/pages/Dashboard';
 import { UsersPage } from '@/pages/Users';
 import { SettingsPage } from '@/pages/Settings';
+import { CredentialsPage } from '@/pages/Credentials';
+import { McpServersPage } from '@/pages/McpServers';
 
 export function App() {
   return (
@@ -22,6 +24,22 @@ export function App() {
               element={
                 <RequireAuth>
                   <DashboardPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/credentials"
+              element={
+                <RequireAuth>
+                  <CredentialsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/mcp-servers"
+              element={
+                <RequireAuth>
+                  <McpServersPage />
                 </RequireAuth>
               }
             />

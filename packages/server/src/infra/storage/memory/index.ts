@@ -4,16 +4,20 @@ import type {
   Role,
   PersonalAccessToken,
   SystemSettings,
+  Credential,
+  McpServer,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
+  CredentialRepository,
+  McpServerRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@agent-nexus/core';
-import { memoryResourceProfileMcpStub } from '../stub-repos.js';
+import { memoryResourceProfileStub } from '../stub-repos.js';
 
 /**
  * In-memory storage driver — used by tests and `STORAGE_DRIVER=memory`.
- * Fully functional for Phase 1 aggregates (users, tokens, settings).
+ * Fully functional for Phase 1 + 2.1 aggregates.
  */
 
 export function createMemoryUnitOfWork(): UnitOfWork {
@@ -21,6 +25,8 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const usernames = new Map<string, string>(); // username -> id
   const tokens = new Map<string, PersonalAccessToken>();
   const tokensByHash = new Map<string, string>(); // hash -> id
+  const credentials = new Map<string, Credential>();
+  const mcpServers = new Map<string, McpServer>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -94,10 +100,51 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const credentialRepo: CredentialRepository = {
+    async findById(id) {
+      return credentials.get(id) ?? null;
+    },
+    async list(filter) {
+      return [...credentials.values()]
+        .filter((c) => (filter?.scope ? c.scope === filter.scope : true))
+        .filter((c) => (filter?.ownerId ? c.ownerId === filter.ownerId : true))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(credential) {
+      credentials.set(credential.id, credential);
+      return credential;
+    },
+    async delete(id) {
+      credentials.delete(id);
+    },
+  };
+
+  const mcpServerRepo: McpServerRepository = {
+    async findById(id) {
+      return mcpServers.get(id) ?? null;
+    },
+    async list(filter) {
+      return [...mcpServers.values()]
+        .filter((s) => (filter?.scope ? s.scope === filter.scope : true))
+        .filter((s) => (filter?.ownerId ? s.ownerId === filter.ownerId : true))
+        .filter((s) => (filter?.proxied !== undefined ? s.proxied === filter.proxied : true))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(server) {
+      mcpServers.set(server.id, server);
+      return server;
+    },
+    async delete(id) {
+      mcpServers.delete(id);
+    },
+  };
+
   return {
-    ...memoryResourceProfileMcpStub(),
+    ...memoryResourceProfileStub(),
     users: userRepo,
     tokens: tokenRepo,
     settings: settingsRepo,
+    credentials: credentialRepo,
+    mcpServers: mcpServerRepo,
   };
 }

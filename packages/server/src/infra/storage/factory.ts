@@ -6,7 +6,8 @@ import type { UnitOfWork } from '@agent-nexus/core';
  *
  * Every driver returns the same `UnitOfWork` shape (defined in core), so the
  * rest of the server never knows which DB is running. Add new drivers here and
- * implement all five repositories; nothing else in the codebase changes.
+ * implement every repository on `UnitOfWork`; nothing else in the codebase
+ * changes.
  */
 export async function createStorage(config: ServerConfig): Promise<UnitOfWork> {
   switch (config.storageDriver) {

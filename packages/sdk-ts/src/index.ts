@@ -5,7 +5,7 @@
  * and external scripts. Auth is via a JWT (from login/register) or a PAT
  * (`anpat_…`), sent as `Authorization: Bearer <token>`.
  */
-import type { Role, User } from '@agent-nexus/core';
+import type { Role, User, McpServer, McpTransport, CredentialKind } from '@agent-nexus/core';
 
 export interface SdkOptions {
   baseUrl: string;
@@ -25,6 +25,18 @@ export interface PatView {
   lastUsedAt: string | null;
   createdAt: string;
 }
+export interface CredentialView {
+  id: string;
+  name: string;
+  kind?: CredentialKind;
+  secretPreview: string;
+  scope: 'global' | 'personal';
+  ownerId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+// McpServer is re-exported directly from core (it carries no secret fields).
+// McpTransport likewise, so callers can build typed transport objects.
 
 interface ApiErrorBody {
   error: string;
@@ -150,6 +162,58 @@ export class AgentNexusClient {
     return this.request('PUT', '/api/settings/registration', { allowRegistration });
   }
 
+  // ---- credentials ----
+  async createCredential(input: {
+    name: string;
+    secret: string;
+    kind?: CredentialKind;
+    scope: 'global' | 'personal';
+  }): Promise<{ credential: CredentialView }> {
+    return this.request('POST', '/api/credentials', input);
+  }
+
+  async listCredentials(): Promise<CredentialView[]> {
+    const res = await this.request('GET', '/api/credentials');
+    return res.credentials;
+  }
+
+  async updateCredential(
+    id: string,
+    input: { name?: string; secret?: string; kind?: CredentialKind },
+  ): Promise<{ credential: CredentialView }> {
+    return this.request('PATCH', `/api/credentials/${id}`, input);
+  }
+
+  async deleteCredential(id: string): Promise<void> {
+    await this.request('DELETE', `/api/credentials/${id}`);
+  }
+
+  // ---- mcp servers ----
+  async createMcpServer(input: {
+    name: string;
+    transport: McpTransport;
+    proxied?: boolean;
+    scope: 'global' | 'personal';
+  }): Promise<{ mcpServer: McpServer }> {
+    return this.request('POST', '/api/mcp-servers', input);
+  }
+
+  async listMcpServers(): Promise<McpServer[]> {
+    const res = await this.request('GET', '/api/mcp-servers');
+    return res.mcpServers;
+  }
+
+  async updateMcpServer(
+    id: string,
+    input: { name?: string; transport?: McpTransport; proxied?: boolean },
+  ): Promise<{ mcpServer: McpServer }> {
+    return this.request('PATCH', `/api/mcp-servers/${id}`, input);
+  }
+
+  async deleteMcpServer(id: string): Promise<void> {
+    await this.request('DELETE', `/api/mcp-servers/${id}`);
+  }
+
   // ---- core request helper ----
   private async request(
     method: string,
@@ -182,4 +246,4 @@ export class AgentNexusClient {
   }
 }
 
-export type { Role };
+export type { Role, McpServer, McpTransport, CredentialKind };

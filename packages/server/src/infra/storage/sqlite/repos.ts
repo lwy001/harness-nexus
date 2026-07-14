@@ -3,9 +3,15 @@ import type {
   User,
   Role,
   PersonalAccessToken,
+  McpServer,
+  McpTransport,
+  Credential,
+  CredentialKind,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
+  McpServerRepository,
+  CredentialRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@agent-nexus/core';
 
@@ -36,6 +42,26 @@ interface SettingsRow {
   allow_registration: number;
   updated_at: string;
 }
+interface CredentialRow {
+  id: string;
+  name: string;
+  secret: string;
+  kind: string | null;
+  scope: string;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+interface McpServerRow {
+  id: string;
+  name: string;
+  transport: string;
+  proxied: number;
+  scope: string;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 // ---- mappers ----
 const mapUser = (r: UserRow): User => ({
@@ -59,6 +85,30 @@ const mapPat = (r: PatRow): PersonalAccessToken => ({
   expiresAt: r.expires_at,
   lastUsedAt: r.last_used_at,
   createdAt: r.created_at,
+});
+
+const mapCredential = (r: CredentialRow): Credential => {
+  const base: Credential = {
+    id: r.id,
+    name: r.name,
+    secret: r.secret,
+    scope: r.scope as Credential['scope'],
+    ownerId: r.owner_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+  return r.kind ? { ...base, kind: r.kind as CredentialKind } : base;
+};
+
+const mapMcpServer = (r: McpServerRow): McpServer => ({
+  id: r.id,
+  name: r.name,
+  transport: JSON.parse(r.transport) as McpTransport,
+  proxied: r.proxied === 1,
+  scope: r.scope as McpServer['scope'],
+  ownerId: r.owner_id,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
 });
 
 // ---- user repository ----
@@ -196,6 +246,118 @@ export function sqliteSettingsRepository(db: Database): SystemSettingsRepository
         `UPDATE system_settings SET allow_registration = ?, updated_at = ? WHERE id = 1`,
       ).run(settings.allowRegistration ? 1 : 0, now);
       return { allowRegistration: settings.allowRegistration, updatedAt: now };
+    },
+  };
+}
+
+// ---- credential repository ----
+export function sqliteCredentialRepository(db: Database): CredentialRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM credentials WHERE id = ?').get(id) as
+        CredentialRow | undefined;
+      return row ? mapCredential(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, unknown> = {};
+      if (filter?.scope) {
+        where.push('scope = @scope');
+        params.scope = filter.scope;
+      }
+      if (filter?.ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = filter.ownerId;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM credentials ${clause} ORDER BY created_at`)
+        .all(params) as CredentialRow[];
+      return rows.map(mapCredential);
+    },
+    async save(credential) {
+      db.prepare(
+        `INSERT INTO credentials (id, name, secret, kind, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @secret, @kind, @scope, @owner_id, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           name       = excluded.name,
+           secret     = excluded.secret,
+           kind       = excluded.kind,
+           scope      = excluded.scope,
+           owner_id   = excluded.owner_id,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: credential.id,
+        name: credential.name,
+        secret: credential.secret,
+        kind: credential.kind ?? null,
+        scope: credential.scope,
+        owner_id: credential.ownerId,
+        created_at: credential.createdAt,
+        updated_at: credential.updatedAt,
+      });
+      return credential;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM credentials WHERE id = ?').run(id);
+    },
+  };
+}
+
+// ---- mcp server repository ----
+export function sqliteMcpServerRepository(db: Database): McpServerRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id) as
+        McpServerRow | undefined;
+      return row ? mapMcpServer(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, unknown> = {};
+      if (filter?.scope) {
+        where.push('scope = @scope');
+        params.scope = filter.scope;
+      }
+      if (filter?.ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = filter.ownerId;
+      }
+      if (filter?.proxied !== undefined) {
+        where.push('proxied = @proxied');
+        params.proxied = filter.proxied ? 1 : 0;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM mcp_servers ${clause} ORDER BY created_at`)
+        .all(params) as McpServerRow[];
+      return rows.map(mapMcpServer);
+    },
+    async save(server) {
+      db.prepare(
+        `INSERT INTO mcp_servers (id, name, transport, proxied, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @transport, @proxied, @scope, @owner_id, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           name       = excluded.name,
+           transport  = excluded.transport,
+           proxied    = excluded.proxied,
+           scope      = excluded.scope,
+           owner_id   = excluded.owner_id,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: server.id,
+        name: server.name,
+        transport: JSON.stringify(server.transport),
+        proxied: server.proxied ? 1 : 0,
+        scope: server.scope,
+        owner_id: server.ownerId,
+        created_at: server.createdAt,
+        updated_at: server.updatedAt,
+      });
+      return server;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
     },
   };
 }

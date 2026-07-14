@@ -111,5 +111,106 @@ expect('validation status', r.status, 400);
 log('\n--- disabled account rejected ---');
 // (skipped: requires an admin to disable a user first; covered by unit tests later)
 
+// ====================== Phase 2.1: credentials + mcp-servers ======================
+
+log('\n--- [2.1] user creates a personal credential (201) ---');
+r = await req('POST', '/api/credentials', {
+  token: userToken,
+  body: { name: 'alice-key', secret: 'sk_test_abcdef123456', kind: 'api_key', scope: 'personal' },
+});
+expect('personal credential created', r.status, 201);
+expect('credential secret masked', r.json.credential.secretPreview.includes('…'), true);
+expect('credential omits secret field', 'secret' in r.json.credential, false);
+const aliceCredId = r.json.credential.id;
+
+log('\n--- [2.1] user cannot create global credential (403) ---');
+r = await req('POST', '/api/credentials', {
+  token: userToken,
+  body: { name: 'g', secret: 'x'.repeat(12), scope: 'global' },
+});
+expect('non-admin global credential rejected', r.status, 403);
+
+log('\n--- [2.1] admin creates a global credential (201) ---');
+r = await req('POST', '/api/credentials', {
+  token: adminToken,
+  body: { name: 'shared-token', secret: 'bearer_abcdefghijklmnop', kind: 'bearer', scope: 'global' },
+});
+expect('admin global credential created', r.status, 201);
+const globalCredId = r.json.credential.id;
+
+log('\n--- [2.1] list returns personal + global (2) ---');
+r = await req('GET', '/api/credentials', { token: userToken });
+expect('user lists both credentials', r.json.credentials.length, 2);
+
+log('\n--- [2.1] user cannot delete global credential (404) ---');
+r = await req('DELETE', `/api/credentials/${globalCredId}`, { token: userToken });
+expect('non-admin delete global → 404', r.status, 404);
+
+log('\n--- [2.1] admin deletes global credential (200) ---');
+r = await req('DELETE', `/api/credentials/${globalCredId}`, { token: adminToken });
+expect('admin delete global credential', r.status, 200);
+
+log('\n--- [2.1] create mcp-server bound to own credential (201) ---');
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'acme-mcp',
+    transport: {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      credentialBindings: { Authorization: aliceCredId },
+    },
+    scope: 'personal',
+  },
+});
+expect('mcp-server created with binding', r.status, 201);
+const acmeId = r.json.mcpServer.id;
+
+log('\n--- [2.1] create mcp-server bound to unreachable credential (409) ---');
+// admin-only global credential was deleted; reuse a made-up id → not found
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'bad',
+    transport: {
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      credentialBindings: { Authorization: 'cred_nonexistent' },
+    },
+    scope: 'personal',
+  },
+});
+expect('unreachable binding rejected', r.status, 409);
+
+log('\n--- [2.1] stdio transport rejected by validation (400) ---');
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'stdio-nope',
+    transport: { type: 'stdio', command: 'echo' },
+    scope: 'personal',
+  },
+});
+expect('stdio rejected', r.status, 400);
+
+log('\n--- [2.1] non-admin cannot create global mcp-server (403) ---');
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'g',
+    transport: { type: 'streamable-http', url: 'https://mcp.example.com/mcp' },
+    scope: 'global',
+  },
+});
+expect('non-admin global mcp-server rejected', r.status, 403);
+
+log('\n--- [2.1] list mcp-servers (1 personal) ---');
+r = await req('GET', '/api/mcp-servers', { token: userToken });
+expect('user lists own mcp-server', r.json.mcpServers.length, 1);
+
+log('\n--- [2.1] delete own mcp-server (200) ---');
+r = await req('DELETE', `/api/mcp-servers/${acmeId}`, { token: userToken });
+expect('delete own mcp-server', r.status, 200);
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

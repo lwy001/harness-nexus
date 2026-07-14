@@ -55,5 +55,17 @@ export interface McpServer {
 
 export type McpTransport =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
-  | { type: 'sse'; url: string; headers?: Record<string, string> }
-  | { type: 'streamable-http'; url: string; headers?: Record<string, string> };
+  | {
+      type: 'sse';
+      url: string;
+      headers?: Record<string, string>;
+      /** headerName → Credential id; resolved into live headers at connect time (2.2). */
+      credentialBindings?: Record<string, string>;
+    }
+  | {
+      type: 'streamable-http';
+      url: string;
+      headers?: Record<string, string>;
+      /** headerName → Credential id; resolved into live headers at connect time (2.2). */
+      credentialBindings?: Record<string, string>;
+    };

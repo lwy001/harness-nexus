@@ -106,14 +106,62 @@ To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server
 - **Logging**: use the Fastify logger (`app.log` / `req.log`), not `console.*`
   (the CLI/bridge daemons may use `console` until they get a logger).
 
+## Feature development workflow
+
+When building a new feature pillar (one spanning multiple packages and
+introducing new domain concepts), follow this loop:
+
+1. **Design doc first.** Write or expand a `docs/<topic>.md` covering the data
+   model, API surface, scope/permission rules, and explicit out-of-scope items.
+   Follow the format of `docs/auth.md` / `docs/phase-2.md` (title with phase,
+   `> Status:` line, sectioned). Commit it before the implementation.
+2. **Then implement.** Work inward from the dependency boundary: `core` (domain
+   types + ports) → `shared` (zod schemas) → `server` (storage + routes) →
+   `sdk-ts` (client methods) → `apps/web` (UI). Build each package before moving
+   to the one that depends on it (composite project references need `dist`).
+3. **Then verify.** `pnpm -r typecheck`, the relevant `pnpm --filter … build`,
+   and extend `scripts/smoke.mjs` for the new endpoints.
+4. **Update this file and the roadmap** so the next contributor knows what
+   landed and where the docs live.
+
 ## Sensitive areas — read docs first
 
 Before touching these, read the linked doc:
 
+- **MCP connections & credentials** → `docs/phase-2.md`
 - **MCP proxy / registry** → `docs/mcp-proxy.md`
 - **Profile model & install flow** → `docs/profiles.md`
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
+
+## MCP connections & credentials (Phase 2.1)
+
+Full design in `docs/phase-2.md`. Summary for daily work:
+
+- **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user *into*
+  AgentNexus. A `Credential` authenticates AgentNexus *out to* an upstream MCP
+  server. Don't conflate them.
+- **Credential secrets are AES-256-GCM encrypted at rest**
+  (`packages/server/src/infra/crypto.ts`). Key material:
+  `CREDENTIAL_ENCRYPTION_KEY` env var, falling back to `JWT_SECRET`. The
+  plaintext is **never** returned by the API — responses carry a masked
+  `secretPreview` only. Decryption happens solely at connect time (Phase 2.2).
+- **Scope model (same for credentials and mcp-servers):** `global` is readable
+  by any authenticated user but admin-only to mutate; `personal` is owner-only
+  for all operations. The instance-level `requireAuth`/`requireAdmin` guards are
+  the first gate; per-record ownership checks (owner-or-admin) layer on top.
+  Not-found returns `404` (not `403`) to avoid leaking existence.
+- **stdio transport is unsupported** in Phase 2.1. The domain `McpTransport`
+  union keeps the variant, but the create/update zod schemas
+  (`packages/shared/src/schemas/mcp.ts`) accept only `sse` and
+  `streamable-http`. stdio may return later behind an admin allowlist + sandbox.
+- **`credentialBindings`** on a transport maps `headerName → credentialId`. The
+  route validates each referenced credential is reachable (global, or
+  personal-owned-by-same-user) before saving; resolving the binding into a live
+  header happens in 2.2's registry.
+- **Not yet built (2.2+):** live `McpRegistry` aggregation, `mountMcpProxy`
+  re-exposure (Streamable HTTP/SSE), Profile CRUD, PAT+profile routing,
+  callable-function scripts.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -155,10 +203,13 @@ without SQLite, also set `STORAGE_DRIVER=memory`.
 
 ## Current status & roadmap
 
-Phase 1 is implemented: users, two roles, JWT + PAT auth, the registration
-switch, front- and back-end interceptors, the SQLite driver (with migrations),
-and the web auth UI. See `docs/roadmap.md` for what remains. Still NOT done: MCP
-registry/aggregation, CLI install writers, ECC/Superpower adapters, the ACP
-bridge, Channels, LLM-WIKI, memory/notes. When you add the first real logic for
-a pillar, also add tests (vitest, not yet wired) and update the relevant
-`docs/` file.
+Phase 1 (auth) and Phase 2.1 (MCP connection config + credentials) are
+implemented: users, two roles, JWT + PAT auth, the registration switch, front-
+and back-end interceptors, the SQLite driver (with migrations), the web UI, and
+the encrypted credential store plus MCP client connection CRUD. See
+`docs/roadmap.md` for what remains. Still NOT done: the MCP registry / live
+aggregation / proxy re-exposure (2.2), Profile CRUD + PAT+profile routing (2.2),
+callable-function scripts (2.3), CLI install writers, ECC/Superpower adapters,
+the ACP bridge, Channels, LLM-WIKI, memory/notes. When you add the first real
+logic for a pillar, also add tests (vitest, not yet wired) and update the
+relevant `docs/` file.

@@ -51,6 +51,37 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
     `,
   },
+  {
+    version: 2,
+    description: 'phase 2.1 — credentials and mcp_servers (connection config layer)',
+    sql: `
+CREATE TABLE IF NOT EXISTS credentials (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  secret     TEXT NOT NULL,
+  kind       TEXT,
+  scope      TEXT NOT NULL,
+  owner_id   TEXT REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_credentials_owner ON credentials(owner_id);
+CREATE INDEX IF NOT EXISTS idx_credentials_scope ON credentials(scope);
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  transport  TEXT NOT NULL,
+  proxied    INTEGER NOT NULL DEFAULT 0,
+  scope      TEXT NOT NULL,
+  owner_id   TEXT REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_owner ON mcp_servers(owner_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope ON mcp_servers(scope);
+    `,
+  },
 ] as const;
 
 /**

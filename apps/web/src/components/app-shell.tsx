@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { HomeIcon, SettingsIcon, UsersIcon, LogOutIcon } from 'lucide-react';
+import { HomeIcon, SettingsIcon, UsersIcon, LogOutIcon, KeyRoundIcon, ServerIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Separator />
         <nav className="flex flex-col gap-1 p-3">
           <NavItem to="/" icon={<HomeIcon />} label="Home" end />
+          <NavItem to="/mcp-servers" icon={<ServerIcon />} label="MCP servers" />
+          <NavItem to="/credentials" icon={<KeyRoundIcon />} label="Credentials" />
           {isAdmin && (
             <>
               <NavItem to="/admin/users" icon={<UsersIcon />} label="Users" />

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { UsersIcon, SettingsIcon, ArrowRightIcon, KeyRoundIcon, BoxesIcon } from 'lucide-react';
+import { UsersIcon, SettingsIcon, ArrowRightIcon, KeyRoundIcon, ServerIcon } from 'lucide-react';
 import { useAuth } from '@/auth';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,18 +50,16 @@ export function DashboardPage() {
         </Card>
 
         <QuickLink
-          to="/"
-          icon={<KeyRoundIcon />}
-          title="Access tokens"
-          desc="Manage PATs for CLI and automation"
-          disabled
+          to="/mcp-servers"
+          icon={<ServerIcon />}
+          title="MCP servers"
+          desc="Connect upstream MCP servers (SSE / HTTP)"
         />
         <QuickLink
-          to="/"
-          icon={<BoxesIcon />}
-          title="Resources & profiles"
-          desc="Skills, hooks, sub-agents, rules"
-          disabled
+          to="/credentials"
+          icon={<KeyRoundIcon />}
+          title="Credentials"
+          desc="Encrypted secrets for upstream connections"
         />
 
         {isAdmin && (
@@ -82,12 +80,9 @@ export function DashboardPage() {
         )}
       </div>
 
-      {!isAdmin && (
-        <p className="text-muted-foreground mt-6 text-xs">
-          Some modules (resources, profiles, MCP servers) are not built yet — they'll appear here in
-          later phases.
-        </p>
-      )}
+      <p className="text-muted-foreground mt-6 text-xs">
+        Profiles (organizing MCP servers into bundles) and live aggregation arrive in Phase 2.2.
+      </p>
     </AppShell>
   );
 }
