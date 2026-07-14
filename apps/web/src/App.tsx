@@ -13,7 +13,7 @@ import { McpServersPage } from '@/pages/McpServers';
 
 export function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <AuthProvider>
         <BrowserRouter>
           <Routes>

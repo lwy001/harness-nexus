@@ -104,7 +104,7 @@ export function UsersPage() {
                   <TableCell>
                     <span className="text-muted-foreground capitalize">{u.status}</span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground tabular-nums">
                     {new Date(u.createdAt).toLocaleDateString(undefined, {
                       year: 'numeric',
                       month: 'short',
@@ -198,6 +198,8 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
               id="new-username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
               required
             />
           </div>

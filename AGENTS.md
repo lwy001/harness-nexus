@@ -106,6 +106,51 @@ To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server
 - **Logging**: use the Fastify logger (`app.log` / `req.log`), not `console.*`
   (the CLI/bridge daemons may use `console` until they get a logger).
 
+## Web UI design system ("Signal")
+
+The `apps/web` UI follows a deliberate system, not stock shadcn defaults. Read
+this before adding screens or components so the look stays consistent.
+
+- **Concept.** The interface is a *signal console*. Color encodes connection
+  state only; everything else is a disciplined cool neutral. The single accent
+  — `--signal` (cyan) — marks what is live: links, focus, the brand mark, and
+  (once Phase 2.2 ships) online connections. Spend that accent in one place per
+  view; do not sprinkle it as decoration.
+- **Tokens live in `apps/web/src/index.css`.** Light + dark are both defined;
+  `color-scheme` is set per theme. Do not hardcode hex in components — derive
+  from the CSS variables (`bg-background`, `text-signal`, etc.). The semantic
+  palette maps through the `chart-*` tokens: `--signal`, `--ok`, `--warn`,
+  `--danger` are the only colors that carry meaning.
+- **Typography.** IBM Plex Sans (UI + body) and IBM Plex Mono (URLs, headers,
+  tokens, transport types, all numeric data) are **self-hosted via Fontsource**
+  — never load external font CDNs; this product handles secrets and makes no
+  outbound requests for assets. Use the `.nums` helper or `tabular-nums` for any
+  column of figures or monospaced protocol strings.
+- **Brand.** The mark, wordmark, and favicon are inline SVG (`components/
+  brand-mark.tsx`, `public/favicon.svg`) encoding the thesis (upstreams
+  converging on a nexus node). Reuse `<Brand>`; don't introduce a raster logo.
+- **Honesty over decoration.** The Dashboard mesh topology (`components/
+  mesh-topology.tsx`) renders upstreams as "configured" (muted), **never** a
+  green "online" dot — live aggregation is Phase 2.2 and faking status would
+  mislead. When 2.2 lands, swap the `Dot` variant per real state; the geometry
+  already supports it.
+- **Chrome.** `AppShell` provides the sidebar + header and a skip link to
+  `#main`. The mobile nav is a Radix `Dialog` drawer (`components/mobile-nav.tsx`)
+  that mirrors the same `navItems()`. Add new routes to `navItems()` in
+  `app-shell.tsx` so both surfaces stay in sync.
+- **Theme.** Defaults to the OS preference (`system`), user-overridable via the
+  header toggle. The toggle keys off `resolvedTheme` so the icon is correct even
+  while following the system.
+- **Form hygiene (Web Interface Guidelines).** Every text input sets
+  `autoComplete`, and protocol/identifier inputs also set `spellCheck={false}`
+  and `inputMode` where applicable. Destructive actions confirm first. Headings
+  keep a strict hierarchy and get `text-wrap: balance` from the base layer.
+- **Frontend perf (Vercel React best practices).** Fetch independent lists with
+  `Promise.all` (see `Dashboard.tsx`). Define sub-components at module scope,
+  never inside another component. Prefer functional `setState`. Render
+  conditionals with ternaries, not `&&`. Hoist static objects/JSX out of
+  components.
+
 ## Feature development workflow
 
 When building a new feature pillar (one spanning multiple packages and

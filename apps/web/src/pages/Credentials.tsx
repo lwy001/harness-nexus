@@ -121,7 +121,7 @@ export function CredentialsPage() {
                     <TableCell className="text-muted-foreground">
                       {c.kind ?? '—'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-xs">
+                    <TableCell className="text-muted-foreground font-mono text-xs tabular-nums">
                       {c.secretPreview}
                     </TableCell>
                     <TableCell>
@@ -216,6 +216,8 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Acme MCP token"
+                autoComplete="off"
+                spellCheck={false}
                 required
               />
             </div>
@@ -227,7 +229,8 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
                 onChange={(e) => setSecret(e.target.value)}
                 placeholder="Paste the token / key"
                 required
-                autoComplete="off"
+                autoComplete="new-password"
+                spellCheck={false}
               />
             </div>
             <div className="grid gap-2">

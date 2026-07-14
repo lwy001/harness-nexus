@@ -1,87 +1,145 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Self-hosted IBM Plex (no external requests — this product handles secrets).
+ * Sans ships as a variable font; Mono only has static weights, so we load the
+ * weights we actually use (400 body, 500 emphasis). */
+@import '@fontsource-variable/ibm-plex-sans/index.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
 @custom-variant dark (&:is(.dark *));
 
-/* ---- shadcn/ui design tokens (Tailwind v4, CSS-first) ----
- * Light is the default; `.dark` class on <html> flips to dark.
- * next-themes manages the class toggle + persistence.
+/*
+ * Signal design system.
+ *
+ * Concept: the interface is a signal console. Color encodes connection
+ * state only ("is this thing alive / active"); everything else stays a
+ * disciplined cool neutral. The single accent — signal cyan — marks what
+ * is live: links, focus, the brand mark, and (later) online connections.
+ *
+ * Monospace is a first-class role, not a decoration: URLs, headers, tokens
+ * and transport types are protocol material and set in Plex Mono.
+ *
+ * Palette (light):
+ *   ink        #0b1220  text + primary surface
+ *   paper      #f7f8fa  page ground (cool off-white)
+ *   surface-1  #eef1f5  cards / secondary surface
+ *   line       #d9dee6  hairlines
+ *   signal     #0e7490  the one accent (cyan-700) — only on live things
+ *   ok/warn/danger       semantic, mapped through the chart tokens
  */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  color-scheme: light;
+
+  --radius: 0.5rem;
+
+  --background: oklch(0.975 0.004 250); /* paper */
+  --foreground: oklch(0.22 0.02 260); /* ink */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.22 0.02 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.22 0.02 260);
+
+  --primary: oklch(0.22 0.02 260); /* ink */
+  --primary-foreground: oklch(0.98 0.004 250);
+
+  --secondary: oklch(0.955 0.005 250);
+  --secondary-foreground: oklch(0.3 0.02 260);
+  --muted: oklch(0.945 0.005 250);
+  --muted-foreground: oklch(0.5 0.015 260);
+  --accent: oklch(0.93 0.02 230); /* tinted toward signal cyan */
+  --accent-foreground: oklch(0.3 0.05 230);
+
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.98 0.004 250);
+
+  --border: oklch(0.89 0.006 250); /* line */
+  --input: oklch(0.89 0.006 250);
+  --ring: oklch(0.55 0.11 230); /* signal-colored focus ring */
+
+  /* Semantic status — the one place color carries meaning. */
+  --signal: oklch(0.55 0.11 230); /* cyan-700 */
+  --signal-foreground: oklch(0.98 0.004 250);
+  --ok: oklch(0.62 0.16 150); /* green */
+  --warn: oklch(0.7 0.16 65); /* amber */
+  --danger: oklch(0.58 0.22 25);
+
+  /* chart-* reused as the status palette so badges/dots stay consistent. */
+  --chart-1: var(--signal);
+  --chart-2: var(--ok);
+  --chart-3: var(--warn);
+  --chart-4: var(--danger);
+  --chart-5: var(--muted-foreground);
+
+  --sidebar: oklch(0.985 0.003 250);
+  --sidebar-foreground: oklch(0.22 0.02 260);
+  --sidebar-primary: oklch(0.22 0.02 260);
+  --sidebar-primary-foreground: oklch(0.98 0.004 250);
+  --sidebar-accent: oklch(0.93 0.02 230);
+  --sidebar-accent-foreground: oklch(0.3 0.05 230);
+  --sidebar-border: oklch(0.9 0.006 250);
+  --sidebar-ring: oklch(0.55 0.11 230);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
+  color-scheme: dark;
+
+  --background: oklch(0.18 0.015 260); /* near-black, cool */
+  --foreground: oklch(0.96 0.005 250);
+  --card: oklch(0.22 0.016 260);
+  --card-foreground: oklch(0.96 0.005 250);
+  --popover: oklch(0.22 0.016 260);
+  --popover-foreground: oklch(0.96 0.005 250);
+
+  --primary: oklch(0.96 0.005 250); /* light-on-dark, same ink role */
+  --primary-foreground: oklch(0.2 0.015 260);
+
+  --secondary: oklch(0.27 0.016 260);
+  --secondary-foreground: oklch(0.96 0.005 250);
+  --muted: oklch(0.25 0.015 260);
+  --muted-foreground: oklch(0.68 0.012 260);
+  --accent: oklch(0.32 0.03 230);
+  --accent-foreground: oklch(0.92 0.04 230);
+
+  --destructive: oklch(0.68 0.19 22);
+  --destructive-foreground: oklch(0.98 0.004 250);
+
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0.12 230);
+
+  --signal: oklch(0.72 0.13 200); /* brighter cyan in dark */
+  --signal-foreground: oklch(0.18 0.02 260);
+  --ok: oklch(0.72 0.16 155);
+  --warn: oklch(0.78 0.16 70);
+  --danger: oklch(0.7 0.2 22);
+
+  --chart-1: var(--signal);
+  --chart-2: var(--ok);
+  --chart-3: var(--warn);
+  --chart-4: var(--danger);
+  --chart-5: var(--muted-foreground);
+
+  --sidebar: oklch(0.2 0.015 260);
+  --sidebar-foreground: oklch(0.96 0.005 250);
+  --sidebar-primary: oklch(0.96 0.005 250);
+  --sidebar-primary-foreground: oklch(0.2 0.015 260);
+  --sidebar-accent: oklch(0.3 0.03 230);
+  --sidebar-accent-foreground: oklch(0.92 0.04 230);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.7 0.12 230);
 }
 
 /* Map CSS variables into Tailwind's theme so utilities like bg-background,
- * text-foreground, border-border work. (Tailwind v4 @theme inline.)
+ * text-foreground, border-border, text-signal work. (Tailwind v4 @theme inline.)
  */
 @theme inline {
+  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
+    Menlo, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -101,6 +159,13 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -126,5 +191,24 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv01', 'cv03', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Headings balance over up to two lines for calmer ragged edges. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  /* Tabular figures anywhere data lives (dates, counts, previews). */
+  .nums {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+  /* Skip link target: clear the sticky header when focused. */
+  :target {
+    scroll-margin-top: 5rem;
   }
 }

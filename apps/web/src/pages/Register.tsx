@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Brand } from '@/components/brand-mark';
 
 export function RegisterPage() {
   const { register, user } = useAuth();
@@ -55,7 +56,8 @@ export function RegisterPage() {
   const closed = registrationOpen === false;
 
   return (
-    <div className="bg-background flex min-h-svh items-center justify-center p-4">
+    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-4">
+      <Brand size={30} />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Create account</CardTitle>
@@ -83,6 +85,7 @@ export function RegisterPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={closed}
                 autoComplete="username"
+                spellCheck={false}
                 required
               />
             </div>

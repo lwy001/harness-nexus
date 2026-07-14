@@ -4,13 +4,13 @@ import { Button } from '@/components/ui/button';
 
 /** Light/dark toggle button. Shown in the app header. */
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const isDark = theme === 'dark';
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label={isDark ? 'Switch to light' : 'Switch to dark'}
+      aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
     >
       {isDark ? <SunIcon /> : <MoonIcon />}

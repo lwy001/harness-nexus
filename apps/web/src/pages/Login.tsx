@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Brand } from '@/components/brand-mark';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -40,7 +41,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="bg-background flex min-h-svh items-center justify-center p-4">
+    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-4">
+      <Brand size={30} />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Welcome back</CardTitle>
@@ -60,6 +62,7 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                spellCheck={false}
                 required
               />
             </div>

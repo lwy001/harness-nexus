@@ -239,6 +239,8 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Acme docs"
+                autoComplete="off"
+                spellCheck={false}
                 required
               />
             </div>
@@ -252,7 +254,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                   <SelectItem value="streamable-http">streamable-http</SelectItem>
                   <SelectItem value="sse">sse</SelectItem>
                   <SelectItem value="stdio" disabled>
-                    stdio (暂不支持)
+                    stdio (not yet supported)
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -264,6 +266,9 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://mcp.example.com/mcp"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
                 required
               />
             </div>
