@@ -53,7 +53,13 @@ export class AgentNexusClient {
   constructor(opts: SdkOptions) {
     this.opts = opts;
     this.token = opts.token;
-    this.fetchImpl = opts.fetch ?? fetch;
+    // Bind fetch: in the browser `fetch` is a method on `window` and relies on
+    // `this === window`. Taking it as a bare reference and calling it later
+    // throws "does not implement interface Window". Bind it to globalThis so it
+    // can be invoked as a free function. (Node 18+ also exposes fetch on
+    // globalThis.)
+    const bound = globalThis.fetch?.bind(globalThis);
+    this.fetchImpl = opts.fetch ?? bound ?? fetch;
   }
 
   /** Update the token after login/register. */

@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth.js';
-import { api } from '../api.js';
+import { useAuth } from '@/auth';
+import { api } from '@/api';
 import { AgentNexusError } from '@agent-nexus/sdk';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export function RegisterPage() {
   const { register, user } = useAuth();
@@ -35,108 +40,88 @@ export function RegisterPage() {
       await register(username, password, email || undefined);
       navigate('/', { replace: true });
     } catch (e) {
-      setError(e instanceof AgentNexusError ? e.message : 'Registration failed');
+      // eslint-disable-next-line no-console
+      console.error('register failed:', e);
+      setError(
+        e instanceof AgentNexusError
+          ? e.message
+          : `Registration failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       setBusy(false);
     }
   }
 
   const closed = registrationOpen === false;
+
   return (
-    <main style={pageStyle}>
-      <form style={formStyle} onSubmit={onSubmit}>
-        <h1 style={{ marginTop: 0 }}>Create account · AgentNexus</h1>
-        {closed && (
-          <div style={errStyle}>
-            Registration is closed on this instance. Ask an admin for an account.
-          </div>
-        )}
-        {error && <div style={errStyle}>{error}</div>}
-        <label style={labelStyle}>
-          Username
-          <input
-            style={inputStyle}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={closed}
-            autoComplete="username"
-          />
-        </label>
-        <label style={labelStyle}>
-          Password (min 8)
-          <input
-            style={inputStyle}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={closed}
-            autoComplete="new-password"
-          />
-        </label>
-        <label style={labelStyle}>
-          Email (optional)
-          <input
-            style={inputStyle}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={closed}
-            autoComplete="email"
-          />
-        </label>
-        <button style={btnStyle} disabled={busy || closed}>
-          {busy ? 'Creating…' : 'Register'}
-        </button>
-        <p style={{ fontSize: '0.9rem' }}>
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
-      </form>
-    </main>
+    <div className="bg-background flex min-h-svh items-center justify-center p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-xl">Create account</CardTitle>
+          <CardDescription>Register a new AgentNexus account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {closed && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>
+                Registration is closed on this instance. Ask an admin for an account.
+              </AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid gap-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={closed}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={closed}
+                autoComplete="new-password"
+                required
+              />
+              <p className="text-muted-foreground text-xs">Minimum 8 characters.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email (optional)</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={closed}
+                autoComplete="email"
+              />
+            </div>
+            <Button type="submit" disabled={busy || closed} className="w-full">
+              {busy ? 'Creating…' : 'Register'}
+            </Button>
+            <p className="text-muted-foreground text-center text-sm">
+              Already have an account?{' '}
+              <Link to="/login" className="text-primary underline-offset-4 hover:underline">
+                Sign in
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
-
-const pageStyle: React.CSSProperties = {
-  fontFamily: 'system-ui, sans-serif',
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  minHeight: '100vh',
-  background: '#f5f5f5',
-};
-const formStyle: React.CSSProperties = {
-  background: '#fff',
-  padding: '2rem',
-  borderRadius: 8,
-  boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-  width: 320,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.75rem',
-};
-const labelStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  fontSize: '0.9rem',
-};
-const inputStyle: React.CSSProperties = {
-  padding: '0.5rem',
-  fontSize: '1rem',
-  borderRadius: 4,
-  border: '1px solid #ccc',
-};
-const btnStyle: React.CSSProperties = {
-  padding: '0.6rem',
-  fontSize: '1rem',
-  cursor: 'pointer',
-  borderRadius: 4,
-  border: 'none',
-  background: '#111',
-  color: '#fff',
-};
-const errStyle: React.CSSProperties = {
-  color: '#c00',
-  fontSize: '0.9rem',
-  background: '#fee',
-  padding: '0.5rem',
-  borderRadius: 4,
-};
