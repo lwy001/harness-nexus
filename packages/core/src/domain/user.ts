@@ -39,14 +39,31 @@ export interface PersonalAccessToken {
   createdAt: string;
 }
 
+/**
+ * How an MCP server connection is dialed (Phase 3.1).
+ *
+ * - `proxy`  — AgentNexus dials the upstream and re-exposes it via `/mcp`.
+ *              Only SSE / Streamable HTTP. Pooled by the registry; `proxied`
+ *              drives whether it actually enters the pool.
+ * - `direct` — the target tool dials the upstream itself. SSE / Streamable
+ *              HTTP **and stdio**. AgentNexus stores the connection + encrypted
+ *              credentials only; it never opens the connection. stdio forces
+ *              this mode, so AgentNexus never spawns a subprocess.
+ */
+export type McpMode = 'proxy' | 'direct';
+
 /** A registered MCP server that this instance consumes (as a client) or serves. */
 export interface McpServer {
   id: string;
   name: string;
   /** Transport used to connect to the upstream MCP server. */
   transport: McpTransport;
-  /** Whether this instance exposes it back out to Agent tools (proxy mode). */
-  proxied: boolean;
+  /**
+   * Whether this instance dials it (proxy) or the tool does (direct). The
+   * registry pools `proxy` rows only; `direct` rows are never dialed by
+   * AgentNexus (the target tool dials them at install time).
+   */
+  mode: McpMode;
   scope: 'global' | 'personal';
   ownerId: string | null;
   createdAt: string;
@@ -58,14 +75,16 @@ export type McpTransport =
   | {
       type: 'sse';
       url: string;
+      /**
+       * Static header values. Credential secrets are referenced as
+       * `${cred:NAME}` placeholders here (and in `url`), resolved to the
+       * decrypted plaintext at connect time (proxy) / install time (direct).
+       */
       headers?: Record<string, string>;
-      /** headerName → Credential id; resolved into live headers at connect time (2.2). */
-      credentialBindings?: Record<string, string>;
     }
   | {
       type: 'streamable-http';
       url: string;
+      /** Same placeholder semantics as `sse`. */
       headers?: Record<string, string>;
-      /** headerName → Credential id; resolved into live headers at connect time (2.2). */
-      credentialBindings?: Record<string, string>;
     };

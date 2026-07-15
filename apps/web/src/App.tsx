@@ -9,7 +9,7 @@ import { DashboardPage } from '@/pages/Dashboard';
 import { UsersPage } from '@/pages/Users';
 import { SettingsPage } from '@/pages/Settings';
 import { CredentialsPage } from '@/pages/Credentials';
-import { McpServersPage } from '@/pages/McpServers';
+import { McpManagementPage } from '@/pages/McpManagement';
 import { ProfilesPage } from '@/pages/Profiles';
 
 export function App() {
@@ -40,7 +40,7 @@ export function App() {
               path="/mcp-servers"
               element={
                 <RequireAuth>
-                  <McpServersPage />
+                  <McpManagementPage />
                 </RequireAuth>
               }
             />

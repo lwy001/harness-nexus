@@ -182,31 +182,34 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 
-## MCP connections & credentials (Phase 2.1)
+## MCP management & credentials (Phase 2.1)
 
 Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
 
 - **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user *into*
   AgentNexus. A `Credential` authenticates AgentNexus *out to* an upstream MCP
   server. Don't conflate them.
+- **A credential is a pure named secret** (`{ name, secret, scope }`) — no `kind`.
+  The name is the handle used in `${cred:NAME}` placeholders.
 - **Credential secrets are AES-256-GCM encrypted at rest**
   (`packages/server/src/infra/crypto.ts`). Key material:
   `CREDENTIAL_ENCRYPTION_KEY` env var, falling back to `JWT_SECRET`. The
   plaintext is **never** returned by the API — responses carry a masked
-  `secretPreview` only. Decryption happens solely at connect time (Phase 2.2).
+  `secretPreview` only. Decryption happens solely at resolve time.
+- **Credential injection is by placeholder, not bindings.** A credential's
+  secret is referenced by name as `${cred:NAME}` inside any transport string
+  field (url, command, args, env values, header values). The
+  `resolvePlaceholders` helper (`packages/shared/src/utils/placeholders.ts`)
+  scans and substitutes at resolve time — proxy mode at connect time (2.2),
+  direct mode at install time (3.3). There is no `credentialBindings` map.
+- **MCP mode (`proxy` | `direct`)** (Phase 3.1): `proxy` — AgentNexus dials;
+  SSE/HTTP only. `direct` — the tool dials; SSE/HTTP/stdio. stdio forces
+  `direct` (`409 STDIO_REQUIRES_DIRECT`). The registry only pools `proxy` rows.
 - **Scope model (same for credentials and mcp-servers):** `global` is readable
   by any authenticated user but admin-only to mutate; `personal` is owner-only
   for all operations. The instance-level `requireAuth`/`requireAdmin` guards are
   the first gate; per-record ownership checks (owner-or-admin) layer on top.
   Not-found returns `404` (not `403`) to avoid leaking existence.
-- **stdio transport is unsupported** in Phase 2.1. The domain `McpTransport`
-  union keeps the variant, but the create/update zod schemas
-  (`packages/shared/src/schemas/mcp.ts`) accept only `sse` and
-  `streamable-http`. stdio may return later behind an admin allowlist + sandbox.
-- **`credentialBindings`** on a transport maps `headerName → credentialId`. The
-  route validates each referenced credential is reachable (global, or
-  personal-owned-by-same-user) before saving; the registry resolves the binding
-  into a live header at connect time.
 - **Profiles** (`docs/design/phase-2.2-registry.md`) bundle MCP servers; an agent
   tool connects via `?profile=<id>` and sees only that profile's aggregated tools.
 
@@ -223,9 +226,10 @@ Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
   (double underscore) to avoid collisions; `callTool` splits the namespace and
   routes to the owning client. Unreachable upstreams are marked `error` and
   skipped — they never block startup or tool listing.
-- **`credentialBindings` are decrypted at connect time**, not at config time.
-  The registry calls `decryptSecret` with the instance's `credentialEncryptionKey`
-  to inject the header values when dialing an upstream.
+- **`${cred:NAME}` placeholders are resolved at connect time**, not at config
+  time. The registry calls `resolvePlaceholders` with a name→plaintext lookup
+  (which decrypts via the instance's `credentialEncryptionKey`) to substitute
+  placeholders in header values and the URL when dialing a proxy upstream.
 - **Proxy mounts** (`packages/server/src/mcp/proxy.ts`): Streamable HTTP at
   `/mcp` and legacy SSE at `/mcp/sse` + `/mcp/sse/messages`. Both are PAT-gated
   via a `preHandler` (the root `onRequest` hook sets `req.user`) and require a

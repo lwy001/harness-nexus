@@ -21,15 +21,16 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 ## Phase 2.1 — MCP connection config & credentials
 
 - ✅ Credential store (AES-256-GCM at rest, masked previews)
-- ✅ MCP client connection CRUD (SSE / Streamable HTTP; stdio unsupported)
-- ✅ `credentialBindings` (header → credential, validated at save)
+- ✅ MCP client connection CRUD (SSE / Streamable HTTP; stdio via direct mode)
+- ✅ `${cred:NAME}` placeholder injection (url/command/args/env/headers)
+- ✅ MCP mode: `proxy` (server dials) / `direct` (tool dials); stdio forces direct
 - ✅ Scope model: global (admin-mutate) / personal (owner-only)
 - PRD: `docs/prd/phase-2.1-credentials.md` · Design: `docs/design/phase-2.1-credentials.md`
 
 ## Phase 2.2 — MCP registry, proxy & profiles
 
 - ✅ `McpRegistry`: pooled upstream connections, namespaced tool aggregation
-- ✅ `credentialBindings` resolved into live headers at connect time
+- ✅ `${cred:NAME}` placeholders resolved into real values at connect time
 - ✅ Proxy re-exposure: `/mcp` (Streamable HTTP) + `/mcp/sse` (SSE)
 - ✅ Profile CRUD + explicit profile routing (`?profile=<id>`, PAT-gated)
 - ✅ Live connection status (`GET /api/mcp-servers/status`) + dashboard mesh
@@ -45,10 +46,16 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 3 — Install pipeline (Pillars #2 & #3)
 
+- ⏳ `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode
+- ⏳ "MCP Connections" → "MCP Management"
+- ⏳ `Profile.target` (single, immutable) + target-narrowed creation form
+- ⏳ Cross-target profile import with compatibility report
 - ⏳ CLI `install` against local manifest
 - ⏳ CLI `install` against running server (via SDK)
-- ⏳ Target writers: claude-code / zcode / hermes
+- ⏳ Target writers: claude-code (+ zcode narrowing) / hermes
 - ⏳ ECC + Superpower import adapters
+- PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md`
+- Research: `docs/research/phase-3-plugin-targets.md` (CC/ZCode share a plugin spec; Hermes is the Python outlier)
 
 ## Phase 4 — Web UI breadth
 

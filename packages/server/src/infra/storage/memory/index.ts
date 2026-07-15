@@ -107,6 +107,9 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     async findById(id) {
       return credentials.get(id) ?? null;
     },
+    async findByName(name) {
+      return [...credentials.values()].find((c) => c.name === name) ?? null;
+    },
     async list(filter) {
       return [...credentials.values()]
         .filter((c) => (filter?.scope ? c.scope === filter.scope : true))
@@ -130,7 +133,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
       return [...mcpServers.values()]
         .filter((s) => (filter?.scope ? s.scope === filter.scope : true))
         .filter((s) => (filter?.ownerId ? s.ownerId === filter.ownerId : true))
-        .filter((s) => (filter?.proxied !== undefined ? s.proxied === filter.proxied : true))
+        .filter((s) => (filter?.mode ? s.mode === filter.mode : true))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async save(server) {

@@ -10,7 +10,6 @@ export function publicUser(u: User): Omit<User, 'passwordHash'> {
 export interface CredentialView {
   id: string;
   name: string;
-  kind?: Credential['kind'];
   secretPreview: string;
   scope: 'global' | 'personal';
   ownerId: string | null;
@@ -23,10 +22,7 @@ export interface CredentialView {
  * returns a recognition-only preview (e.g. `abc…xyz`); see `maskSecret` in
  * infra/crypto.ts. The ciphertext itself never leaves the route handler.
  */
-export function credentialView(
-  c: Credential,
-  secretPreview: string,
-): CredentialView {
-  const { secret: _omit, kind, ...rest } = c;
-  return { ...rest, ...(kind ? { kind } : {}), secretPreview };
+export function credentialView(c: Credential, secretPreview: string): CredentialView {
+  const { secret: _omit, ...rest } = c;
+  return { ...rest, secretPreview };
 }

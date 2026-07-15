@@ -116,12 +116,11 @@ log('\n--- disabled account rejected ---');
 log('\n--- [2.1] user creates a personal credential (201) ---');
 r = await req('POST', '/api/credentials', {
   token: userToken,
-  body: { name: 'alice-key', secret: 'sk_test_abcdef123456', kind: 'api_key', scope: 'personal' },
+  body: { name: 'alice-key', secret: 'sk_test_abcdef123456', scope: 'personal' },
 });
 expect('personal credential created', r.status, 201);
 expect('credential secret masked', r.json.credential.secretPreview.includes('…'), true);
 expect('credential omits secret field', 'secret' in r.json.credential, false);
-const aliceCredId = r.json.credential.id;
 
 log('\n--- [2.1] user cannot create global credential (403) ---');
 r = await req('POST', '/api/credentials', {
@@ -133,7 +132,7 @@ expect('non-admin global credential rejected', r.status, 403);
 log('\n--- [2.1] admin creates a global credential (201) ---');
 r = await req('POST', '/api/credentials', {
   token: adminToken,
-  body: { name: 'shared-token', secret: 'bearer_abcdefghijklmnop', kind: 'bearer', scope: 'global' },
+  body: { name: 'shared-token', secret: 'bearer_abcdefghijklmnop', scope: 'global' },
 });
 expect('admin global credential created', r.status, 201);
 const globalCredId = r.json.credential.id;
@@ -150,7 +149,7 @@ log('\n--- [2.1] admin deletes global credential (200) ---');
 r = await req('DELETE', `/api/credentials/${globalCredId}`, { token: adminToken });
 expect('admin delete global credential', r.status, 200);
 
-log('\n--- [2.1] create mcp-server bound to own credential (201) ---');
+log('\n--- [2.1] create mcp-server with a credential placeholder in headers (201) ---');
 r = await req('POST', '/api/mcp-servers', {
   token: userToken,
   body: {
@@ -158,40 +157,39 @@ r = await req('POST', '/api/mcp-servers', {
     transport: {
       type: 'streamable-http',
       url: 'https://mcp.example.com/mcp',
-      credentialBindings: { Authorization: aliceCredId },
+      headers: { Authorization: 'Bearer ${cred:alice-key}' },
     },
     scope: 'personal',
   },
 });
-expect('mcp-server created with binding', r.status, 201);
+expect('mcp-server created with placeholder in headers', r.status, 201);
 const acmeId = r.json.mcpServer.id;
 
-log('\n--- [2.1] create mcp-server bound to unreachable credential (409) ---');
-// admin-only global credential was deleted; reuse a made-up id → not found
-r = await req('POST', '/api/mcp-servers', {
-  token: userToken,
-  body: {
-    name: 'bad',
-    transport: {
-      type: 'sse',
-      url: 'https://mcp.example.com/sse',
-      credentialBindings: { Authorization: 'cred_nonexistent' },
-    },
-    scope: 'personal',
-  },
-});
-expect('unreachable binding rejected', r.status, 409);
-
-log('\n--- [2.1] stdio transport rejected by validation (400) ---');
+log('\n--- [3.1] stdio + proxy rejected — STDIO_REQUIRES_DIRECT (409) ---');
 r = await req('POST', '/api/mcp-servers', {
   token: userToken,
   body: {
     name: 'stdio-nope',
     transport: { type: 'stdio', command: 'echo' },
+    mode: 'proxy',
     scope: 'personal',
   },
 });
-expect('stdio rejected', r.status, 400);
+expect('stdio + proxy rejected (409)', r.status, 409);
+expect('error code STDIO_REQUIRES_DIRECT', r.json.error, 'STDIO_REQUIRES_DIRECT');
+
+log('\n--- [3.1] stdio + direct accepted (201) ---');
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'local-fs',
+    transport: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'] },
+    mode: 'direct',
+    scope: 'personal',
+  },
+});
+expect('stdio + direct created', r.status, 201);
+expect('mode is direct', r.json.mcpServer.mode, 'direct');
 
 log('\n--- [2.1] non-admin cannot create global mcp-server (403) ---');
 r = await req('POST', '/api/mcp-servers', {
@@ -204,9 +202,9 @@ r = await req('POST', '/api/mcp-servers', {
 });
 expect('non-admin global mcp-server rejected', r.status, 403);
 
-log('\n--- [2.1] list mcp-servers (1 personal) ---');
+log('\n--- [3.1] list mcp-servers (2 personal) ---');
 r = await req('GET', '/api/mcp-servers', { token: userToken });
-expect('user lists own mcp-server', r.json.mcpServers.length, 1);
+expect('user lists own mcp-servers', r.json.mcpServers.length, 2);
 
 log('\n--- [2.1] delete own mcp-server (200) ---');
 r = await req('DELETE', `/api/mcp-servers/${acmeId}`, { token: userToken });

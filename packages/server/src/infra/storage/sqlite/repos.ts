@@ -6,7 +6,6 @@ import type {
   McpServer,
   McpTransport,
   Credential,
-  CredentialKind,
   Profile,
   ProfileEntry,
   ProfileImport,
@@ -50,7 +49,6 @@ interface CredentialRow {
   id: string;
   name: string;
   secret: string;
-  kind: string | null;
   scope: string;
   owner_id: string | null;
   created_at: string;
@@ -60,7 +58,7 @@ interface McpServerRow {
   id: string;
   name: string;
   transport: string;
-  proxied: number;
+  mode: string;
   scope: string;
   owner_id: string | null;
   created_at: string;
@@ -103,24 +101,21 @@ const mapPat = (r: PatRow): PersonalAccessToken => ({
   createdAt: r.created_at,
 });
 
-const mapCredential = (r: CredentialRow): Credential => {
-  const base: Credential = {
-    id: r.id,
-    name: r.name,
-    secret: r.secret,
-    scope: r.scope as Credential['scope'],
-    ownerId: r.owner_id,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-  return r.kind ? { ...base, kind: r.kind as CredentialKind } : base;
-};
+const mapCredential = (r: CredentialRow): Credential => ({
+  id: r.id,
+  name: r.name,
+  secret: r.secret,
+  scope: r.scope as Credential['scope'],
+  ownerId: r.owner_id,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
 
 const mapMcpServer = (r: McpServerRow): McpServer => ({
   id: r.id,
   name: r.name,
   transport: JSON.parse(r.transport) as McpTransport,
-  proxied: r.proxied === 1,
+  mode: r.mode as McpServer['mode'],
   scope: r.scope as McpServer['scope'],
   ownerId: r.owner_id,
   createdAt: r.created_at,
@@ -292,6 +287,11 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
         CredentialRow | undefined;
       return row ? mapCredential(row) : null;
     },
+    async findByName(name) {
+      const row = db.prepare('SELECT * FROM credentials WHERE name = ?').get(name) as
+        CredentialRow | undefined;
+      return row ? mapCredential(row) : null;
+    },
     async list(filter) {
       const where: string[] = [];
       const params: Record<string, unknown> = {};
@@ -311,12 +311,11 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
     },
     async save(credential) {
       db.prepare(
-        `INSERT INTO credentials (id, name, secret, kind, scope, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @secret, @kind, @scope, @owner_id, @created_at, @updated_at)
+        `INSERT INTO credentials (id, name, secret, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @secret, @scope, @owner_id, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            name       = excluded.name,
            secret     = excluded.secret,
-           kind       = excluded.kind,
            scope      = excluded.scope,
            owner_id   = excluded.owner_id,
            updated_at = excluded.updated_at`,
@@ -324,7 +323,6 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
         id: credential.id,
         name: credential.name,
         secret: credential.secret,
-        kind: credential.kind ?? null,
         scope: credential.scope,
         owner_id: credential.ownerId,
         created_at: credential.createdAt,
@@ -357,9 +355,9 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         where.push('owner_id = @ownerId');
         params.ownerId = filter.ownerId;
       }
-      if (filter?.proxied !== undefined) {
-        where.push('proxied = @proxied');
-        params.proxied = filter.proxied ? 1 : 0;
+      if (filter?.mode) {
+        where.push('mode = @mode');
+        params.mode = filter.mode;
       }
       const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const rows = db
@@ -369,12 +367,12 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
     },
     async save(server) {
       db.prepare(
-        `INSERT INTO mcp_servers (id, name, transport, proxied, scope, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @transport, @proxied, @scope, @owner_id, @created_at, @updated_at)
+        `INSERT INTO mcp_servers (id, name, transport, mode, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @transport, @mode, @scope, @owner_id, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            name       = excluded.name,
            transport  = excluded.transport,
-           proxied    = excluded.proxied,
+           mode       = excluded.mode,
            scope      = excluded.scope,
            owner_id   = excluded.owner_id,
            updated_at = excluded.updated_at`,
@@ -382,7 +380,7 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         id: server.id,
         name: server.name,
         transport: JSON.stringify(server.transport),
-        proxied: server.proxied ? 1 : 0,
+        mode: server.mode,
         scope: server.scope,
         owner_id: server.ownerId,
         created_at: server.createdAt,

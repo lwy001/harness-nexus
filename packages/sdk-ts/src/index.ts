@@ -9,8 +9,8 @@ import type {
   Role,
   User,
   McpServer,
+  McpMode,
   McpTransport,
-  CredentialKind,
   Profile,
 } from '@agent-nexus/core';
 
@@ -35,7 +35,6 @@ export interface PatView {
 export interface CredentialView {
   id: string;
   name: string;
-  kind?: CredentialKind;
   secretPreview: string;
   scope: 'global' | 'personal';
   ownerId: string | null;
@@ -46,7 +45,7 @@ export interface CredentialView {
 // McpTransport likewise, so callers can build typed transport objects.
 // Profile is re-exported from core too (its entries reference McpServer ids).
 
-/** Live connection state of a proxied upstream MCP server. */
+/** Live connection state of a proxy-mode upstream MCP server. */
 export interface McpServerStatus {
   id: string;
   name: string;
@@ -188,7 +187,6 @@ export class AgentNexusClient {
   async createCredential(input: {
     name: string;
     secret: string;
-    kind?: CredentialKind;
     scope: 'global' | 'personal';
   }): Promise<{ credential: CredentialView }> {
     return this.request('POST', '/api/credentials', input);
@@ -201,7 +199,7 @@ export class AgentNexusClient {
 
   async updateCredential(
     id: string,
-    input: { name?: string; secret?: string; kind?: CredentialKind },
+    input: { name?: string; secret?: string },
   ): Promise<{ credential: CredentialView }> {
     return this.request('PATCH', `/api/credentials/${id}`, input);
   }
@@ -214,7 +212,7 @@ export class AgentNexusClient {
   async createMcpServer(input: {
     name: string;
     transport: McpTransport;
-    proxied?: boolean;
+    mode?: McpMode;
     scope: 'global' | 'personal';
   }): Promise<{ mcpServer: McpServer }> {
     return this.request('POST', '/api/mcp-servers', input);
@@ -227,7 +225,7 @@ export class AgentNexusClient {
 
   async updateMcpServer(
     id: string,
-    input: { name?: string; transport?: McpTransport; proxied?: boolean },
+    input: { name?: string; transport?: McpTransport; mode?: McpMode },
   ): Promise<{ mcpServer: McpServer }> {
     return this.request('PATCH', `/api/mcp-servers/${id}`, input);
   }
@@ -304,4 +302,4 @@ export class AgentNexusClient {
   }
 }
 
-export type { Role, McpServer, McpTransport, CredentialKind, Profile };
+export type { Role, McpServer, McpMode, McpTransport, Profile };

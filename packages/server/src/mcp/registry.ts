@@ -1,10 +1,10 @@
 /**
  * McpRegistry — the live aggregation layer (Phase 2.2).
  *
- * Owns a pool of MCP `Client` connections to every `proxied: true` upstream
- * `McpServer`, resolves their `credentialBindings` into real headers at connect
- * time, and aggregates their tools under a namespaced key so callers (the proxy)
- * see one unified tool set.
+ * Owns a pool of MCP `Client` connections to every proxy-mode upstream
+ * `McpServer`, resolves `${cred:NAME}` placeholders in their transport into real
+ * values at connect time, and aggregates their tools under a namespaced key so
+ * callers (the proxy) see one unified tool set.
  *
  * Design notes (see docs/design/phase-2.2-registry.md):
  *   - Lazy + pooled: connections are opened on first use / reload and kept.
@@ -20,6 +20,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { FastifyBaseLogger } from 'fastify';
 import type { McpServer, McpTransport, Profile, UnitOfWork } from '@agent-nexus/core';
+import { resolvePlaceholders } from '@agent-nexus/shared';
 import { decryptSecret } from '../infra/crypto.js';
 
 /** Separator between server-name and tool-name in the aggregated namespace. */
@@ -73,7 +74,7 @@ export class McpRegistry {
   }
 
   /**
-   * Re-read the configured proxied servers and reconcile the connection pool:
+   * Re-read the configured proxy-mode servers and reconcile the connection pool:
    * connect new servers, disconnect removed ones, refresh changed ones. Safe to
    * call repeatedly; concurrent calls share the same in-flight promise.
    */
@@ -86,10 +87,12 @@ export class McpRegistry {
   }
 
   private async doReload(): Promise<void> {
-    const configured = await this.uow.mcpServers.list({ proxied: true });
+    // Only proxy-mode servers are pooled — direct-mode servers are dialed by
+    // the target tool at install time, never by AgentNexus.
+    const configured = await this.uow.mcpServers.list({ mode: 'proxy' });
     const configuredById = new Map(configured.map((s) => [s.id, s]));
 
-    // Disconnect + drop servers that are no longer configured/proxied.
+    // Disconnect + drop servers that are no longer configured/proxy.
     for (const [id, conn] of this.pool) {
       if (!configuredById.has(id)) {
         await this.closeConnection(conn);
@@ -97,7 +100,9 @@ export class McpRegistry {
       }
     }
 
-    // Connect new servers; refresh changed ones by reconnecting.
+    // Connect new servers; refresh changed ones by reconnecting. `configured`
+    // already contains only proxy-mode rows (see the list() filter above);
+    // direct-mode servers are dialed by the target tool at install time.
     for (const server of configured) {
       const existing = this.pool.get(server.id);
       if (existing) {
@@ -115,10 +120,6 @@ export class McpRegistry {
 
   /** Establish a single upstream connection (best-effort, non-throwing). */
   private async connectOne(server: McpServer): Promise<void> {
-    if (server.transport.type === 'stdio') {
-      this.log.warn({ name: server.name }, 'stdio transport is unsupported; skipping upstream');
-      return;
-    }
     const transport = server.transport as Extract<McpTransport, { url: string }>;
     const client = new Client(
       { name: 'agent-nexus', version: '0.1.0' },
@@ -129,7 +130,8 @@ export class McpRegistry {
 
     try {
       const headers = await this.resolveHeaders(transport);
-      const upstreamTransport = makeClientTransport(transport, headers);
+      const url = await this.resolveUrl(transport.url);
+      const upstreamTransport = makeClientTransport({ ...transport, url }, headers);
       await client.connect(upstreamTransport as Parameters<Client['connect']>[0]);
       conn.status = 'connected';
       await this.refreshTools(conn);
@@ -163,26 +165,35 @@ export class McpRegistry {
   }
 
   /**
-   * Resolve the headers for an upstream connection: static `transport.headers`
-   * merged with `credentialBindings` (decrypted and injected). Bindings win on
-   * conflict (they're the explicit "attach this secret here" instruction).
+   * Resolve the headers for an upstream connection. Each header value may carry
+   * `${cred:NAME}` placeholders, which are replaced with the decrypted plaintext.
+   * stdio has no headers and returns `{}`.
    */
   private async resolveHeaders(
     transport: McpTransport,
   ): Promise<Record<string, string>> {
     if (transport.type === 'stdio') return {};
-    const headers: Record<string, string> = { ...(transport.headers ?? {}) };
-    const bindings = transport.credentialBindings;
-    if (bindings) {
-      for (const [headerName, credentialId] of Object.entries(bindings)) {
-        const cred = await this.uow.credentials.findById(credentialId);
-        if (!cred) {
-          throw new Error(`credential ${credentialId} not found (bound to ${headerName})`);
-        }
-        headers[headerName] = decryptSecret(cred.secret, this.encryptionKey);
-      }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(transport.headers ?? {})) {
+      out[k] = await this.resolvePlaceholders(v);
     }
-    return headers;
+    return out;
+  }
+
+  /** Resolve `${cred:NAME}` placeholders in the transport URL. */
+  private async resolveUrl(url: string): Promise<string> {
+    return this.resolvePlaceholders(url);
+  }
+
+  /** Resolve placeholders in a string by looking up the credential by name. */
+  private async resolvePlaceholders(input: string): Promise<string> {
+    return resolvePlaceholders(input, async (name) => {
+      const cred = await this.uow.credentials.findByName(name);
+      if (!cred) {
+        throw new Error(`credential "${name}" not found (referenced by placeholder)`);
+      }
+      return decryptSecret(cred.secret, this.encryptionKey);
+    });
   }
 
   /**
@@ -258,7 +269,7 @@ export class McpRegistry {
     return conn.client.callTool({ name: toolName, arguments: args });
   }
 
-  /** Snapshot of every proxied upstream's connection status (for the UI/API). */
+  /** Snapshot of every proxy-mode upstream's connection status (for the UI/API). */
   getStatuses(): McpServerStatus[] {
     return [...this.pool.values()].map((c) => ({
       id: c.server.id,
@@ -326,7 +337,7 @@ function splitNamespace(namespaced: string): [string, string] {
 function sameServer(a: McpServer, b: McpServer): boolean {
   return (
     a.name === b.name &&
-    a.proxied === b.proxied &&
+    a.mode === b.mode &&
     a.scope === b.scope &&
     JSON.stringify(a.transport) === JSON.stringify(b.transport)
   );

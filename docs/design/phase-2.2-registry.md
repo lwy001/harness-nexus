@@ -15,7 +15,7 @@ with a PAT and route through a profile.
 | Piece                  | 2.1 (done)              | 2.2 (this doc)                              |
 | ---------------------- | ----------------------- | ------------------------------------------- |
 | `McpServer` rows       | CRUD + storage          | read by the registry, dialed live           |
-| `credentialBindings`   | stored + validated      | resolved into real headers at connect time   |
+| `${cred:NAME}` placeholders | stored verbatim     | resolved into real values at connect time    |
 | `Profile`              | domain + port only      | CRUD + scope rules + entry validation        |
 | `mountMcpProxy`        | stub (logs + returns)   | mounts `/mcp` + `/mcp/sse`                   |
 | Agent-tool access      | —                       | PAT auth → `?profile=<id>` → aggregated tools |
@@ -32,7 +32,7 @@ with a PAT and route through a profile.
                    (CRUD, UI)                   │
                                                ▼ dialed once, pooled
                                    upstream MCP servers (SSE / Streamable HTTP)
-                                   with credentialBindings resolved into headers
+                                   with ${cred:NAME} placeholders resolved into real values
 ```
 
 The registry owns a pool of live `Client` connections (one per `proxied: true`
@@ -71,13 +71,15 @@ Holds live connections and aggregates capabilities. Key design:
 - **Lazy connect, pooled.** On first use (or `reload()`), a `Client` is created
   for each `proxied: true` `McpServer`, connected via
   `StreamableHTTPClientTransport` or `SSEClientTransport` (per `transport.type`).
-  Connections are kept in a `Map<serverId, LiveConnection>`. stdio servers are
-  skipped (2.1 rejects creating them; the code is defensive anyway).
-- **Credential resolution.** Before connecting, `credentialBindings` are
-  resolved: each `credentialId` → `decryptSecret(credential.secret, key)` →
-  injected into `headers[headerName]`. Static `transport.headers` are merged in
-  (bindings win on conflict). Decryption uses the same `credentialEncryptionKey`
-  decorated on the Fastify instance (2.1).
+  Connections are kept in a `Map<serverId, LiveConnection>`. Only `proxy`-mode
+  servers are pooled; `direct`-mode servers (including all stdio) are never
+  dialed by AgentNexus.
+- **Placeholder resolution.** Before connecting, `${cred:NAME}` placeholders in
+  the transport's header values and URL are resolved: each name →
+  `credentials.findByName(name)` → `decryptSecret(credential.secret, key)` →
+  substituted into the string. Uses `resolvePlaceholders`
+  (`@agent-nexus/shared`) with the same `credentialEncryptionKey` decorated on
+  the Fastify instance (2.1).
 - **Aggregation.** `listTools(filterServerIds?)` merges tools from all (or a
   filtered subset of) upstreams. To avoid name collisions across upstreams, each
   tool is **namespaced** as `<server-name>__<tool-name>` (double underscore).

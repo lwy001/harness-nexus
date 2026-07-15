@@ -15,8 +15,8 @@ see every server.
 ## Solution
 
 A live `McpRegistry` that pools connections to every proxied upstream, resolves
-their `credentialBindings` into real headers, and aggregates their tools under
-namespaced keys. A proxy endpoint (`/mcp` Streamable HTTP + `/mcp/sse` SSE)
+their `${cred:NAME}` placeholders into real values, and aggregates their tools
+under namespaced keys. A proxy endpoint (`/mcp` Streamable HTTP + `/mcp/sse` SSE)
 re-exposes the aggregated surface as a single MCP server that agent tools
 authenticate to with a PAT. **Profiles** let users bundle a chosen set of MCP
 servers; an agent tool connects with `?profile=<id>` and sees only that profile's
@@ -53,9 +53,9 @@ aggregated tools, giving clean isolation.
   `app.mcpRegistry`.
 - **Aggregation is namespaced:** tools surface as `<server-name>__<tool-name>`;
   `callTool` splits the namespace and routes to the owning client.
-- **`credentialBindings` resolved at connect time:** the registry decrypts each
-  bound credential and injects it into the header (bindings win over static
-  `transport.headers`).
+- **`${cred:NAME}` placeholders resolved at connect time:** the registry decrypts
+  each referenced credential (looked up by name) and substitutes the plaintext
+  into the transport's header values and URL.
 - **Best-effort:** an errored upstream is skipped, never fatal. `getStatuses()`
   returns `connecting | connected | error | disconnected`.
 - **Proxy mounts** (`server/src/mcp/proxy.ts`): `/mcp` (Streamable HTTP, with

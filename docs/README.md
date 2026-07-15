@@ -37,6 +37,11 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Research: [`research/phase-2.3-sandbox.md`](./research/phase-2.3-sandbox.md)
 - Design: _to be written before implementation_
 
+### Phase 3 — Install pipeline ⏳
+- Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — how Claude Code, ZCode, and Hermes package extensions, and how a `Profile` maps onto each as a plugin.
+- PRD: [`prd/phase-3-install.md`](./prd/phase-3-install.md)
+- Design: [`design/phase-3-install.md`](./design/phase-3-install.md)
+
 ### Concept notes (design/)
 - [`design/profiles.md`](./design/profiles.md) — the broader profile concept + intended CLI install flow (future).
 - [`design/mcp-proxy-legacy.md`](./design/mcp-proxy-legacy.md) — original proxy concept sketch; superseded by `phase-2.2-registry.md`.

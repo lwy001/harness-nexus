@@ -39,7 +39,6 @@ import {
 import { MoreHorizontalIcon } from 'lucide-react';
 import { AgentNexusError, type CredentialView } from '@agent-nexus/sdk';
 
-type Kind = 'bearer' | 'api_key' | 'basic' | 'custom';
 type Scope = 'global' | 'personal';
 
 export function CredentialsPage() {
@@ -75,8 +74,9 @@ export function CredentialsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Credentials</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Secrets AgentNexus injects when connecting to upstream MCP servers (Bearer tokens, API
-          keys). Secrets are encrypted at rest and never returned after creation.
+          Named secrets referenced by MCP transports via{' '}
+          <code className="font-mono">{'${cred:NAME}'}</code> placeholders. Secrets are encrypted at
+          rest and never returned after creation.
         </p>
       </div>
 
@@ -95,7 +95,7 @@ export function CredentialsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Kind</TableHead>
+                <TableHead>Placeholder</TableHead>
                 <TableHead>Preview</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead className="pr-6 text-right">Actions</TableHead>
@@ -118,8 +118,10 @@ export function CredentialsPage() {
                 items.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="pl-6 font-medium">{c.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c.kind ?? '—'}
+                    <TableCell className="font-mono text-xs">
+                      {'${cred:'}
+                      {c.name}
+                      {'}'}
                     </TableCell>
                     <TableCell className="text-muted-foreground font-mono text-xs tabular-nums">
                       {c.secretPreview}
@@ -174,7 +176,6 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState('');
   const [secret, setSecret] = useState('');
-  const [kind, setKind] = useState<Kind>('bearer');
   const [scope, setScope] = useState<Scope>('personal');
   const [busy, setBusy] = useState(false);
 
@@ -183,7 +184,7 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
     setBusy(true);
     try {
       await withAuthGuard(
-        () => api.createCredential({ name, secret, kind, scope }),
+        () => api.createCredential({ name, secret, scope }),
         logout,
       );
       toast.success('Credential created');
@@ -208,14 +209,14 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="grid gap-2">
               <Label htmlFor="cred-name">Name</Label>
               <Input
                 id="cred-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Acme MCP token"
+                placeholder="e.g. context7-key"
                 autoComplete="off"
                 spellCheck={false}
                 required
@@ -232,20 +233,6 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
                 autoComplete="new-password"
                 spellCheck={false}
               />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cred-kind">Kind</Label>
-              <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
-                <SelectTrigger id="cred-kind">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bearer">bearer</SelectItem>
-                  <SelectItem value="api_key">api_key</SelectItem>
-                  <SelectItem value="basic">basic</SelectItem>
-                  <SelectItem value="custom">custom</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="cred-scope">Scope</Label>

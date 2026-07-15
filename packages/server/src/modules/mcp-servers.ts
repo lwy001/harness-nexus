@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import type { McpServer, McpTransport } from '@agent-nexus/core';
+import type { McpServer, McpMode, McpTransport } from '@agent-nexus/core';
 import {
   AppError,
   createMcpServerSchema,
+  requiresDirect,
   updateMcpServerSchema,
   type CreateMcpServerInput,
   type UpdateMcpServerInput,
@@ -10,9 +11,13 @@ import {
 import { generateId } from '../infra/crypto.js';
 
 /**
- * MCP client connection management — records of upstream MCP servers this
- * instance can connect to. 2.1 stores config only; the registry that dials
- * these connections lands in 2.2.
+ * MCP management — records of MCP servers, each with a `mode` (Phase 3.1):
+ *   proxy  — AgentNexus dials the upstream (SSE / Streamable HTTP) and
+ *            re-exposes it via `/mcp`; pooled by the registry automatically.
+ *   direct — the target tool dials it itself (SSE / HTTP / stdio). AgentNexus
+ *            stores the connection + encrypted credentials only.
+ * stdio forces `direct` (AgentNexus never spawns the subprocess), enforced as
+ * a 409 STDIO_REQUIRES_DIRECT here.
  *
  * Scope rules (see docs/design/phase-2.1-credentials.md) are identical to credentials:
  *   global   — any authenticated user can read; admin only to create/update/delete.
@@ -32,14 +37,14 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
     // McpTransport does not (exactOptionalPropertyTypes). The shapes are identical
     // at runtime, so cast at this validated boundary.
     const transport = input.transport as McpTransport;
-    await assertBindingsAccessible(app, transport, req.user!.id, req.user!.role);
+    assertDirectForTransport(transport, input.mode);
 
     const now = new Date().toISOString();
     const server: McpServer = {
       id: generateId(),
       name: input.name,
       transport,
-      proxied: input.proxied,
+      mode: input.mode,
       scope: input.scope,
       ownerId: input.scope === 'global' ? null : req.user!.id,
       createdAt: now,
@@ -74,15 +79,14 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const transport = (input.transport ?? existing.transport) as McpTransport;
-    if (input.transport) {
-      await assertBindingsAccessible(app, transport, req.user!.id, req.user!.role);
-    }
+    const mode: McpMode = input.mode ?? existing.mode;
+    assertDirectForTransport(transport, mode);
 
     const next: McpServer = {
       ...existing,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.transport !== undefined ? { transport } : {}),
-      ...(input.proxied !== undefined ? { proxied: input.proxied } : {}),
+      ...(input.mode !== undefined ? { mode } : {}),
       updatedAt: new Date().toISOString(),
     };
     await app.uow.mcpServers.save(next);
@@ -103,37 +107,17 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Validate that every credential referenced by a transport's credentialBindings
- * is reachable by the owner: global credentials are reachable by anyone;
- * personal credentials must belong to the same user. stdio transports carry no
- * bindings and are skipped (and are rejected upstream by the zod schema).
+ * Enforce the mode × transport rule: stdio can only run in `direct` mode, since
+ * AgentNexus must never spawn a stdio subprocess (that's the target tool's job).
+ * Throws 409 STDIO_REQUIRES_DIRECT otherwise.
  */
-async function assertBindingsAccessible(
-  app: FastifyInstance,
-  transport: McpTransport,
-  userId: string,
-  role: 'admin' | 'user',
-): Promise<void> {
-  if (transport.type === 'stdio') return; // unreachable via zod; guard anyway.
-  const bindings = transport.credentialBindings;
-  if (!bindings) return;
-  for (const credentialId of Object.values(bindings)) {
-    const cred = await app.uow.credentials.findById(credentialId);
-    if (!cred) {
-      throw new AppError(
-        `Credential ${credentialId} not found`,
-        409,
-        'CREDENTIAL_NOT_ACCESSIBLE',
-      );
-    }
-    const accessible = cred.scope === 'global' || cred.ownerId === userId || role === 'admin';
-    if (!accessible) {
-      throw new AppError(
-        `Credential ${credentialId} is not accessible`,
-        409,
-        'CREDENTIAL_NOT_ACCESSIBLE',
-      );
-    }
+function assertDirectForTransport(transport: McpTransport, mode: McpMode): void {
+  if (requiresDirect(transport) && mode !== 'direct') {
+    throw new AppError(
+      'stdio transport requires direct mode (AgentNexus does not spawn stdio servers)',
+      409,
+      'STDIO_REQUIRES_DIRECT',
+    );
   }
 }
 

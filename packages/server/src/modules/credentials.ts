@@ -11,7 +11,8 @@ import { generateId, encryptSecret, decryptSecret, maskSecret } from '../infra/c
 import { credentialView } from './serialize.js';
 
 /**
- * Credential management — upstream MCP secrets (Bearer tokens, API keys).
+ * Credential management — named secrets referenced by MCP transports via
+ * `${cred:NAME}` placeholders. A credential is a pure name + secret + scope.
  *
  * Scope rules (see docs/design/phase-2.1-credentials.md):
  *   global   — any authenticated user can read; admin only to create/update/delete.
@@ -35,7 +36,6 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       id: generateId(),
       name: input.name,
       secret: encryptSecret(input.secret, key),
-      ...(input.kind ? { kind: input.kind } : {}),
       scope: input.scope,
       ownerId: input.scope === 'global' ? null : req.user!.id,
       createdAt: now,
@@ -70,11 +70,6 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
     const next: Credential = {
       ...existing,
       ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.kind !== undefined
-        ? input.kind
-          ? { kind: input.kind }
-          : {}
-        : {}),
       ...(input.secret !== undefined ? { secret: encryptSecret(input.secret, key) } : {}),
       updatedAt: new Date().toISOString(),
     };

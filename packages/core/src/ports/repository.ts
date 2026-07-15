@@ -72,7 +72,7 @@ export interface McpServerRepository {
   list(filter?: {
     scope?: 'global' | 'personal';
     ownerId?: string;
-    proxied?: boolean;
+    mode?: 'proxy' | 'direct';
   }): Promise<McpServer[]>;
   save(server: McpServer): Promise<McpServer>;
   delete(id: string): Promise<void>;
@@ -80,6 +80,8 @@ export interface McpServerRepository {
 
 export interface CredentialRepository {
   findById(id: string): Promise<Credential | null>;
+  /** Find by name (used to resolve `${cred:NAME}` placeholders). Names are not unique across scopes; returns the first match. */
+  findByName(name: string): Promise<Credential | null>;
   list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<Credential[]>;
   save(credential: Credential): Promise<Credential>;
   delete(id: string): Promise<void>;

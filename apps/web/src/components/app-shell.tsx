@@ -119,7 +119,7 @@ function NavItem({ to, icon, label, end }: NavItemProps) {
 function navItems(isAdmin: boolean): NavItemProps[] {
   const items: NavItemProps[] = [
     { to: '/', icon: <HomeIcon className="size-4" />, label: 'Home', end: true },
-    { to: '/mcp-servers', icon: <ServerIcon className="size-4" />, label: 'MCP servers' },
+    { to: '/mcp-servers', icon: <ServerIcon className="size-4" />, label: 'MCP management' },
     { to: '/profiles', icon: <LayersIcon className="size-4" />, label: 'Profiles' },
     { to: '/credentials', icon: <KeyRoundIcon className="size-4" />, label: 'Credentials' },
   ];
