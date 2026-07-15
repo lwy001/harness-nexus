@@ -1,28 +1,47 @@
 # Roadmap
 
-Phased so each milestone is independently useful. Items marked 🚧 are
-in-progress (skeleton only); ✅ are done; ⏳ are not started.
+Phased so each milestone is independently useful. ✅ done, 🚧 in-progress, ⏳ not
+started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
-## Phase 0 — Foundation (this skeleton)
+## Phase 0 — Foundation
 
 - ✅ Monorepo layout, tooling, configs
-- ✅ Domain model + storage ports
+- ✅ Domain model + storage ports (`UnitOfWork`)
 - ✅ Server boot path (Fastify + storage factory + health routes)
-- ✅ Auth hook (PAT verification) — 🚧 logic skeleton, no JWT yet
 
-## Phase 1 — Core CRUD + storage
+## Phase 1 — Users, roles & authentication
 
-- ⏳ SQLite storage implementation + migrations
-- ⏳ Users / roles / PAT issuance routes
-- ⏳ Resource CRUD (global + personal scope)
-- ⏳ Profile CRUD
-- ⏳ MCP server registration + connection lifecycle
+- ✅ SQLite storage + migrations
+- ✅ Users / roles (admin, user) / registration switch + bootstrap admin
+- ✅ JWT access tokens + PAT (`anpat_…`)
+- ✅ Front- and back-end permission interceptors
+- ✅ Web auth UI (login, register, dashboard, users, settings)
+- PRD: `docs/prd/phase-1-auth.md` · Design: `docs/design/phase-1-auth.md`
 
-## Phase 2 — MCP proxy (Pillar #1)
+## Phase 2.1 — MCP connection config & credentials
 
-- ⏳ `McpRegistry`: aggregate upstream tools/resources/prompts
-- ⏳ Re-expose as streamable-http + SSE
-- ⏳ stdio bridge entry for local tools
+- ✅ Credential store (AES-256-GCM at rest, masked previews)
+- ✅ MCP client connection CRUD (SSE / Streamable HTTP; stdio unsupported)
+- ✅ `credentialBindings` (header → credential, validated at save)
+- ✅ Scope model: global (admin-mutate) / personal (owner-only)
+- PRD: `docs/prd/phase-2.1-credentials.md` · Design: `docs/design/phase-2.1-credentials.md`
+
+## Phase 2.2 — MCP registry, proxy & profiles
+
+- ✅ `McpRegistry`: pooled upstream connections, namespaced tool aggregation
+- ✅ `credentialBindings` resolved into live headers at connect time
+- ✅ Proxy re-exposure: `/mcp` (Streamable HTTP) + `/mcp/sse` (SSE)
+- ✅ Profile CRUD + explicit profile routing (`?profile=<id>`, PAT-gated)
+- ✅ Live connection status (`GET /api/mcp-servers/status`) + dashboard mesh
+- PRD: `docs/prd/phase-2.2-registry.md` · Design: `docs/design/phase-2.2-registry.md`
+
+## Phase 2.3 — Callable-function scripts
+
+- ⏳ Admin-authored JS wrapping vendor APIs as MCP tools, run in a sandbox
+- ⏳ `isolated-vm` executor + host-injected allowlisted `ctx.fetch`
+- ⏳ `ToolSource` abstraction (CallableRegistry alongside McpRegistry)
+- ⏳ Profile entries for callable-functions; management UI
+- PRD: `docs/prd/phase-2.3-callable-functions.md` · Research: `docs/research/phase-2.3-sandbox.md`
 
 ## Phase 3 — Install pipeline (Pillars #2 & #3)
 
@@ -31,19 +50,20 @@ in-progress (skeleton only); ✅ are done; ⏳ are not started.
 - ⏳ Target writers: claude-code / zcode / hermes
 - ⏳ ECC + Superpower import adapters
 
-## Phase 4 — Web UI
+## Phase 4 — Web UI breadth
 
-- ⏳ Login + PAT management
-- ⏳ Resource / profile browsers (global vs personal)
-- ⏳ MCP server config UI
+- ⏳ PAT management UI
+- ⏳ Resource browsers (skills/hooks/rules/sub-agents) — global vs personal
+- ⏳ Callable-function script editor + test-run (with 2.3)
 
-## Phase 5 — ACP bridge (Pillar: remote control)
+## Phase 5 — ACP bridge
 
 - ⏳ `@agent-nexus/acp-bridge` daemon
 - ⏳ Server-side remote push of profiles to a connected tool
 
 ## Phase 6 — Platform features
 
+- ⏳ stdio bridge entry for local tools (behind allowlist + sandbox)
 - ⏳ Chat-tool Channels (route external chats to controlled agents)
 - ⏳ LLM-WIKI knowledge base
 - ⏳ Global memory / notes

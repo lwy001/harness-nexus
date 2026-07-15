@@ -1,4 +1,9 @@
-# MCP Proxy design
+# MCP Proxy design (early concept note)
+
+> ⚠️ **Superseded.** This was the original concept sketch. The implemented design
+> — registry internals, proxy wiring, profile routing — lives in
+> [`phase-2.2-registry.md`](./phase-2.2-registry.md). Kept for historical context
+> only; do not rely on it for current behavior.
 
 Goal: connect to many upstream MCP servers (stdio / SSE / streamable-http) as a
 **client**, aggregate their tools/resources/prompts, and re-expose a single,

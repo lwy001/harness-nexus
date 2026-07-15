@@ -53,7 +53,7 @@ export function patDisplayPrefix(rawToken: string): string {
 // ---- credential secret encryption (AES-256-GCM) ----
 // Used for Credential.secret, which must be reversible (decrypted at connect
 // time to inject into upstream headers). Contrast with PAT hashing (sha256),
-// which is one-way. See docs/phase-2.md "Credential encryption".
+// which is one-way. See docs/design/phase-2.1-credentials.md "Credential encryption".
 
 /** Derive a stable 32-byte AES-256 key from any-length input via sha256. */
 function deriveKey(keyMaterial: string): Buffer {

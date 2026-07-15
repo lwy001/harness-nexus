@@ -14,7 +14,7 @@ import { generateId } from '../infra/crypto.js';
  * instance can connect to. 2.1 stores config only; the registry that dials
  * these connections lands in 2.2.
  *
- * Scope rules (see docs/phase-2.md) are identical to credentials:
+ * Scope rules (see docs/design/phase-2.1-credentials.md) are identical to credentials:
  *   global   — any authenticated user can read; admin only to create/update/delete.
  *   personal — owner only for all operations.
  */

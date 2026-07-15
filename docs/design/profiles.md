@@ -1,4 +1,9 @@
-# Profiles
+# Profiles (concept & install-flow note)
+
+> The implemented Profile model (CRUD, scope rules, profile-routed proxy access)
+> is documented in [`phase-2.2-registry.md`](./phase-2.2-registry.md). This note
+> covers the broader concept (bundling all resource kinds + third-party imports)
+> and the intended CLI install flow, which is still future work.
 
 A **profile** is a named, versioned bundle of resources (MCP servers, skills,
 hooks, sub-agents, rules, commands) plus optional third-party imports (ECC,

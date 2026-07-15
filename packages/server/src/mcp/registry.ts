@@ -6,7 +6,7 @@
  * time, and aggregates their tools under a namespaced key so callers (the proxy)
  * see one unified tool set.
  *
- * Design notes (see docs/phase-2.2.md):
+ * Design notes (see docs/design/phase-2.2-registry.md):
  *   - Lazy + pooled: connections are opened on first use / reload and kept.
  *   - Best-effort: an unreachable upstream is marked `error` and skipped; it
  *     never blocks startup or tool listing for the others.

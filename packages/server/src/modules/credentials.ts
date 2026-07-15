@@ -13,7 +13,7 @@ import { credentialView } from './serialize.js';
 /**
  * Credential management — upstream MCP secrets (Bearer tokens, API keys).
  *
- * Scope rules (see docs/phase-2.md):
+ * Scope rules (see docs/design/phase-2.1-credentials.md):
  *   global   — any authenticated user can read; admin only to create/update/delete.
  *   personal — owner only for all operations.
  */

@@ -8,7 +8,7 @@
  *
  * The `secret` field holds AES-256-GCM ciphertext (see server crypto module);
  * the plaintext is never returned by the API (responses carry a masked
- * preview instead). See docs/phase-2.md.
+ * preview instead). See docs/design/phase-2.1-credentials.md.
  */
 
 export type CredentialKind = 'bearer' | 'api_key' | 'basic' | 'custom';

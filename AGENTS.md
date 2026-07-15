@@ -156,11 +156,11 @@ this before adding screens or components so the look stays consistent.
 When building a new feature pillar (one spanning multiple packages and
 introducing new domain concepts), follow this loop:
 
-1. **Design doc first.** Write or expand a `docs/<topic>.md` covering the data
-   model, API surface, scope/permission rules, and explicit out-of-scope items.
-   Follow the format of `docs/auth.md` / `docs/phase-2.md` / `docs/phase-2.2.md`
-   (title with phase, `> Status:` line, sectioned). Commit it before the
-   implementation.
+1. **Design doc first.** Write or expand a `docs/design/phase-N-<topic>.md`
+   covering the data model, API surface, scope/permission rules, and explicit
+   out-of-scope items (title with phase, `> Status:` line, sectioned). Commit it
+   before the implementation. See `docs/README.md` for the doc-type split
+   (prd / design / research / adr).
 2. **Then implement.** Work inward from the dependency boundary: `core` (domain
    types + ports) → `shared` (zod schemas) → `server` (storage + routes) →
    `sdk-ts` (client methods) → `apps/web` (UI). Build each package before moving
@@ -172,18 +172,19 @@ introducing new domain concepts), follow this loop:
 
 ## Sensitive areas — read docs first
 
-Before touching these, read the linked doc:
+Before touching these, read the linked design doc (`docs/README.md` indexes all):
 
-- **MCP connections & credentials** → `docs/phase-2.md`
-- **MCP registry, proxy & profiles** → `docs/phase-2.2.md`
-- **MCP proxy / registry** → `docs/mcp-proxy.md`
-- **Profile model & install flow** → `docs/profiles.md`
+- **Authentication & roles** → `docs/design/phase-1-auth.md`
+- **MCP connections & credentials** → `docs/design/phase-2.1-credentials.md`
+- **MCP registry, proxy & profiles** → `docs/design/phase-2.2-registry.md`
+- **callable-function scripts (research)** → `docs/research/phase-2.3-sandbox.md`
+- **Profile concept & install flow** → `docs/design/profiles.md`
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 
 ## MCP connections & credentials (Phase 2.1)
 
-Full design in `docs/phase-2.md`. Summary for daily work:
+Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
 
 - **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user *into*
   AgentNexus. A `Credential` authenticates AgentNexus *out to* an upstream MCP
@@ -206,12 +207,12 @@ Full design in `docs/phase-2.md`. Summary for daily work:
   route validates each referenced credential is reachable (global, or
   personal-owned-by-same-user) before saving; the registry resolves the binding
   into a live header at connect time.
-- **Profiles** (`docs/phase-2.2.md`) bundle MCP servers; an agent tool connects
-  via `?profile=<id>` and sees only that profile's aggregated tools.
+- **Profiles** (`docs/design/phase-2.2-registry.md`) bundle MCP servers; an agent
+  tool connects via `?profile=<id>` and sees only that profile's aggregated tools.
 
 ## MCP registry, proxy & profiles (Phase 2.2)
 
-Full design in `docs/phase-2.2.md`. Summary for daily work:
+Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
 
 - **`McpRegistry`** (`packages/server/src/mcp/registry.ts`) owns a pool of live
   `Client` connections to every `proxied: true` upstream. It is built in
@@ -245,7 +246,7 @@ Full design in `docs/phase-2.2.md`. Summary for daily work:
 
 ## Authentication & authorization (permission interceptors)
 
-Full design in `docs/auth.md` — read it before touching auth. Summary for daily work:
+Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
 
 - **Two roles only:** `admin` and `user`. Each user has exactly one role
   (`User.role`, not an array). Branch all access decisions on this field.

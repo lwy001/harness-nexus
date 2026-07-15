@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 /**
  * MCP connection & credential validation schemas — single source of truth for
- * request shapes across server, SDK, and web. See docs/phase-2.md.
+ * request shapes across server, SDK, and web. See docs/design/phase-2.1-credentials.md.
  *
  * These mirror the domain types in @agent-nexus/core; keep them in sync.
  *
  * Note: stdio is deliberately NOT accepted by the create/update schemas even
  * though the domain McpTransport union keeps the variant. stdio is unsupported
- * in Phase 2.1 (see docs/phase-2.md "stdio policy").
+ * in Phase 2.1 (see docs/design/phase-2.1-credentials.md "stdio policy").
  */
 
 const scopeSchema = z.enum(['global', 'personal']);

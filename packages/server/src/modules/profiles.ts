@@ -14,7 +14,7 @@ import { generateId } from '../infra/crypto.js';
  * Profile management — named bundles of MCP servers (and, later, other
  * resources) that Agent tools connect through via `?profile=<id>` on /mcp.
  *
- * Scope rules (see docs/phase-2.2.md) match credentials / mcp-servers:
+ * Scope rules (see docs/design/phase-2.2-registry.md) match credentials / mcp-servers:
  *   global   — any authenticated user can read; admin only to create/update/delete.
  *   personal — owner only for all operations.
  */

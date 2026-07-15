@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * Auth/user validation schemas — the single source of truth for request shapes
- * across server, SDK, and web. See docs/auth.md for the rules.
+ * across server, SDK, and web. See docs/design/phase-1-auth.md for the rules.
  */
 
 const USERNAME_RE = /^[\w.-]{3,32}$/;
