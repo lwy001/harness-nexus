@@ -46,14 +46,12 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 3 — Install pipeline (Pillars #2 & #3)
 
-- ⏳ `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode
-- ⏳ "MCP Connections" → "MCP Management"
-- ⏳ `Profile.target` (single, immutable) + target-narrowed creation form
-- ⏳ Cross-target profile import with compatibility report
-- ⏳ CLI `install` against local manifest
-- ⏳ CLI `install` against running server (via SDK)
-- ⏳ Target writers: claude-code (+ zcode narrowing) / hermes
-- ⏳ ECC + Superpower import adapters
+- ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
+- ⏳ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + hook compatibility matrix
+- ⏳ 3.3 — Claude-Code writer (+ zcode narrowing) + `anx install` (local manifest + SDK) + proxy/direct MCP emission
+- ⏳ 3.4 — Cross-target profile import with compatibility report
+- ⏳ 3.5 — Hermes writer
+- ⏳ 3.6 — ECC + Superpower import adapters
 - PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md`
 - Research: `docs/research/phase-3-plugin-targets.md` (CC/ZCode share a plugin spec; Hermes is the Python outlier)
 
