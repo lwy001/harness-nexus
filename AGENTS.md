@@ -158,8 +158,9 @@ introducing new domain concepts), follow this loop:
 
 1. **Design doc first.** Write or expand a `docs/<topic>.md` covering the data
    model, API surface, scope/permission rules, and explicit out-of-scope items.
-   Follow the format of `docs/auth.md` / `docs/phase-2.md` (title with phase,
-   `> Status:` line, sectioned). Commit it before the implementation.
+   Follow the format of `docs/auth.md` / `docs/phase-2.md` / `docs/phase-2.2.md`
+   (title with phase, `> Status:` line, sectioned). Commit it before the
+   implementation.
 2. **Then implement.** Work inward from the dependency boundary: `core` (domain
    types + ports) → `shared` (zod schemas) → `server` (storage + routes) →
    `sdk-ts` (client methods) → `apps/web` (UI). Build each package before moving
@@ -174,6 +175,7 @@ introducing new domain concepts), follow this loop:
 Before touching these, read the linked doc:
 
 - **MCP connections & credentials** → `docs/phase-2.md`
+- **MCP registry, proxy & profiles** → `docs/phase-2.2.md`
 - **MCP proxy / registry** → `docs/mcp-proxy.md`
 - **Profile model & install flow** → `docs/profiles.md`
 - **Layering & storage contract** → `docs/architecture.md`
@@ -202,11 +204,44 @@ Full design in `docs/phase-2.md`. Summary for daily work:
   `streamable-http`. stdio may return later behind an admin allowlist + sandbox.
 - **`credentialBindings`** on a transport maps `headerName → credentialId`. The
   route validates each referenced credential is reachable (global, or
-  personal-owned-by-same-user) before saving; resolving the binding into a live
-  header happens in 2.2's registry.
-- **Not yet built (2.2+):** live `McpRegistry` aggregation, `mountMcpProxy`
-  re-exposure (Streamable HTTP/SSE), Profile CRUD, PAT+profile routing,
-  callable-function scripts.
+  personal-owned-by-same-user) before saving; the registry resolves the binding
+  into a live header at connect time.
+- **Profiles** (`docs/phase-2.2.md`) bundle MCP servers; an agent tool connects
+  via `?profile=<id>` and sees only that profile's aggregated tools.
+
+## MCP registry, proxy & profiles (Phase 2.2)
+
+Full design in `docs/phase-2.2.md`. Summary for daily work:
+
+- **`McpRegistry`** (`packages/server/src/mcp/registry.ts`) owns a pool of live
+  `Client` connections to every `proxied: true` upstream. It is built in
+  `mountMcpProxy` and decorated on the instance as `app.mcpRegistry`.
+  `reload()` re-reads the config and reconciles the pool; the mcp-servers route
+  handlers call it fire-and-forget after any mutation.
+- **Aggregation is namespaced.** Tools surface as `<server-name>__<tool-name>`
+  (double underscore) to avoid collisions; `callTool` splits the namespace and
+  routes to the owning client. Unreachable upstreams are marked `error` and
+  skipped — they never block startup or tool listing.
+- **`credentialBindings` are decrypted at connect time**, not at config time.
+  The registry calls `decryptSecret` with the instance's `credentialEncryptionKey`
+  to inject the header values when dialing an upstream.
+- **Proxy mounts** (`packages/server/src/mcp/proxy.ts`): Streamable HTTP at
+  `/mcp` and legacy SSE at `/mcp/sse` + `/mcp/sse/messages`. Both are PAT-gated
+  via a `preHandler` (the root `onRequest` hook sets `req.user`) and require a
+  `?profile=<id>` visible to the caller. Raw Node streams are handed to the SDK
+  transport via `reply.hijack()`.
+- **Profile routing is explicit.** `/mcp?profile=<id>` exposes only the MCP
+  servers in that profile's entries (`kind === 'mcp'`, `resourceId` =
+  `McpServer.id` in 2.2). A profile entry the caller can't see →
+  `403 PROFILE_ENTRY_NOT_ACCESSIBLE`.
+- **Status endpoint** `GET /api/mcp-servers/status` returns live
+  `{ id, status }[]` (`connecting | connected | error | disconnected`) from the
+  registry; it drives the Dashboard mesh dots (`online` → `bg-ok`).
+- **Name clash:** the SDK's `McpServer` class is imported as `SdkMcpServer` in
+  `proxy.ts` to avoid colliding with the domain `McpServer` interface.
+- **Not yet built (2.3+):** callable-function scripts, the stdio bridge entry,
+  `kind:key` resource indirection in profile entries, per-PAT profile binding,
+  tool-level authorization.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -248,13 +283,14 @@ without SQLite, also set `STORAGE_DRIVER=memory`.
 
 ## Current status & roadmap
 
-Phase 1 (auth) and Phase 2.1 (MCP connection config + credentials) are
-implemented: users, two roles, JWT + PAT auth, the registration switch, front-
-and back-end interceptors, the SQLite driver (with migrations), the web UI, and
-the encrypted credential store plus MCP client connection CRUD. See
-`docs/roadmap.md` for what remains. Still NOT done: the MCP registry / live
-aggregation / proxy re-exposure (2.2), Profile CRUD + PAT+profile routing (2.2),
-callable-function scripts (2.3), CLI install writers, ECC/Superpower adapters,
-the ACP bridge, Channels, LLM-WIKI, memory/notes. When you add the first real
-logic for a pillar, also add tests (vitest, not yet wired) and update the
-relevant `docs/` file.
+Phase 1 (auth), Phase 2.1 (MCP connection config + credentials), and Phase 2.2
+(MCP registry, proxy & profiles) are implemented: users, two roles, JWT + PAT
+auth, the registration switch, front- and back-end interceptors, the SQLite
+driver (with migrations), the web UI, the encrypted credential store, MCP client
+connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
+HTTP) + `/mcp/sse` proxy with PAT + profile routing, and Profile CRUD. See
+`docs/roadmap.md` for what remains. Still NOT done: callable-function scripts
+(2.3), the stdio bridge entry, CLI install writers, ECC/Superpower adapters, the
+ACP bridge, Channels, LLM-WIKI, memory/notes. When you add the first real logic
+for a pillar, also add tests (vitest, not yet wired) and update the relevant
+`docs/` file.

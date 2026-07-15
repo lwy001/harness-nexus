@@ -82,6 +82,26 @@ CREATE INDEX IF NOT EXISTS idx_mcp_servers_owner ON mcp_servers(owner_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope ON mcp_servers(scope);
     `,
   },
+  {
+    version: 3,
+    description: 'phase 2.2 — profiles table',
+    sql: `
+CREATE TABLE IF NOT EXISTS profiles (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT,
+  version     TEXT NOT NULL DEFAULT '1.0.0',
+  scope       TEXT NOT NULL,
+  owner_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+  entries     TEXT NOT NULL DEFAULT '[]',
+  imports     TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_profiles_owner ON profiles(owner_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_scope ON profiles(scope);
+    `,
+  },
 ] as const;
 
 /**

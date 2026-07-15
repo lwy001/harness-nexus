@@ -33,3 +33,35 @@ export const profileManifestSchema = z.object({
 });
 
 export type ProfileManifest = z.infer<typeof profileManifestSchema>;
+
+// ---- REST request schemas (Phase 2.2) ----
+// These are the shapes the profile CRUD endpoints accept. They are narrower
+// than the manifest: 2.2 only supports MCP-server entries (kind === 'mcp'),
+// where `mcpServerId` is the target McpServer.id directly. The richer
+// kind:key Resource indirection arrives with the Resource module later.
+
+const scopeSchema = z.enum(['global', 'personal']);
+
+export const profileEntryInputSchema = z.object({
+  /** The McpServer.id this entry includes (2.2 maps resourceId → McpServer.id). */
+  mcpServerId: z.string().min(1),
+  pinnedVersion: z.string().optional(),
+});
+
+export const createProfileSchema = z.object({
+  name: z.string().min(1).max(64),
+  description: z.string().max(512).optional(),
+  scope: scopeSchema,
+  entries: z.array(profileEntryInputSchema).default([]),
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().min(1).max(64).optional(),
+  description: z.string().max(512).optional(),
+  entries: z.array(profileEntryInputSchema).optional(),
+});
+
+export type ProfileEntryInput = z.infer<typeof profileEntryInputSchema>;
+export type CreateProfileInput = z.infer<typeof createProfileSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+

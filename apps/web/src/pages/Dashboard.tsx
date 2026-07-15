@@ -2,10 +2,16 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { UsersIcon, SettingsIcon, KeyRoundIcon, ServerIcon, ArrowRightIcon } from 'lucide-react';
+import { UsersIcon, SettingsIcon, KeyRoundIcon, ServerIcon, LayersIcon, ArrowRightIcon } from 'lucide-react';
 import { useAuth, withAuthGuard } from '@/auth';
 import { api } from '@/api';
-import { AgentNexusError, type CredentialView, type McpServer } from '@agent-nexus/sdk';
+import {
+  AgentNexusError,
+  type CredentialView,
+  type McpServer,
+  type McpServerStatus,
+  type Profile,
+} from '@agent-nexus/sdk';
 import { AppShell } from '@/components/app-shell';
 import { MeshTopology } from '@/components/mesh-topology';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,25 +22,33 @@ export function DashboardPage() {
   const isAdmin = user?.role === 'admin';
 
   const [servers, setServers] = useState<McpServer[] | null>(null);
+  const [statuses, setStatuses] = useState<McpServerStatus[] | null>(null);
   const [creds, setCreds] = useState<CredentialView[] | null>(null);
+  const [profiles, setProfiles] = useState<Profile[] | null>(null);
 
-  // Parallel fetch — the two lists are independent, so don't serialize them.
+  // Parallel fetch — the lists are independent, so don't serialize them.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [s, c] = await Promise.all([
+        const [s, st, c, p] = await Promise.all([
           withAuthGuard(() => api.listMcpServers(), logout),
+          withAuthGuard(() => api.listMcpServerStatuses().catch(() => [] as McpServerStatus[]), logout),
           withAuthGuard(() => api.listCredentials(), logout),
+          withAuthGuard(() => api.listProfiles(), logout),
         ]);
         if (cancelled) return;
         setServers(s);
+        setStatuses(st);
         setCreds(c);
+        setProfiles(p);
       } catch (e) {
         if (cancelled) return;
         toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load overview');
         setServers([]);
+        setStatuses([]);
         setCreds([]);
+        setProfiles([]);
       }
     })();
     return () => {
@@ -46,6 +60,7 @@ export function DashboardPage() {
 
   const serverCount = servers?.length ?? 0;
   const credCount = creds?.length ?? 0;
+  const profileCount = profiles?.length ?? 0;
 
   return (
     <AppShell>
@@ -58,7 +73,11 @@ export function DashboardPage() {
             Upstream MCP servers aggregated into one connection for your agent tools.
           </p>
         </div>
-        <MeshTopology servers={servers ?? []} loading={servers === null} />
+        <MeshTopology
+          servers={servers ?? []}
+          loading={servers === null}
+          statuses={statuses ?? undefined}
+        />
       </section>
 
       {/* Compact summary — replaces the old dead-link cards with live counts. */}
@@ -70,6 +89,14 @@ export function DashboardPage() {
           count={serverCount}
           loading={servers === null}
           hint="Upstream connections (SSE · HTTP)"
+        />
+        <SummaryLink
+          to="/profiles"
+          icon={<LayersIcon className="size-4" />}
+          label="Profiles"
+          count={profileCount}
+          loading={profiles === null}
+          hint="Bundles of servers for agent tools"
         />
         <SummaryLink
           to="/credentials"
@@ -124,7 +151,8 @@ export function DashboardPage() {
       </section>
 
       <p className="text-muted-foreground mt-6 text-xs">
-        Profiles (bundling servers for agent tools) and live aggregation arrive in Phase 2.2.
+        Agent tools connect via a PAT and a profile: <code className="font-mono">/mcp?profile=&lt;id&gt;</code>.
+        callable-function scripts (wrapping vendor APIs as MCP tools) arrive in a later phase.
       </p>
     </AppShell>
   );

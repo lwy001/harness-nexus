@@ -6,17 +6,33 @@ import { Button } from '@/components/ui/button';
  * Dashboard signature: a mesh topology of configured upstreams converging on
  * the AgentNexus node.
  *
- * Honesty constraint — live aggregation is Phase 2.2 and not built yet. So
- * every node renders as "configured" (muted) with a steady dot, never a green
- * "online" pulse. The legend says this plainly. When 2.2 lands, swap the dot
- * variant per real connection state; the geometry already supports it.
+ * Each node's dot reflects its real connection state from the live registry
+ * (Phase 2.2): `connected` shows the live `--ok` accent, `error`/`connecting`
+ * show warn, and `disconnected`/unknown show muted. The legend documents the
+ * states so the diagram never lies.
  *
  * Nodes are laid out on the left half of an SVG, fanning into a central hub on
  * the right. Up to 6 named upstreams are drawn directly; beyond that, the
  * overflow is summarized so the diagram never lies by omission.
  */
 
+import type { McpServerStatus } from '@agent-nexus/sdk';
+
 type Upstream = { id: string; name: string };
+
+/** Map a live status to a Dot variant for rendering. */
+function dotVariantFor(
+  id: string,
+  statuses: McpServerStatus[] | undefined,
+): 'configured' | 'pending' | 'online' | 'warn' {
+  if (!statuses) return 'configured';
+  const s = statuses.find((x) => x.id === id);
+  if (!s) return 'configured';
+  if (s.status === 'connected') return 'online';
+  if (s.status === 'connecting') return 'pending';
+  if (s.status === 'error') return 'warn';
+  return 'configured';
+}
 
 const MAX_NAMED = 6;
 // Geometric constants hoisted out of render (static across renders).
@@ -25,9 +41,18 @@ const H = 280;
 const HUB_X = 470;
 const HUB_Y = H / 2;
 
-export function MeshTopology({ servers, loading }: { servers: Upstream[]; loading: boolean }) {
+export function MeshTopology({
+  servers,
+  loading,
+  statuses,
+}: {
+  servers: Upstream[];
+  loading: boolean;
+  statuses?: McpServerStatus[];
+}) {
   const shown = servers.slice(0, MAX_NAMED);
   const overflow = Math.max(0, servers.length - MAX_NAMED);
+  const hasLive = !!statuses;
 
   if (loading) {
     return (
@@ -75,14 +100,22 @@ export function MeshTopology({ servers, loading }: { servers: Upstream[]; loadin
             {servers.length} upstream{servers.length === 1 ? '' : 's'}
           </span>
         </div>
-        {/* Legend — states the honesty constraint up front. */}
+        {/* Legend — documents the live connection states. */}
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-muted-foreground flex items-center gap-1.5">
-            <Dot variant="configured" /> configured
-          </span>
-          <span className="text-muted-foreground/70 flex items-center gap-1.5" title="Live status arrives with aggregation in Phase 2.2">
-            <Dot variant="pending" /> live · 2.2
-          </span>
+          {hasLive ? (
+            <>
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Dot variant="online" /> connected
+              </span>
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Dot variant="warn" /> error
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <Dot variant="configured" /> configured
+            </span>
+          )}
         </div>
       </div>
       <svg
@@ -102,9 +135,10 @@ export function MeshTopology({ servers, loading }: { servers: Upstream[]; loadin
         {/* upstream nodes */}
         {shown.map((s, i) => {
           const y = count === 1 ? HUB_Y : top + i * span;
+          const variant = dotVariantFor(s.id, statuses);
           return (
             <g key={s.id}>
-              <circle cx={70} cy={y} r={5} className="fill-muted-foreground/70" />
+              <circle cx={70} cy={y} r={5} className={nodeFill(variant)} />
               <text
                 x={86}
                 y={y + 1}
@@ -166,14 +200,28 @@ export function MeshTopology({ servers, loading }: { servers: Upstream[]; loadin
   );
 }
 
-/** Status dot. `configured` is the only live variant today; `pending`/`online` await 2.2. */
-function Dot({ variant }: { variant: 'configured' | 'pending' | 'online' }) {
+/**
+ * Status dot for the legend. `configured`/`pending` are muted; `online` carries
+ * the live `--ok` accent; `warn` signals a connection error.
+ */
+function Dot({ variant }: { variant: 'configured' | 'pending' | 'online' | 'warn' }) {
   const cls = {
     configured: 'bg-muted-foreground/70',
     pending: 'bg-muted-foreground/30',
     online: 'bg-ok',
+    warn: 'bg-warn',
   }[variant];
   return <span className={`inline-block size-2 rounded-full ${cls}`} aria-hidden="true" />;
+}
+
+/** SVG fill class for an upstream node circle, matching the Dot semantics. */
+function nodeFill(variant: 'configured' | 'pending' | 'online' | 'warn'): string {
+  return {
+    configured: 'fill-muted-foreground/70',
+    pending: 'fill-muted-foreground/40',
+    online: 'fill-ok',
+    warn: 'fill-warn',
+  }[variant];
 }
 
 function truncate(s: string, n: number): string {

@@ -212,5 +212,80 @@ log('\n--- [2.1] delete own mcp-server (200) ---');
 r = await req('DELETE', `/api/mcp-servers/${acmeId}`, { token: userToken });
 expect('delete own mcp-server', r.status, 200);
 
+// ============================ Phase 2.2: profiles + status ============================
+
+log('\n--- [2.2] create a personal mcp-server to reference in a profile (201) ---');
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 'demo-upstream',
+    transport: { type: 'streamable-http', url: 'https://mcp.example.com/mcp' },
+    scope: 'personal',
+  },
+});
+expect('demo mcp-server created', r.status, 201);
+const demoServerId = r.json.mcpServer.id;
+
+log('\n--- [2.2] create profile referencing an accessible server (201) ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'daily', description: 'my daily bundle', scope: 'personal', entries: [{ mcpServerId: demoServerId }] },
+});
+expect('profile created', r.status, 201);
+expect('profile has 1 entry', r.json.profile.entries.length, 1);
+const profileId = r.json.profile.id;
+
+log('\n--- [2.2] create profile referencing a non-existent server (409) ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'bad', scope: 'personal', entries: [{ mcpServerId: 'mcp_no_such' }] },
+});
+expect('profile with bad entry rejected', r.status, 409);
+
+log('\n--- [2.2] non-admin cannot create global profile (403) ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'g', scope: 'global', entries: [] },
+});
+expect('non-admin global profile rejected', r.status, 403);
+
+log('\n--- [2.2] admin creates a global profile (201) ---');
+r = await req('POST', '/api/profiles', {
+  token: adminToken,
+  body: { name: 'shared', scope: 'global', entries: [] },
+});
+expect('admin global profile created', r.status, 201);
+
+log('\n--- [2.2] list profiles returns personal + global (2) ---');
+r = await req('GET', '/api/profiles', { token: userToken });
+expect('user lists 2 profiles', r.json.profiles.length, 2);
+
+log('\n--- [2.2] get profile detail (200) ---');
+r = await req('GET', `/api/profiles/${profileId}`, { token: userToken });
+expect('profile detail status', r.status, 200);
+expect('profile detail name', r.json.profile.name, 'daily');
+
+log('\n--- [2.2] mcp-servers status endpoint (200) ---');
+r = await req('GET', '/api/mcp-servers/status', { token: userToken });
+expect('status endpoint status', r.status, 200);
+expect('statuses is an array', Array.isArray(r.json.statuses), true);
+
+log('\n--- [2.2] create a fresh PAT for /mcp proxy tests ---');
+r = await req('POST', '/api/pats', { token: userToken, body: { name: 'mcp-proxy' } });
+expect('fresh pat created', r.status, 201);
+const mcpPat = r.json.token;
+
+log('\n--- [2.2] /mcp without profile param (400) ---');
+r = await req('POST', '/mcp', { token: mcpPat });
+expect('mcp without profile rejected', r.status, 400);
+
+log('\n--- [2.2] /mcp without auth (401) ---');
+r = await req('POST', `/mcp?profile=${profileId}`);
+expect('mcp without auth rejected', r.status, 401);
+
+log('\n--- [2.2] delete profile (200) ---');
+r = await req('DELETE', `/api/profiles/${profileId}`, { token: userToken });
+expect('delete profile', r.status, 200);
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

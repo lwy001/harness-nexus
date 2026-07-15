@@ -5,7 +5,14 @@
  * and external scripts. Auth is via a JWT (from login/register) or a PAT
  * (`anpat_…`), sent as `Authorization: Bearer <token>`.
  */
-import type { Role, User, McpServer, McpTransport, CredentialKind } from '@agent-nexus/core';
+import type {
+  Role,
+  User,
+  McpServer,
+  McpTransport,
+  CredentialKind,
+  Profile,
+} from '@agent-nexus/core';
 
 export interface SdkOptions {
   baseUrl: string;
@@ -37,6 +44,21 @@ export interface CredentialView {
 }
 // McpServer is re-exported directly from core (it carries no secret fields).
 // McpTransport likewise, so callers can build typed transport objects.
+// Profile is re-exported from core too (its entries reference McpServer ids).
+
+/** Live connection state of a proxied upstream MCP server. */
+export interface McpServerStatus {
+  id: string;
+  name: string;
+  status: 'connecting' | 'connected' | 'error' | 'disconnected';
+  detail?: string;
+}
+
+/** Input shape for a profile entry (references an McpServer by id). */
+export interface ProfileEntryInput {
+  mcpServerId: string;
+  pinnedVersion?: string;
+}
 
 interface ApiErrorBody {
   error: string;
@@ -214,6 +236,42 @@ export class AgentNexusClient {
     await this.request('DELETE', `/api/mcp-servers/${id}`);
   }
 
+  // ---- mcp server status (live registry) ----
+  async listMcpServerStatuses(): Promise<McpServerStatus[]> {
+    const res = await this.request('GET', '/api/mcp-servers/status');
+    return res.statuses;
+  }
+
+  // ---- profiles ----
+  async createProfile(input: {
+    name: string;
+    description?: string;
+    scope: 'global' | 'personal';
+    entries?: ProfileEntryInput[];
+  }): Promise<{ profile: Profile }> {
+    return this.request('POST', '/api/profiles', input);
+  }
+
+  async listProfiles(): Promise<Profile[]> {
+    const res = await this.request('GET', '/api/profiles');
+    return res.profiles;
+  }
+
+  async getProfile(id: string): Promise<{ profile: Profile }> {
+    return this.request('GET', `/api/profiles/${id}`);
+  }
+
+  async updateProfile(
+    id: string,
+    input: { name?: string; description?: string; entries?: ProfileEntryInput[] },
+  ): Promise<{ profile: Profile }> {
+    return this.request('PATCH', `/api/profiles/${id}`, input);
+  }
+
+  async deleteProfile(id: string): Promise<void> {
+    await this.request('DELETE', `/api/profiles/${id}`);
+  }
+
   // ---- core request helper ----
   private async request(
     method: string,
@@ -246,4 +304,4 @@ export class AgentNexusClient {
   }
 }
 
-export type { Role, McpServer, McpTransport, CredentialKind };
+export type { Role, McpServer, McpTransport, CredentialKind, Profile };

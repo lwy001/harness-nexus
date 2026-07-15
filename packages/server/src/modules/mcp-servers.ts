@@ -46,6 +46,7 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: now,
     };
     await app.uow.mcpServers.save(server);
+    void app.mcpRegistry?.reload();
     return reply.code(201).send({ mcpServer: server });
   });
 
@@ -56,6 +57,12 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
       app.uow.mcpServers.list({ scope: 'global' }),
     ]);
     return { mcpServers: [...personal, ...global] };
+  });
+
+  // ---- GET /api/mcp-servers/status ----
+  // Live connection states from the registry. Drives the Dashboard mesh dots.
+  app.get('/api/mcp-servers/status', guard, async () => {
+    return { statuses: app.mcpRegistry?.getStatuses() ?? [] };
   });
 
   // ---- PATCH /api/mcp-servers/:id ----
@@ -79,6 +86,7 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
     await app.uow.mcpServers.save(next);
+    void app.mcpRegistry?.reload();
     return { mcpServer: next };
   });
 
@@ -89,6 +97,7 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('MCP server not found', 404, 'MCP_SERVER_NOT_FOUND');
     }
     await app.uow.mcpServers.delete(existing.id);
+    void app.mcpRegistry?.reload();
     return { ok: true };
   });
 }

@@ -7,11 +7,15 @@ import type {
   McpTransport,
   Credential,
   CredentialKind,
+  Profile,
+  ProfileEntry,
+  ProfileImport,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
   McpServerRepository,
   CredentialRepository,
+  ProfileRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@agent-nexus/core';
 
@@ -59,6 +63,18 @@ interface McpServerRow {
   proxied: number;
   scope: string;
   owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+interface ProfileRow {
+  id: string;
+  name: string;
+  description: string | null;
+  version: string;
+  scope: string;
+  owner_id: string | null;
+  entries: string;
+  imports: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -110,6 +126,24 @@ const mapMcpServer = (r: McpServerRow): McpServer => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+const mapProfile = (r: ProfileRow): Profile => {
+  const base: Profile = {
+    id: r.id,
+    name: r.name,
+    version: r.version,
+    scope: r.scope as Profile['scope'],
+    ownerId: r.owner_id,
+    entries: JSON.parse(r.entries) as ProfileEntry[],
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+  const decorated: Profile = {
+    ...base,
+    ...(r.description ? { description: r.description } : {}),
+  };
+  return r.imports ? { ...decorated, imports: JSON.parse(r.imports) as ProfileImport[] } : decorated;
+};
 
 // ---- user repository ----
 export function sqliteUserRepository(db: Database): UserRepository {
@@ -358,6 +392,76 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
     },
     async delete(id) {
       db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
+    },
+  };
+}
+
+// ---- profile repository ----
+export function sqliteProfileRepository(db: Database): ProfileRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM profiles WHERE id = ?').get(id) as
+        ProfileRow | undefined;
+      return row ? mapProfile(row) : null;
+    },
+    async findByName(name, scope, ownerId) {
+      const where = ['name = @name', 'scope = @scope'];
+      const params: Record<string, unknown> = { name, scope };
+      if (ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = ownerId;
+      }
+      const row = db
+        .prepare(`SELECT * FROM profiles WHERE ${where.join(' AND ')}`)
+        .get(params) as ProfileRow | undefined;
+      return row ? mapProfile(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, unknown> = {};
+      if (filter?.scope) {
+        where.push('scope = @scope');
+        params.scope = filter.scope;
+      }
+      if (filter?.ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = filter.ownerId;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM profiles ${clause} ORDER BY created_at`)
+        .all(params) as ProfileRow[];
+      return rows.map(mapProfile);
+    },
+    async save(profile) {
+      db.prepare(
+        `INSERT INTO profiles (id, name, description, version, scope, owner_id, entries, imports, created_at, updated_at)
+         VALUES (@id, @name, @description, @version, @scope, @owner_id, @entries, @imports, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           name        = excluded.name,
+           description = excluded.description,
+           version     = excluded.version,
+           scope       = excluded.scope,
+           owner_id    = excluded.owner_id,
+           entries     = excluded.entries,
+           imports     = excluded.imports,
+           updated_at  = excluded.updated_at`,
+      ).run({
+        id: profile.id,
+        name: profile.name,
+        description: profile.description ?? null,
+        version: profile.version,
+        scope: profile.scope,
+        owner_id: profile.ownerId,
+        entries: JSON.stringify(profile.entries),
+        imports: profile.imports ? JSON.stringify(profile.imports) : null,
+        created_at: profile.createdAt,
+        updated_at: profile.updatedAt,
+      });
+      return profile;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
     },
   };
 }

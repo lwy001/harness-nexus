@@ -10,6 +10,7 @@ import { UsersPage } from '@/pages/Users';
 import { SettingsPage } from '@/pages/Settings';
 import { CredentialsPage } from '@/pages/Credentials';
 import { McpServersPage } from '@/pages/McpServers';
+import { ProfilesPage } from '@/pages/Profiles';
 
 export function App() {
   return (
@@ -40,6 +41,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <McpServersPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/profiles"
+              element={
+                <RequireAuth>
+                  <ProfilesPage />
                 </RequireAuth>
               }
             />

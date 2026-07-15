@@ -6,14 +6,16 @@ import type {
   SystemSettings,
   Credential,
   McpServer,
+  Profile,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
   CredentialRepository,
   McpServerRepository,
+  ProfileRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@agent-nexus/core';
-import { memoryResourceProfileStub } from '../stub-repos.js';
+import { memoryResourceStub } from '../stub-repos.js';
 
 /**
  * In-memory storage driver — used by tests and `STORAGE_DRIVER=memory`.
@@ -27,6 +29,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const tokensByHash = new Map<string, string>(); // hash -> id
   const credentials = new Map<string, Credential>();
   const mcpServers = new Map<string, McpServer>();
+  const profiles = new Map<string, Profile>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -139,12 +142,39 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const profileRepo: ProfileRepository = {
+    async findById(id) {
+      return profiles.get(id) ?? null;
+    },
+    async findByName(name, scope, ownerId) {
+      return (
+        [...profiles.values()].find(
+          (p) => p.name === name && p.scope === scope && (scope === 'global' || p.ownerId === ownerId),
+        ) ?? null
+      );
+    },
+    async list(filter) {
+      return [...profiles.values()]
+        .filter((p) => (filter?.scope ? p.scope === filter.scope : true))
+        .filter((p) => (filter?.ownerId ? p.ownerId === filter.ownerId : true))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(profile) {
+      profiles.set(profile.id, profile);
+      return profile;
+    },
+    async delete(id) {
+      profiles.delete(id);
+    },
+  };
+
   return {
-    ...memoryResourceProfileStub(),
+    ...memoryResourceStub(),
     users: userRepo,
     tokens: tokenRepo,
     settings: settingsRepo,
     credentials: credentialRepo,
     mcpServers: mcpServerRepo,
+    profiles: profileRepo,
   };
 }

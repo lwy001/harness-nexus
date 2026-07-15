@@ -1,15 +1,11 @@
-import type {
-  UnitOfWork,
-  ResourceRepository,
-  ProfileRepository,
-} from '@agent-nexus/core';
+import type { UnitOfWork, ResourceRepository } from '@agent-nexus/core';
 
 /**
- * No-op implementations for the aggregates that aren't built yet
- * (resources, profiles). Shared by the SQLite and memory drivers so the
- * UnitOfWork shape stays complete. Replace per-driver as those modules land.
+ * No-op implementation for the `resources` aggregate, which isn't built yet.
+ * Shared by the SQLite and memory drivers so the UnitOfWork shape stays
+ * complete. Replace per-driver when the Resource module lands.
  */
-export function memoryResourceProfileStub(): Pick<UnitOfWork, 'resources' | 'profiles'> {
+export function memoryResourceStub(): Pick<UnitOfWork, 'resources'> {
   const resources: ResourceRepository = {
     findById: async () => null,
     findByKey: async () => null,
@@ -18,13 +14,5 @@ export function memoryResourceProfileStub(): Pick<UnitOfWork, 'resources' | 'pro
     delete: async () => {},
   };
 
-  const profiles: ProfileRepository = {
-    findById: async () => null,
-    findByName: async () => null,
-    list: async () => [],
-    save: async (p) => p,
-    delete: async () => {},
-  };
-
-  return { resources, profiles };
+  return { resources };
 }
