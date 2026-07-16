@@ -1,11 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import type { Resource, ResourceKind } from '@agent-nexus/core';
+import type { Resource, ResourceKind, AgentTarget } from '@agent-nexus/core';
 import {
   AppError,
   createResourceSchema,
   updateResourceSchema,
+  HOOK_EVENTS,
+  HOOK_SUPPORT,
   type CreateResourceInput,
   type UpdateResourceInput,
+  type HookEvent,
 } from '@agent-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 import { resourceView } from './serialize.js';
@@ -33,6 +36,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('Only admins can create global resources', 403, 'FORBIDDEN');
     }
     assertKindAvailable(input.kind);
+    validateHookResource(input.kind, input.targets, input.source as Resource['source']);
 
     const ownerId = input.scope === 'global' ? null : req.user!.id;
     const existing = await app.uow.resources.findByKey(
@@ -158,6 +162,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
       ...(input.labels !== undefined ? { labels: input.labels as Record<string, string> } : {}),
       updatedAt: new Date().toISOString(),
     };
+    validateHookResource(next.kind, next.targets, next.source);
     await app.uow.resources.save(next);
     return { resource: resourceView(next) };
   });
@@ -178,11 +183,82 @@ const AVAILABLE_KINDS: ReadonlySet<ResourceKind> = new Set<ResourceKind>([
   'sub_agent',
   'rule',
   'command',
+  'hook',
 ]);
 
 function assertKindAvailable(kind: ResourceKind): void {
   if (!AVAILABLE_KINDS.has(kind)) {
     throw new AppError(`Resource kind "${kind}" is not available yet`, 409, 'KIND_NOT_AVAILABLE');
+  }
+}
+
+/**
+ * Hook-specific validation (Phase 4.5). A hook resource stores a `hooks.json`
+ * document in `source.inline.content` and is only valid for targets that use the
+ * declarative hooks.json model (CC/ZCode; not Hermes). Event keys in the JSON
+ * must be supported by at least one declared target. See
+ * `docs/research/phase-4.5-hooks.md`.
+ */
+function validateHookResource(
+  kind: ResourceKind,
+  targets: AgentTarget[],
+  source: Resource['source'],
+): void {
+  if (kind !== 'hook') return;
+
+  // Hermes uses a different hook model (Python plugins); reject it as a hook
+  // target rather than silently dropping it.
+  for (const t of targets) {
+    if (HOOK_SUPPORT[t] === null) {
+      throw new AppError(
+        `Target "${t}" does not support declarative hooks.json`,
+        409,
+        'TARGET_NO_DECLARATIVE_HOOKS',
+      );
+    }
+  }
+
+  // Only validate the inline JSON content; other source variants are accepted
+  // as-is (they arrive with later phases).
+  if (source.type !== 'inline') return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source.content);
+  } catch {
+    throw new AppError(
+      'Hook content must be valid JSON (hooks.json shape)',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+  const events = (parsed as { hooks?: Record<string, unknown> })?.hooks;
+  if (!events || typeof events !== 'object') {
+    throw new AppError(
+      'Hook content must be a hooks.json document: { "hooks": { "<Event>": [...] } }',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  const validEvents = new Set<string>(HOOK_EVENTS);
+  const unsupportedByAll: string[] = [];
+  for (const event of Object.keys(events)) {
+    if (!validEvents.has(event)) {
+      unsupportedByAll.push(event);
+      continue;
+    }
+    // Hard error only if NO declared target supports this event.
+    const supportedBySome = targets.some((t) => HOOK_SUPPORT[t]?.has(event as HookEvent));
+    if (!supportedBySome) {
+      unsupportedByAll.push(event);
+    }
+  }
+  if (unsupportedByAll.length > 0) {
+    throw new AppError(
+      `Hook event(s) unsupported by any declared target: ${unsupportedByAll.join(', ')}`,
+      409,
+      'HOOK_EVENT_UNSUPPORTED',
+    );
   }
 }
 

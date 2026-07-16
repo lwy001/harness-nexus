@@ -23,7 +23,8 @@
     "test": "echo \"(test placeholder) add vitest\""
   },
   "dependencies": {
-    "@agent-nexus/core": "workspace:*"
+    "@agent-nexus/core": "workspace:*",
+    "@agent-nexus/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.8.6",

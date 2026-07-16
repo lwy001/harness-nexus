@@ -17,6 +17,7 @@ import type {
   AgentTarget,
   ResourceSource,
 } from '@agent-nexus/core';
+export { HOOK_EVENTS, HOOK_SUPPORT, type HookEvent } from '@agent-nexus/shared';
 
 export interface SdkOptions {
   baseUrl: string;

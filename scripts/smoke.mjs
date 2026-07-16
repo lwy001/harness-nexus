@@ -433,5 +433,91 @@ log('\n--- [4.4] delete command resource (200) ---');
 r = await req('DELETE', `/api/resources/${commandId}`, { token: userToken });
 expect('delete command resource', r.status, 200);
 
+log('\n--- [4.5] create a hook resource (201) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'hook:lint-on-edit',
+    kind: 'hook',
+    name: 'Lint on edit',
+    description: 'Runs the linter after Edit/Write',
+    scope: 'personal',
+    source: {
+      type: 'inline',
+      content: JSON.stringify({
+        hooks: {
+          PostToolUse: [
+            { matcher: 'Edit|Write', hooks: [{ type: 'command', command: './lint.sh' }] },
+          ],
+        },
+      }),
+    },
+    targets: ['claude-code', 'zcode'],
+  },
+});
+expect('hook resource created', r.status, 201);
+expect('resource kind is hook', r.json.resource.kind, 'hook');
+const hookId = r.json.resource.id;
+
+log('\n--- [4.5] hook targeting Hermes rejected (409) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'hook:hermes-nope',
+    kind: 'hook',
+    name: 'nope',
+    scope: 'personal',
+    source: {
+      type: 'inline',
+      content: JSON.stringify({
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'x' }] }] },
+      }),
+    },
+    targets: ['hermes'],
+  },
+});
+expect('hermes hook target rejected', r.status, 409);
+expect('error code TARGET_NO_DECLARATIVE_HOOKS', r.json.error, 'TARGET_NO_DECLARATIVE_HOOKS');
+
+log('\n--- [4.5] hook with event unsupported by all targets rejected (409) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'hook:bad-event',
+    kind: 'hook',
+    name: 'nope',
+    scope: 'personal',
+    source: {
+      type: 'inline',
+      // PreCompact is CC-only; zcode does not support it → unsupported by all
+      // declared targets (zcode only).
+      content: JSON.stringify({
+        hooks: { PreCompact: [{ hooks: [{ type: 'command', command: 'x' }] }] },
+      }),
+    },
+    targets: ['zcode'],
+  },
+});
+expect('unsupported event rejected', r.status, 409);
+expect('error code HOOK_EVENT_UNSUPPORTED', r.json.error, 'HOOK_EVENT_UNSUPPORTED');
+
+log('\n--- [4.5] hook with invalid JSON rejected (400) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'hook:bad-json',
+    kind: 'hook',
+    name: 'nope',
+    scope: 'personal',
+    source: { type: 'inline', content: 'not json{' },
+    targets: ['claude-code'],
+  },
+});
+expect('invalid hook json rejected', r.status, 400);
+
+log('\n--- [4.5] delete hook resource (200) ---');
+r = await req('DELETE', `/api/resources/${hookId}`, { token: userToken });
+expect('delete hook resource', r.status, 200);
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

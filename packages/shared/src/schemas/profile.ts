@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 'mcp', 'command']);
 export const agentTargetSchema = z.enum(['claude-code', 'zcode', 'hermes', 'generic']);
+export type AgentTarget = z.infer<typeof agentTargetSchema>;
 
 export const profileImportSchema = z.object({
   origin: z.enum(['ecc', 'superpower', 'custom']),
@@ -64,4 +65,3 @@ export const updateProfileSchema = z.object({
 export type ProfileEntryInput = z.infer<typeof profileEntryInputSchema>;
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
-

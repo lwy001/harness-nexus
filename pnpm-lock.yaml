@@ -134,6 +134,9 @@ importers:
       '@agent-nexus/core':
         specifier: workspace:*
         version: link:../core
+      '@agent-nexus/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^22.8.6
