@@ -70,9 +70,10 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 - ✅ 4.4 — Command management: slash-command editor (single-file markdown;
   `commands/<name>.md` per target). Mirrors 4.2/4.3 — `AVAILABLE_KINDS` + editor
   variant only.
-- ⏳ 4.5 — Hook management: hook editor (`hooks.json`: event → command map) +
-  event/target support matrix (shared with Phase 3.2). Single-file; needs the
-  matrix.
+- ✅ 4.5 — Hook management: structured event→command editor emitting
+  `hooks.json` + event/target support matrix (`packages/shared/src/hooks.ts`,
+  shared with Phase 3.2). Hermes excluded (different hook model); events
+  validated against the matrix. Research: `docs/research/phase-4.5-hooks.md`
 - ⏳ 4.6 — Skill management (local): **inline skills + multi-file bundles**.
   Adds a new `ResourceSource` `inline-bundle` variant (SKILL.md + `references/`
   - `scripts/`) — 42% of real skills are multi-file. Single-file skills reuse

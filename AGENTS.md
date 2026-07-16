@@ -259,11 +259,10 @@ Full design in `docs/design/phase-4-web-ui.md`. Summary for daily work:
   existence).
 - **Kind availability is gated by a route-layer allowlist**
   (`AVAILABLE_KINDS` in `packages/server/src/modules/resources.ts`), NOT the zod
-  schema. The schema is kind-agnostic on purpose. Only `sub_agent` and `rule`
-  ship today; `command`/`hook`/`skill` return `409 KIND_NOT_AVAILABLE` until
-  their sub-phase (4.4 command → 4.5 hook → 4.6 skill, by difficulty) lands.
-  **To enable a new kind, add it to the allowlist** — no schema/storage change
-  needed.
+  schema. The schema is kind-agnostic on purpose. `sub_agent`, `rule`,
+  `command`, and `hook` ship today; `skill` returns `409 KIND_NOT_AVAILABLE`
+  until 4.6 lands. **To enable a new kind, add it to the allowlist** — no
+  schema/storage change needed.
 - **`kind` and `scope` are immutable post-create** (PATCH → `409
 RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
 - **`key` uniqueness is per (key, scope, owner)**, enforced read-then-write in
@@ -277,6 +276,14 @@ RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
   skills are multi-file) — single-file skills reuse `inline`. The external
   git/tarball/local variants are accepted by the schema but not yet exercised;
   plugin/marketplace references are Phase 7, not 4.6.
+- **Hooks (4.5)** store a `hooks.json` document in `source.inline.content`
+  (event→command map). The **event × target support matrix** lives in
+  `packages/shared/src/hooks.ts` (`HOOK_EVENTS`, `HOOK_SUPPORT`). Hermes is
+  `null` in the matrix (different hook model — Python plugins); a hook targeting
+  Hermes is rejected (`409 TARGET_NO_DECLARATIVE_HOOKS`). An event unsupported by
+  any declared target is rejected (`409 HOOK_EVENT_UNSUPPORTED`). The web editor
+  offers only events supported by the chosen targets. **To add an event or
+  target**, edit the matrix — no other change needed.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -325,12 +332,12 @@ driver (with migrations), the web UI, the encrypted credential store, MCP client
 connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
 HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
 management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
-editors (Phase 4.2–4.4). See `docs/roadmap.md` for what remains. Still NOT done:
-hook/skill-local management (Phase 4.5–4.6, by difficulty; the resource backend's
-kind allowlist gates them — skill 4.6 needs the `inline-bundle` variant),
-external skill references & multi-source hub search (Phase 7, split from 4.6),
-the stdio bridge entry, CLI install writers, ECC/Superpower adapters, the ACP
-bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function
-scripts) is on hold** — not currently planned. When you add the first real logic
-for a pillar, also add tests (vitest, not yet wired) and update the relevant
-`docs/` file.
+editors (Phase 4.2–4.4), and the hook editor + event/target support matrix
+(Phase 4.5). See `docs/roadmap.md` for what remains. Still NOT done: skill-local
+management (Phase 4.6 — needs the `inline-bundle` `ResourceSource` variant for
+multi-file skills), external skill references & multi-source hub search (Phase
+7, split from 4.6), the stdio bridge entry, CLI install writers, ECC/Superpower
+adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3
+(callable-function scripts) is on hold** — not currently planned. When you add
+the first real logic for a pillar, also add tests (vitest, not yet wired) and
+update the relevant `docs/` file.

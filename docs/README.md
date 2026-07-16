@@ -48,11 +48,12 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - PRD: [`prd/phase-3-install.md`](./prd/phase-3-install.md)
 - Design: [`design/phase-3-install.md`](./design/phase-3-install.md)
 
-### Phase 4 — Resource management & PAT UI 🚧 (4.1–4.3 done; 4.4 command / 4.5 hook / 4.6 skill-local next)
+### Phase 4 — Resource management & PAT UI 🚧 (4.1–4.5 done; 4.6 skill-local next)
 
 - PRD: [`prd/phase-4-web-ui.md`](./prd/phase-4-web-ui.md)
 - Design: [`design/phase-4-web-ui.md`](./design/phase-4-web-ui.md)
-- Order by difficulty: command (4.4) → hook (4.5) → skill-local (4.6, needs an `inline-bundle` `ResourceSource` variant for multi-file skills).
+- Research: [`research/phase-4.5-hooks.md`](./research/phase-4.5-hooks.md) — the hook event × target support matrix (CC ~30 events, ZCode 7, Hermes different model); lands in `packages/shared/src/hooks.ts`.
+- 4.6 remaining: needs an `inline-bundle` `ResourceSource` variant for multi-file skills.
 
 ### Phase 5 — ACP bridge ⏳
 

@@ -1,7 +1,7 @@
 # PRD: Phase 4 — Resource management & PAT UI
 
-> Status: 4.1–4.4 implemented; 4.5 (hook) / 4.6 (skill-local) next, by
-> difficulty. External skill references & hub search split to Phase 7. Technical
+> Status: 4.1–4.5 implemented; 4.6 (skill-local) next. External skill references
+> & hub search split to Phase 7. Technical
 > design: `docs/design/phase-4-web-ui.md`.
 
 ## Problem Statement
@@ -62,7 +62,7 @@ Two kinds of work, sequenced by complexity:
 | **4.2** | Sub-agent management     | ✅ done      | **shared Resource backend** (migration, repos, `/api/resources`, schema, SDK) + resource browser + sub-agent editor | nothing    |
 | **4.3** | Rule management          | ✅ done      | rule markdown editor                                                                                                | 4.2        |
 | **4.4** | Command management       | ✅ done      | slash-command editor (single-file `commands/<name>.md`)                                                             | 4.2        |
-| **4.5** | Hook management          | ⏳           | hook editor (`hooks.json`: event → command map) + event/target support matrix                                       | 4.2        |
+| **4.5** | Hook management          | ✅ done      | hook editor (`hooks.json`: event → command map) + event/target support matrix                                       | 4.2        |
 | **4.6** | Skill management (local) | ⏳ (hardest) | inline skills + multi-file bundles (new `inline-bundle` `ResourceSource` variant) + skill editor                    | 4.2        |
 
 > **External skill references & hub search split to Phase 7.** The plugin/
