@@ -37,6 +37,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
     }
     assertKindAvailable(input.kind);
     validateHookResource(input.kind, input.targets, input.source as Resource['source']);
+    validateSkillResource(input.kind, input.source as Resource['source']);
 
     const ownerId = input.scope === 'global' ? null : req.user!.id;
     const existing = await app.uow.resources.findByKey(
@@ -163,6 +164,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
     validateHookResource(next.kind, next.targets, next.source);
+    validateSkillResource(next.kind, next.source);
     await app.uow.resources.save(next);
     return { resource: resourceView(next) };
   });
@@ -184,6 +186,7 @@ const AVAILABLE_KINDS: ReadonlySet<ResourceKind> = new Set<ResourceKind>([
   'rule',
   'command',
   'hook',
+  'skill',
 ]);
 
 function assertKindAvailable(kind: ResourceKind): void {
@@ -259,6 +262,49 @@ function validateHookResource(
       409,
       'HOOK_EVENT_UNSUPPORTED',
     );
+  }
+}
+
+/**
+ * Skill-specific validation (Phase 4.6). A skill may use either `inline`
+ * (single-file SKILL.md as content) or `inline-bundle` (multi-file: a path→content
+ * map whose keys are relative paths and one must be `SKILL.md`). File paths are
+ * validated for safety (no absolute, no `..` traversal, no leading slash) since
+ * the install writer materializes them onto disk.
+ */
+function validateSkillResource(kind: ResourceKind, source: Resource['source']): void {
+  if (kind !== 'skill') return;
+  if (source.type === 'inline') return; // single-file skill: content is the SKILL.md body
+  if (source.type !== 'inline-bundle') {
+    throw new AppError(
+      `A skill source must be 'inline' or 'inline-bundle', got '${source.type}'`,
+      409,
+      'INVALID_SKILL_SOURCE',
+    );
+  }
+
+  const paths = Object.keys(source.files);
+  if (paths.length === 0) {
+    throw new AppError('A skill bundle must contain at least one file', 400, 'VALIDATION_ERROR');
+  }
+  // One key must be exactly SKILL.md (at root).
+  if (!paths.includes('SKILL.md')) {
+    throw new AppError(
+      "A skill bundle must contain a 'SKILL.md' at its root",
+      409,
+      'SKILL_BUNDLE_MISSING_SKILL_MD',
+    );
+  }
+  // Path safety: relative, no traversal, no leading slash — the install writer
+  // joins these onto a target directory.
+  for (const p of paths) {
+    if (p === '' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
+      throw new AppError(
+        `Unsafe file path in skill bundle: "${p}" (must be a relative path with no '..')`,
+        400,
+        'VALIDATION_ERROR',
+      );
+    }
   }
 }
 

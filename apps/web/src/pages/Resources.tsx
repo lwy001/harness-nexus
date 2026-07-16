@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   BoxesIcon,
   PlusIcon,
@@ -85,6 +86,12 @@ const KINDS: { value: ResourceKind; label: string; bodyLabel: string; bodyPlaceh
       label: 'Hook',
       bodyLabel: 'Hooks',
       bodyPlaceholder: '', // hooks use a structured editor, not a textarea
+    },
+    {
+      value: 'skill',
+      label: 'Skill',
+      bodyLabel: 'SKILL.md',
+      bodyPlaceholder: 'A skill is a markdown file with YAML frontmatter…',
     },
   ];
 
@@ -324,9 +331,21 @@ function ResourceEditor({
   const [body, setBody] = useState(
     existing?.source.type === 'inline' ? existing.source.content : '',
   );
+  // For multi-file skills (inline-bundle): a path→content map.
+  const [bundleFiles, setBundleFiles] = useState<Record<string, string>>(
+    existing?.source.type === 'inline-bundle' ? existing.source.files : {},
+  );
   const [busy, setBusy] = useState(false);
 
   const kindMeta = KINDS.find((k) => k.value === kind)!;
+
+  // The source emitted on save. Skills switch between single-file `inline` and
+  // multi-file `inline-bundle` based on whether extra files exist; everything
+  // else is always `inline`.
+  const computedSource: Resource['source'] =
+    kind === 'skill' && Object.keys(bundleFiles).length > 0
+      ? { type: 'inline-bundle', files: { 'SKILL.md': body, ...bundleFiles } }
+      : { type: 'inline', content: body };
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -337,7 +356,7 @@ function ResourceEditor({
         name,
         description: description.trim() === '' ? undefined : description,
         version,
-        source: { type: 'inline' as const, content: body },
+        source: computedSource,
         targets,
       };
       if (isCreate) {
@@ -499,6 +518,10 @@ function ResourceEditor({
               </>
             )}
           </div>
+
+          {kind === 'skill' ? (
+            <SkillBundleEditor files={bundleFiles} setFiles={setBundleFiles} />
+          ) : null}
         </form>
 
         <DialogFooter>
@@ -683,4 +706,136 @@ function serializeHooksJson(entries: HookEntry[]): string {
     });
   }
   return JSON.stringify({ hooks }, null, 2);
+}
+
+/**
+ * Manages the extra files of a multi-file skill (everything besides the main
+ * SKILL.md, which lives in the primary body textarea). Each entry is a
+ * relative path → content pair. When any extra file exists, the editor emits
+ * `source.inline-bundle` instead of `source.inline`. See Phase 4.6 / the 4.4
+ * skill research (~42% of real skills are multi-file).
+ */
+function SkillBundleEditor({
+  files,
+  setFiles,
+}: {
+  files: Record<string, string>;
+  setFiles: (f: Record<string, string>) => void;
+}) {
+  const [newPath, setNewPath] = useState('');
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const paths = Object.keys(files).sort();
+
+  function addFile() {
+    const p = newPath.trim();
+    if (!p) return;
+    if (p === 'SKILL.md' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
+      toast.error('Invalid path (use a relative path, not SKILL.md)');
+      return;
+    }
+    if (files[p] !== undefined) {
+      toast.error(`"${p}" already exists`);
+      return;
+    }
+    setFiles({ ...files, [p]: '' });
+    setActivePath(p);
+    setNewPath('');
+  }
+
+  function removeFile(p: string) {
+    const next = { ...files };
+    delete next[p];
+    setFiles(next);
+    if (activePath === p) setActivePath(null);
+  }
+
+  function updateContent(p: string, content: string) {
+    setFiles({ ...files, [p]: content });
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between">
+        <Label>Extra files (multi-file skill)</Label>
+        <span className="text-muted-foreground text-xs">
+          {paths.length === 0
+            ? 'single-file (SKILL.md only)'
+            : `${paths.length} extra file${paths.length > 1 ? 's' : ''}`}
+        </span>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Add supporting files like <code className="font-mono">references/foo.md</code> or{' '}
+        <code className="font-mono">scripts/run.sh</code>. Leave empty for a single-file skill.
+      </p>
+
+      {paths.length > 0 ? (
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {/* File list */}
+          <div className="bg-muted/40 flex flex-col rounded-md border p-2 sm:w-56 sm:shrink-0">
+            {paths.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setActivePath(p)}
+                className={cn(
+                  'flex items-center justify-between rounded px-2 py-1.5 text-left font-mono text-xs transition-colors',
+                  activePath === p ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60',
+                )}
+              >
+                <span className="truncate">{p}</span>
+                <TrashIcon
+                  className="text-muted-foreground hover:text-destructive size-3.5 shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeFile(p);
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+          {/* Active file editor */}
+          {activePath ? (
+            <Textarea
+              key={activePath}
+              value={files[activePath]}
+              onChange={(e) => updateContent(activePath, e.target.value)}
+              placeholder={`Content of ${activePath}`}
+              spellCheck={false}
+              className="min-h-48 flex-1 font-mono text-xs"
+            />
+          ) : (
+            <div className="text-muted-foreground flex flex-1 items-center justify-center rounded-md border border-dashed py-8 text-sm">
+              Select a file to edit
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2">
+        <Input
+          value={newPath}
+          onChange={(e) => setNewPath(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addFile();
+            }
+          }}
+          placeholder="references/notes.md"
+          spellCheck={false}
+          className="font-mono text-xs"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5 shrink-0"
+          onClick={addFile}
+        >
+          <PlusIcon className="size-4" />
+          Add file
+        </Button>
+      </div>
+    </div>
+  );
 }

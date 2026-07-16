@@ -47,4 +47,5 @@ export type ResourceSource =
   | { type: 'git'; url: string; ref?: string; path?: string }
   | { type: 'tarball'; url: string; checksum?: string }
   | { type: 'local'; path: string }
-  | { type: 'inline'; content: string };
+  | { type: 'inline'; content: string }
+  | { type: 'inline-bundle'; files: Record<string, string> };

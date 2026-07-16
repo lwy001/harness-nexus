@@ -19,7 +19,12 @@ import { resourceKindSchema, agentTargetSchema } from './profile.js';
 
 const scopeSchema = z.enum(['global', 'personal']);
 
-/** Where a resource's bytes live. 4.2/4.3 editors only ever emit `inline`. */
+/**
+ * Where a resource's bytes live. The markdown editors (sub-agent/rule/command)
+ * emit `inline`; the multi-file skill editor (4.6) emits `inline-bundle`. The
+ * external-source variants (git/tarball/local) are accepted but arrive with
+ * Phase 7.
+ */
 const resourceSourceSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('git'),
@@ -34,6 +39,10 @@ const resourceSourceSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('local'), path: z.string().min(1) }),
   z.object({ type: z.literal('inline'), content: z.string() }),
+  z.object({
+    type: z.literal('inline-bundle'),
+    files: z.record(z.string(), z.string()),
+  }),
 ]);
 
 export const createResourceSchema = z.object({

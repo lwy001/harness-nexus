@@ -371,18 +371,20 @@ r = await req('POST', '/api/resources', {
 expect('duplicate key rejected', r.status, 409);
 expect('error code RESOURCE_KEY_TAKEN', r.json.error, 'RESOURCE_KEY_TAKEN');
 
-log('\n--- [4.2] kind skill not available yet (409) ---');
+log('\n--- [4.2] kind mcp not available as a resource (409) ---');
+// 'mcp' is a ResourceKind but MCP servers are managed separately (/api/mcp-servers),
+// so it is not in the resource AVAILABLE_KINDS.
 r = await req('POST', '/api/resources', {
   token: userToken,
   body: {
-    key: 'skill:future',
-    kind: 'skill',
+    key: 'mcp:future',
+    kind: 'mcp',
     name: 'future',
     scope: 'personal',
     source: { type: 'inline', content: 'x' },
   },
 });
-expect('skill kind rejected', r.status, 409);
+expect('mcp kind rejected', r.status, 409);
 expect('error code KIND_NOT_AVAILABLE', r.json.error, 'KIND_NOT_AVAILABLE');
 
 log('\n--- [4.2] PATCH update own resource (200) ---');
@@ -518,6 +520,100 @@ expect('invalid hook json rejected', r.status, 400);
 log('\n--- [4.5] delete hook resource (200) ---');
 r = await req('DELETE', `/api/resources/${hookId}`, { token: userToken });
 expect('delete hook resource', r.status, 200);
+
+log('\n--- [4.6] create a single-file skill (inline) (201) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:hello',
+    kind: 'skill',
+    name: 'Hello skill',
+    scope: 'personal',
+    source: { type: 'inline', content: '---\nname: hello\ndescription: Says hello\n---\n# Hello' },
+    targets: ['claude-code'],
+  },
+});
+expect('single-file skill created', r.status, 201);
+expect('resource kind is skill', r.json.resource.kind, 'skill');
+const skillSingleId = r.json.resource.id;
+
+log('\n--- [4.6] create a multi-file skill (inline-bundle) (201) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:gdrive',
+    kind: 'skill',
+    name: 'Google Drive skill',
+    scope: 'personal',
+    source: {
+      type: 'inline-bundle',
+      files: {
+        'SKILL.md': '---\nname: gdrive\ndescription: Drive access\n---\n# GDrive',
+        'references/search-syntax.md': '# Search syntax',
+        'scripts/list.py': 'print("list")',
+      },
+    },
+    targets: ['claude-code', 'zcode'],
+  },
+});
+expect('multi-file skill created', r.status, 201);
+expect('skill source is inline-bundle', r.json.resource.source.type, 'inline-bundle');
+expect('skill bundle has 3 files', Object.keys(r.json.resource.source.files).length, 3);
+const skillBundleId = r.json.resource.id;
+
+log('\n--- [4.6] bundle missing SKILL.md rejected (409) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:no-md',
+    kind: 'skill',
+    name: 'nope',
+    scope: 'personal',
+    source: { type: 'inline-bundle', files: { 'references/x.md': '# x' } },
+    targets: ['claude-code'],
+  },
+});
+expect('bundle missing SKILL.md rejected', r.status, 409);
+expect('error code SKILL_BUNDLE_MISSING_SKILL_MD', r.json.error, 'SKILL_BUNDLE_MISSING_SKILL_MD');
+
+log('\n--- [4.6] bundle with path traversal rejected (400) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:traversal',
+    kind: 'skill',
+    name: 'nope',
+    scope: 'personal',
+    source: { type: 'inline-bundle', files: { 'SKILL.md': 'x', '../escape.md': 'evil' } },
+    targets: ['claude-code'],
+  },
+});
+expect('bundle path traversal rejected', r.status, 400);
+
+log('\n--- [4.6] skill with git source rejected (409 INVALID_SKILL_SOURCE) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:git-nope',
+    kind: 'skill',
+    name: 'nope',
+    scope: 'personal',
+    source: { type: 'git', url: 'https://example.com/repo' },
+    targets: ['claude-code'],
+  },
+});
+expect('skill git source rejected', r.status, 409);
+expect('error code INVALID_SKILL_SOURCE', r.json.error, 'INVALID_SKILL_SOURCE');
+
+log('\n--- [4.6] filter by kind=skill (2) ---');
+r = await req('GET', '/api/resources?kind=skill', { token: userToken });
+expect('skill filter returns 2', r.json.resources.length, 2);
+
+log('\n--- [4.6] delete both skills (200) ---');
+r = await req('DELETE', `/api/resources/${skillSingleId}`, { token: userToken });
+expect('delete single-file skill', r.status, 200);
+r = await req('DELETE', `/api/resources/${skillBundleId}`, { token: userToken });
+expect('delete multi-file skill', r.status, 200);
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);
