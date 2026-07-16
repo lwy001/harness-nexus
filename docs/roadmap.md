@@ -74,10 +74,10 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
   `hooks.json` + event/target support matrix (`packages/shared/src/hooks.ts`,
   shared with Phase 3.2). Hermes excluded (different hook model); events
   validated against the matrix. Research: `docs/research/phase-4.5-hooks.md`
-- ⏳ 4.6 — Skill management (local): **inline skills + multi-file bundles**.
-  Adds a new `ResourceSource` `inline-bundle` variant (SKILL.md + `references/`
-  - `scripts/`) — 42% of real skills are multi-file. Single-file skills reuse
-    the existing `inline` variant.
+- ✅ 4.6 — Skill management (local): **inline skills + multi-file bundles**.
+  New `ResourceSource` `inline-bundle` variant (SKILL.md + `references/` +
+  `scripts/`; ~42% of real skills are multi-file). Single-file skills reuse
+  `inline`. External references / hub search are Phase 7.
 - PRD: `docs/prd/phase-4-web-ui.md` · Design: `docs/design/phase-4-web-ui.md`
 - Order: **by difficulty** — command (4.4) → hook (4.5) → skill (4.6). External
   skill references / hub search are split out into Phase 7.

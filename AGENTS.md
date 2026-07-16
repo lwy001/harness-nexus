@@ -260,9 +260,10 @@ Full design in `docs/design/phase-4-web-ui.md`. Summary for daily work:
 - **Kind availability is gated by a route-layer allowlist**
   (`AVAILABLE_KINDS` in `packages/server/src/modules/resources.ts`), NOT the zod
   schema. The schema is kind-agnostic on purpose. `sub_agent`, `rule`,
-  `command`, and `hook` ship today; `skill` returns `409 KIND_NOT_AVAILABLE`
-  until 4.6 lands. **To enable a new kind, add it to the allowlist** — no
-  schema/storage change needed.
+  `command`, `hook`, and `skill` all ship; only `mcp` returns `409
+KIND_NOT_AVAILABLE` (MCP servers are managed separately via `/api/mcp-servers`).
+  **To enable a new kind, add it to the allowlist** — no schema/storage change
+  needed.
 - **`kind` and `scope` are immutable post-create** (PATCH → `409
 RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
 - **`key` uniqueness is per (key, scope, owner)**, enforced read-then-write in
@@ -273,9 +274,11 @@ RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
   (markdown) only. `command` (4.4) and `hook` (4.5) will also be single-file
   inline. **`skill` (4.6) needs a new `inline-bundle` `ResourceSource` variant**
   for multi-file skills (SKILL.md + `references/` + `scripts/`; ~42% of real
-  skills are multi-file) — single-file skills reuse `inline`. The external
-  git/tarball/local variants are accepted by the schema but not yet exercised;
-  plugin/marketplace references are Phase 7, not 4.6.
+  skills are multi-file) — single-file skills reuse `inline`. A bundle must
+  contain `SKILL.md` at root (`409 SKILL_BUNDLE_MISSING_SKILL_MD`) and paths are
+  validated for traversal safety (`400`). The external git/tarball/local variants
+  are accepted by the schema but not yet exercised by an editor;
+  plugin/marketplace references are Phase 7.
 - **Hooks (4.5)** store a `hooks.json` document in `source.inline.content`
   (event→command map). The **event × target support matrix** lives in
   `packages/shared/src/hooks.ts` (`HOOK_EVENTS`, `HOOK_SUPPORT`). Hermes is
@@ -332,12 +335,11 @@ driver (with migrations), the web UI, the encrypted credential store, MCP client
 connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
 HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
 management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
-editors (Phase 4.2–4.4), and the hook editor + event/target support matrix
-(Phase 4.5). See `docs/roadmap.md` for what remains. Still NOT done: skill-local
-management (Phase 4.6 — needs the `inline-bundle` `ResourceSource` variant for
-multi-file skills), external skill references & multi-source hub search (Phase
-7, split from 4.6), the stdio bridge entry, CLI install writers, ECC/Superpower
-adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3
-(callable-function scripts) is on hold** — not currently planned. When you add
-the first real logic for a pillar, also add tests (vitest, not yet wired) and
-update the relevant `docs/` file.
+editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
+4.5), and the skill editor with multi-file bundles (Phase 4.6 — Phase 4
+complete). See `docs/roadmap.md` for what remains. Still NOT done: external
+skill references & multi-source hub search (Phase 7, split from 4.6), the stdio
+bridge entry, CLI install writers, ECC/Superpower adapters, the ACP bridge,
+Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is on
+hold** — not currently planned. When you add the first real logic for a pillar,
+also add tests (vitest, not yet wired) and update the relevant `docs/` file.
