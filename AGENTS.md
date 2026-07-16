@@ -111,7 +111,7 @@ To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server
 The `apps/web` UI follows a deliberate system, not stock shadcn defaults. Read
 this before adding screens or components so the look stays consistent.
 
-- **Concept.** The interface is a *signal console*. Color encodes connection
+- **Concept.** The interface is a _signal console_. Color encodes connection
   state only; everything else is a disciplined cool neutral. The single accent
   — `--signal` (cyan) — marks what is live: links, focus, the brand mark, and
   (once Phase 2.2 ships) online connections. Spend that accent in one place per
@@ -127,10 +127,10 @@ this before adding screens or components so the look stays consistent.
   outbound requests for assets. Use the `.nums` helper or `tabular-nums` for any
   column of figures or monospaced protocol strings.
 - **Brand.** The mark, wordmark, and favicon are inline SVG (`components/
-  brand-mark.tsx`, `public/favicon.svg`) encoding the thesis (upstreams
+brand-mark.tsx`, `public/favicon.svg`) encoding the thesis (upstreams
   converging on a nexus node). Reuse `<Brand>`; don't introduce a raster logo.
 - **Honesty over decoration.** The Dashboard mesh topology (`components/
-  mesh-topology.tsx`) renders upstreams as "configured" (muted), **never** a
+mesh-topology.tsx`) renders upstreams as "configured" (muted), **never** a
   green "online" dot — live aggregation is Phase 2.2 and faking status would
   mislead. When 2.2 lands, swap the `Dot` variant per real state; the geometry
   already supports it.
@@ -186,8 +186,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 
 Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
 
-- **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user *into*
-  AgentNexus. A `Credential` authenticates AgentNexus *out to* an upstream MCP
+- **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user _into_
+  AgentNexus. A `Credential` authenticates AgentNexus _out to_ an upstream MCP
   server. Don't conflate them.
 - **A credential is a pure named secret** (`{ name, secret, scope }`) — no `kind`.
   The name is the handle used in `${cred:NAME}` placeholders.
@@ -245,8 +245,38 @@ Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
 - **Name clash:** the SDK's `McpServer` class is imported as `SdkMcpServer` in
   `proxy.ts` to avoid colliding with the domain `McpServer` interface.
 - **Not yet built (2.3+):** callable-function scripts, the stdio bridge entry,
-  `kind:key` resource indirection in profile entries, per-PAT profile binding,
-  tool-level authorization.
+  per-PAT profile binding, tool-level authorization.
+
+## Resource management (Phase 4.2–4.3)
+
+Full design in `docs/design/phase-4-web-ui.md`. Summary for daily work:
+
+- **The shared Resource backend is built** (Phase 4.2): a single `resources`
+  table with a `kind` discriminator, real `ResourceRepository` impls in both
+  SQLite and memory drivers (the old `memoryResourceStub` is deleted), and
+  `/api/resources` CRUD. Scope model is identical to credentials & mcp-servers
+  (global admin-mutate, personal owner-only, 404 not-found to avoid leaking
+  existence).
+- **Kind availability is gated by a route-layer allowlist**
+  (`AVAILABLE_KINDS` in `packages/server/src/modules/resources.ts`), NOT the zod
+  schema. The schema is kind-agnostic on purpose. Only `sub_agent` and `rule`
+  ship today; `command`/`hook`/`skill` return `409 KIND_NOT_AVAILABLE` until
+  their sub-phase (4.4 command → 4.5 hook → 4.6 skill, by difficulty) lands.
+  **To enable a new kind, add it to the allowlist** — no schema/storage change
+  needed.
+- **`kind` and `scope` are immutable post-create** (PATCH → `409
+RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
+- **`key` uniqueness is per (key, scope, owner)**, enforced read-then-write in
+  the route (`409 RESOURCE_KEY_TAKEN`), not a DB constraint (avoids a composite
+  unique index over nullable `owner_id`). The `key` is the `kind:key` handle
+  profiles reference.
+- **Sub-agent/rule editors produce `source: { type: 'inline', content }`**
+  (markdown) only. `command` (4.4) and `hook` (4.5) will also be single-file
+  inline. **`skill` (4.6) needs a new `inline-bundle` `ResourceSource` variant**
+  for multi-file skills (SKILL.md + `references/` + `scripts/`; ~42% of real
+  skills are multi-file) — single-file skills reuse `inline`. The external
+  git/tarball/local variants are accepted by the schema but not yet exercised;
+  plugin/marketplace references are Phase 7, not 4.6.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -293,9 +323,14 @@ Phase 1 (auth), Phase 2.1 (MCP connection config + credentials), and Phase 2.2
 auth, the registration switch, front- and back-end interceptors, the SQLite
 driver (with migrations), the web UI, the encrypted credential store, MCP client
 connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
-HTTP) + `/mcp/sse` proxy with PAT + profile routing, and Profile CRUD. See
-`docs/roadmap.md` for what remains. Still NOT done: callable-function scripts
-(2.3), the stdio bridge entry, CLI install writers, ECC/Superpower adapters, the
-ACP bridge, Channels, LLM-WIKI, memory/notes. When you add the first real logic
+HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
+management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
+editors (Phase 4.2–4.4). See `docs/roadmap.md` for what remains. Still NOT done:
+hook/skill-local management (Phase 4.5–4.6, by difficulty; the resource backend's
+kind allowlist gates them — skill 4.6 needs the `inline-bundle` variant),
+external skill references & multi-source hub search (Phase 7, split from 4.6),
+the stdio bridge entry, CLI install writers, ECC/Superpower adapters, the ACP
+bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function
+scripts) is on hold** — not currently planned. When you add the first real logic
 for a pillar, also add tests (vitest, not yet wired) and update the relevant
 `docs/` file.
