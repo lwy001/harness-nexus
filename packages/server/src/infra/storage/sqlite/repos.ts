@@ -9,12 +9,16 @@ import type {
   Profile,
   ProfileEntry,
   ProfileImport,
+  Resource,
+  ResourceSource,
+  AgentTarget,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
   McpServerRepository,
   CredentialRepository,
   ProfileRepository,
+  ResourceRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@agent-nexus/core';
 
@@ -73,6 +77,21 @@ interface ProfileRow {
   owner_id: string | null;
   entries: string;
   imports: string | null;
+  created_at: string;
+  updated_at: string;
+}
+interface ResourceRow {
+  id: string;
+  key: string;
+  kind: string;
+  name: string;
+  description: string | null;
+  version: string;
+  source: string;
+  scope: string;
+  owner_id: string | null;
+  targets: string;
+  labels: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,7 +156,32 @@ const mapProfile = (r: ProfileRow): Profile => {
     ...base,
     ...(r.description ? { description: r.description } : {}),
   };
-  return r.imports ? { ...decorated, imports: JSON.parse(r.imports) as ProfileImport[] } : decorated;
+  return r.imports
+    ? { ...decorated, imports: JSON.parse(r.imports) as ProfileImport[] }
+    : decorated;
+};
+
+const mapResource = (r: ResourceRow): Resource => {
+  const base: Resource = {
+    id: r.id,
+    key: r.key,
+    kind: r.kind as Resource['kind'],
+    name: r.name,
+    version: r.version,
+    source: JSON.parse(r.source) as ResourceSource,
+    scope: r.scope as Resource['scope'],
+    ownerId: r.owner_id,
+    targets: JSON.parse(r.targets) as AgentTarget[],
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+  const decorated: Resource = {
+    ...base,
+    ...(r.description ? { description: r.description } : {}),
+  };
+  return r.labels
+    ? { ...decorated, labels: JSON.parse(r.labels) as Record<string, string> }
+    : decorated;
 };
 
 // ---- user repository ----
@@ -409,9 +453,8 @@ export function sqliteProfileRepository(db: Database): ProfileRepository {
         where.push('owner_id = @ownerId');
         params.ownerId = ownerId;
       }
-      const row = db
-        .prepare(`SELECT * FROM profiles WHERE ${where.join(' AND ')}`)
-        .get(params) as ProfileRow | undefined;
+      const row = db.prepare(`SELECT * FROM profiles WHERE ${where.join(' AND ')}`).get(params) as
+        ProfileRow | undefined;
       return row ? mapProfile(row) : null;
     },
     async list(filter) {
@@ -460,6 +503,94 @@ export function sqliteProfileRepository(db: Database): ProfileRepository {
     },
     async delete(id) {
       db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+    },
+  };
+}
+
+// ---- resource repository ----
+export function sqliteResourceRepository(db: Database): ResourceRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM resources WHERE id = ?').get(id) as
+        ResourceRow | undefined;
+      return row ? mapResource(row) : null;
+    },
+    async findByKey(key, scope, ownerId) {
+      const where = ['key = @key', 'scope = @scope'];
+      const params: Record<string, unknown> = { key, scope };
+      // personal rows are owner-scoped; global rows have NULL owner.
+      if (scope === 'personal' && ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = ownerId;
+      } else if (scope === 'global') {
+        where.push('owner_id IS NULL');
+      }
+      const row = db.prepare(`SELECT * FROM resources WHERE ${where.join(' AND ')}`).get(params) as
+        ResourceRow | undefined;
+      return row ? mapResource(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, unknown> = {};
+      if (filter?.kind) {
+        where.push('kind = @kind');
+        params.kind = filter.kind;
+      }
+      if (filter?.scope) {
+        where.push('scope = @scope');
+        params.scope = filter.scope;
+      }
+      if (filter?.ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = filter.ownerId;
+      }
+      if (filter?.target) {
+        // targets is a JSON array; a LIKE match is sufficient at this scale.
+        where.push('targets LIKE @target');
+        params.target = `%"${filter.target}"%`;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM resources ${clause} ORDER BY created_at`)
+        .all(params) as ResourceRow[];
+      return rows.map(mapResource);
+    },
+    async save(resource) {
+      db.prepare(
+        `INSERT INTO resources
+           (id, key, kind, name, description, version, source, scope, owner_id, targets, labels, created_at, updated_at)
+         VALUES (@id, @key, @kind, @name, @description, @version, @source, @scope, @owner_id, @targets, @labels, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           key         = excluded.key,
+           kind        = excluded.kind,
+           name        = excluded.name,
+           description = excluded.description,
+           version     = excluded.version,
+           source      = excluded.source,
+           scope       = excluded.scope,
+           owner_id    = excluded.owner_id,
+           targets     = excluded.targets,
+           labels      = excluded.labels,
+           updated_at  = excluded.updated_at`,
+      ).run({
+        id: resource.id,
+        key: resource.key,
+        kind: resource.kind,
+        name: resource.name,
+        description: resource.description ?? null,
+        version: resource.version,
+        source: JSON.stringify(resource.source),
+        scope: resource.scope,
+        owner_id: resource.ownerId,
+        targets: JSON.stringify(resource.targets),
+        labels: resource.labels ? JSON.stringify(resource.labels) : null,
+        created_at: resource.createdAt,
+        updated_at: resource.updatedAt,
+      });
+      return resource;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM resources WHERE id = ?').run(id);
     },
   };
 }

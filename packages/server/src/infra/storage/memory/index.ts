@@ -7,15 +7,16 @@ import type {
   Credential,
   McpServer,
   Profile,
+  Resource,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
   CredentialRepository,
   McpServerRepository,
   ProfileRepository,
+  ResourceRepository,
 } from '@agent-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@agent-nexus/core';
-import { memoryResourceStub } from '../stub-repos.js';
 
 /**
  * In-memory storage driver — used by tests and `STORAGE_DRIVER=memory`.
@@ -30,6 +31,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const credentials = new Map<string, Credential>();
   const mcpServers = new Map<string, McpServer>();
   const profiles = new Map<string, Profile>();
+  const resources = new Map<string, Resource>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -152,7 +154,8 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     async findByName(name, scope, ownerId) {
       return (
         [...profiles.values()].find(
-          (p) => p.name === name && p.scope === scope && (scope === 'global' || p.ownerId === ownerId),
+          (p) =>
+            p.name === name && p.scope === scope && (scope === 'global' || p.ownerId === ownerId),
         ) ?? null
       );
     },
@@ -171,13 +174,44 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const resourceRepo: ResourceRepository = {
+    async findById(id) {
+      return resources.get(id) ?? null;
+    },
+    async findByKey(key, scope, ownerId) {
+      return (
+        [...resources.values()].find(
+          (r) =>
+            r.key === key &&
+            r.scope === scope &&
+            (scope === 'global' ? r.ownerId === null : r.ownerId === ownerId),
+        ) ?? null
+      );
+    },
+    async list(filter) {
+      return [...resources.values()]
+        .filter((r) => (filter?.kind ? r.kind === filter.kind : true))
+        .filter((r) => (filter?.scope ? r.scope === filter.scope : true))
+        .filter((r) => (filter?.ownerId ? r.ownerId === filter.ownerId : true))
+        .filter((r) => (filter?.target ? r.targets.includes(filter.target) : true))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(resource) {
+      resources.set(resource.id, resource);
+      return resource;
+    },
+    async delete(id) {
+      resources.delete(id);
+    },
+  };
+
   return {
-    ...memoryResourceStub(),
     users: userRepo,
     tokens: tokenRepo,
     settings: settingsRepo,
     credentials: credentialRepo,
     mcpServers: mcpServerRepo,
     profiles: profileRepo,
+    resources: resourceRepo,
   };
 }

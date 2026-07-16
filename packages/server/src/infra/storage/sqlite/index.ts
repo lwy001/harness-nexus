@@ -10,14 +10,14 @@ import {
   sqliteCredentialRepository,
   sqliteMcpServerRepository,
   sqliteProfileRepository,
+  sqliteResourceRepository,
 } from './repos.js';
-import { memoryResourceStub } from '../stub-repos.js';
 
 /**
  * SQLite storage driver (default).
  *
  * Opens a single connection (better-sqlite3 is synchronous), runs migrations,
- * and returns a UnitOfWork. Resources are still a stub — see ../stub-repos.ts.
+ * and returns a UnitOfWork.
  */
 export function createSqliteUnitOfWork(dbPath: string): UnitOfWork {
   if (dbPath !== ':memory:') {
@@ -29,12 +29,12 @@ export function createSqliteUnitOfWork(dbPath: string): UnitOfWork {
   runMigrations(db);
 
   return {
-    ...memoryResourceStub(),
     users: sqliteUserRepository(db),
     tokens: sqlitePatRepository(db),
     settings: sqliteSettingsRepository(db),
     credentials: sqliteCredentialRepository(db),
     mcpServers: sqliteMcpServerRepository(db),
     profiles: sqliteProfileRepository(db),
+    resources: sqliteResourceRepository(db),
   };
 }

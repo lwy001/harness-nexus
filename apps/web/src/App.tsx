@@ -9,8 +9,10 @@ import { DashboardPage } from '@/pages/Dashboard';
 import { UsersPage } from '@/pages/Users';
 import { SettingsPage } from '@/pages/Settings';
 import { CredentialsPage } from '@/pages/Credentials';
+import { TokensPage } from '@/pages/Tokens';
 import { McpManagementPage } from '@/pages/McpManagement';
 import { ProfilesPage } from '@/pages/Profiles';
+import { ResourcesPage } from '@/pages/Resources';
 
 export function App() {
   return (
@@ -37,6 +39,14 @@ export function App() {
               }
             />
             <Route
+              path="/tokens"
+              element={
+                <RequireAuth>
+                  <TokensPage />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/mcp-servers"
               element={
                 <RequireAuth>
@@ -49,6 +59,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <ProfilesPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/resources"
+              element={
+                <RequireAuth>
+                  <ResourcesPage />
                 </RequireAuth>
               }
             />

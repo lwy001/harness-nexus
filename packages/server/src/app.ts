@@ -16,6 +16,7 @@ import { settingsRoutes } from './modules/settings.js';
 import { credentialsRoutes } from './modules/credentials.js';
 import { mcpServersRoutes } from './modules/mcp-servers.js';
 import { profilesRoutes } from './modules/profiles.js';
+import { resourcesRoutes } from './modules/resources.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 
 /**
@@ -89,7 +90,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await credentialsRoutes(api);
     await mcpServersRoutes(api);
     await profilesRoutes(api);
-    // TODO: resources route module
+    await resourcesRoutes(api);
   });
 
   await mountMcpProxy(app);

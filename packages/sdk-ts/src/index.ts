@@ -12,6 +12,10 @@ import type {
   McpMode,
   McpTransport,
   Profile,
+  Resource,
+  ResourceKind,
+  AgentTarget,
+  ResourceSource,
 } from '@agent-nexus/core';
 
 export interface SdkOptions {
@@ -270,6 +274,58 @@ export class AgentNexusClient {
     await this.request('DELETE', `/api/profiles/${id}`);
   }
 
+  // ---- resources ----
+  async createResource(input: {
+    key: string;
+    kind: ResourceKind;
+    name: string;
+    description?: string;
+    version?: string;
+    source: ResourceSource;
+    scope: 'global' | 'personal';
+    targets?: AgentTarget[];
+    labels?: Record<string, string>;
+  }): Promise<{ resource: Resource }> {
+    return this.request('POST', '/api/resources', input);
+  }
+
+  async listResources(filter?: {
+    kind?: ResourceKind;
+    scope?: 'global' | 'personal';
+    target?: AgentTarget;
+  }): Promise<Resource[]> {
+    const qs = new URLSearchParams();
+    if (filter?.kind) qs.set('kind', filter.kind);
+    if (filter?.scope) qs.set('scope', filter.scope);
+    if (filter?.target) qs.set('target', filter.target);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.request('GET', `/api/resources${suffix}`);
+    return res.resources;
+  }
+
+  async getResource(id: string): Promise<{ resource: Resource }> {
+    return this.request('GET', `/api/resources/${id}`);
+  }
+
+  async updateResource(
+    id: string,
+    input: {
+      key?: string;
+      name?: string;
+      description?: string;
+      version?: string;
+      source?: ResourceSource;
+      targets?: AgentTarget[];
+      labels?: Record<string, string>;
+    },
+  ): Promise<{ resource: Resource }> {
+    return this.request('PATCH', `/api/resources/${id}`, input);
+  }
+
+  async deleteResource(id: string): Promise<void> {
+    await this.request('DELETE', `/api/resources/${id}`);
+  }
+
   // ---- core request helper ----
   private async request(
     method: string,
@@ -302,4 +358,14 @@ export class AgentNexusClient {
   }
 }
 
-export type { Role, McpServer, McpMode, McpTransport, Profile };
+export type {
+  Role,
+  McpServer,
+  McpMode,
+  McpTransport,
+  Profile,
+  Resource,
+  ResourceKind,
+  ResourceSource,
+  AgentTarget,
+};

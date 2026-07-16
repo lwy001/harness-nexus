@@ -1,4 +1,4 @@
-import type { User, Credential } from '@agent-nexus/core';
+import type { User, Credential, Resource } from '@agent-nexus/core';
 
 /** Strip secrets from a user for API responses. */
 export function publicUser(u: User): Omit<User, 'passwordHash'> {
@@ -25,4 +25,14 @@ export interface CredentialView {
 export function credentialView(c: Credential, secretPreview: string): CredentialView {
   const { secret: _omit, ...rest } = c;
   return { ...rest, secretPreview };
+}
+
+/**
+ * Resource API view. The domain `Resource` carries no secret, so the view is
+ * the resource as-is. Kept as a named function (rather than returning the entity
+ * directly) for symmetry with `credentialView` and as the single seam for future
+ * redaction or field projection.
+ */
+export function resourceView(r: Resource): Resource {
+  return r;
 }

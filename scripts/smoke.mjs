@@ -32,7 +32,9 @@ const expect = (label, got, want) => {
 };
 
 log('--- register first user (bootstrap admin) ---');
-let r = await req('POST', '/api/auth/register', { body: { username: 'root', password: 'hunter2hunter2' } });
+let r = await req('POST', '/api/auth/register', {
+  body: { username: 'root', password: 'hunter2hunter2' },
+});
 expect('first register status', r.status, 201);
 expect('first register role', r.json.user.role, 'admin');
 const adminToken = r.json.token;
@@ -51,7 +53,9 @@ r = await req('GET', '/api/users', { token: adminToken });
 expect('admin list users status', r.status, 200);
 
 log('\n--- register second user (role=user) ---');
-r = await req('POST', '/api/auth/register', { body: { username: 'alice', password: 'hunter2hunter2' } });
+r = await req('POST', '/api/auth/register', {
+  body: { username: 'alice', password: 'hunter2hunter2' },
+});
 expect('second register role', r.json.user.role, 'user');
 const userToken = r.json.token;
 
@@ -78,17 +82,25 @@ r = await req('GET', '/api/auth/me', { token: patToken });
 expect('revoked pat rejected', r.status, 401);
 
 log('\n--- disable registration ---');
-r = await req('PUT', '/api/settings/registration', { token: adminToken, body: { allowRegistration: false } });
+r = await req('PUT', '/api/settings/registration', {
+  token: adminToken,
+  body: { allowRegistration: false },
+});
 expect('disable registration status', r.status, 200);
 r = await req('GET', '/api/settings/registration');
 expect('registration now closed', r.json.allowRegistration, false);
 
 log('\n--- register when disabled (403) ---');
-r = await req('POST', '/api/auth/register', { body: { username: 'bob', password: 'hunter2hunter2' } });
+r = await req('POST', '/api/auth/register', {
+  body: { username: 'bob', password: 'hunter2hunter2' },
+});
 expect('disabled register status', r.status, 403);
 
 log('\n--- admin create user bypasses switch (201) ---');
-r = await req('POST', '/api/users', { token: adminToken, body: { username: 'carol', password: 'hunter2hunter2', role: 'user' } });
+r = await req('POST', '/api/users', {
+  token: adminToken,
+  body: { username: 'carol', password: 'hunter2hunter2', role: 'user' },
+});
 expect('admin create user status', r.status, 201);
 
 log('\n--- last-admin protection: demote self (409) ---');
@@ -183,7 +195,11 @@ r = await req('POST', '/api/mcp-servers', {
   token: userToken,
   body: {
     name: 'local-fs',
-    transport: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'] },
+    transport: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'],
+    },
     mode: 'direct',
     scope: 'personal',
   },
@@ -227,7 +243,12 @@ const demoServerId = r.json.mcpServer.id;
 log('\n--- [2.2] create profile referencing an accessible server (201) ---');
 r = await req('POST', '/api/profiles', {
   token: userToken,
-  body: { name: 'daily', description: 'my daily bundle', scope: 'personal', entries: [{ mcpServerId: demoServerId }] },
+  body: {
+    name: 'daily',
+    description: 'my daily bundle',
+    scope: 'personal',
+    entries: [{ mcpServerId: demoServerId }],
+  },
 });
 expect('profile created', r.status, 201);
 expect('profile has 1 entry', r.json.profile.entries.length, 1);
@@ -284,6 +305,133 @@ expect('mcp without auth rejected', r.status, 401);
 log('\n--- [2.2] delete profile (200) ---');
 r = await req('DELETE', `/api/profiles/${profileId}`, { token: userToken });
 expect('delete profile', r.status, 200);
+
+// ============================ Phase 4.2: resources ============================
+
+log('\n--- [4.2] user creates a personal sub_agent resource (201) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'sub_agent:reviewer',
+    kind: 'sub_agent',
+    name: 'Code reviewer',
+    description: 'Reviews PRs carefully',
+    scope: 'personal',
+    source: { type: 'inline', content: 'You are a careful code reviewer.' },
+    targets: ['claude-code', 'zcode'],
+  },
+});
+expect('personal sub_agent created', r.status, 201);
+expect('resource kind is sub_agent', r.json.resource.kind, 'sub_agent');
+expect('resource source is inline', r.json.resource.source.type, 'inline');
+const subAgentId = r.json.resource.id;
+
+log('\n--- [4.2] admin creates a global rule resource (201) ---');
+r = await req('POST', '/api/resources', {
+  token: adminToken,
+  body: {
+    key: 'rule:tests-first',
+    kind: 'rule',
+    name: 'Tests before done',
+    scope: 'global',
+    source: { type: 'inline', content: 'Always run tests before marking done.' },
+  },
+});
+expect('global rule created', r.status, 201);
+const ruleId = r.json.resource.id;
+
+log('\n--- [4.2] list returns personal + global (2) ---');
+r = await req('GET', '/api/resources', { token: userToken });
+expect('user lists both resources', r.json.resources.length, 2);
+
+log('\n--- [4.2] non-admin cannot create global resource (403) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'rule:global-nope',
+    kind: 'rule',
+    name: 'g',
+    scope: 'global',
+    source: { type: 'inline', content: 'x' },
+  },
+});
+expect('non-admin global resource rejected', r.status, 403);
+
+log('\n--- [4.2] duplicate key in same scope (409) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'sub_agent:reviewer',
+    kind: 'sub_agent',
+    name: 'dup',
+    scope: 'personal',
+    source: { type: 'inline', content: 'x' },
+  },
+});
+expect('duplicate key rejected', r.status, 409);
+expect('error code RESOURCE_KEY_TAKEN', r.json.error, 'RESOURCE_KEY_TAKEN');
+
+log('\n--- [4.2] kind skill not available yet (409) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:future',
+    kind: 'skill',
+    name: 'future',
+    scope: 'personal',
+    source: { type: 'inline', content: 'x' },
+  },
+});
+expect('skill kind rejected', r.status, 409);
+expect('error code KIND_NOT_AVAILABLE', r.json.error, 'KIND_NOT_AVAILABLE');
+
+log('\n--- [4.2] PATCH update own resource (200) ---');
+r = await req('PATCH', `/api/resources/${subAgentId}`, {
+  token: userToken,
+  body: { name: 'Senior code reviewer' },
+});
+expect('patch own resource', r.status, 200);
+expect('name updated', r.json.resource.name, 'Senior code reviewer');
+
+log('\n--- [4.2] non-admin cannot mutate global resource (404) ---');
+r = await req('PATCH', `/api/resources/${ruleId}`, {
+  token: userToken,
+  body: { name: 'hacked' },
+});
+expect('non-admin patch global → 404', r.status, 404);
+
+log('\n--- [4.2] filter by kind=sub_agent (1) ---');
+r = await req('GET', '/api/resources?kind=sub_agent', { token: userToken });
+expect('kind filter returns 1', r.json.resources.length, 1);
+
+log('\n--- [4.2] delete own resource (200) ---');
+r = await req('DELETE', `/api/resources/${subAgentId}`, { token: userToken });
+expect('delete own resource', r.status, 200);
+
+log('\n--- [4.4] create a command resource (201) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'command:explain-args',
+    kind: 'command',
+    name: 'Explain arguments',
+    description: 'Echoes back the arguments passed',
+    scope: 'personal',
+    source: { type: 'inline', content: 'Explain these arguments: $ARGUMENTS' },
+    targets: ['claude-code', 'zcode'],
+  },
+});
+expect('command resource created', r.status, 201);
+expect('resource kind is command', r.json.resource.kind, 'command');
+const commandId = r.json.resource.id;
+
+log('\n--- [4.4] filter by kind=command (1) ---');
+r = await req('GET', '/api/resources?kind=command', { token: userToken });
+expect('command filter returns 1', r.json.resources.length, 1);
+
+log('\n--- [4.4] delete command resource (200) ---');
+r = await req('DELETE', `/api/resources/${commandId}`, { token: userToken });
+expect('delete command resource', r.status, 200);
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

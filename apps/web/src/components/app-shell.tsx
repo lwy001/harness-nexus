@@ -1,6 +1,16 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { HomeIcon, SettingsIcon, UsersIcon, LogOutIcon, KeyRoundIcon, ServerIcon, LayersIcon } from 'lucide-react';
+import {
+  HomeIcon,
+  SettingsIcon,
+  UsersIcon,
+  LogOutIcon,
+  KeyRoundIcon,
+  ServerIcon,
+  LayersIcon,
+  TicketIcon,
+  BoxesIcon,
+} from 'lucide-react';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -121,7 +131,9 @@ function navItems(isAdmin: boolean): NavItemProps[] {
     { to: '/', icon: <HomeIcon className="size-4" />, label: 'Home', end: true },
     { to: '/mcp-servers', icon: <ServerIcon className="size-4" />, label: 'MCP management' },
     { to: '/profiles', icon: <LayersIcon className="size-4" />, label: 'Profiles' },
+    { to: '/resources', icon: <BoxesIcon className="size-4" />, label: 'Resources' },
     { to: '/credentials', icon: <KeyRoundIcon className="size-4" />, label: 'Credentials' },
+    { to: '/tokens', icon: <TicketIcon className="size-4" />, label: 'Access tokens' },
   ];
   if (isAdmin) {
     items.push(

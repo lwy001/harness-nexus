@@ -101,6 +101,30 @@ CREATE INDEX IF NOT EXISTS idx_profiles_owner ON profiles(owner_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_scope ON profiles(scope);
     `,
   },
+  {
+    version: 4,
+    description: 'phase 4.2 — resources table (sub_agent/rule/skill/hook/command/mcp)',
+    sql: `
+CREATE TABLE IF NOT EXISTS resources (
+  id          TEXT PRIMARY KEY,
+  key         TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  description TEXT,
+  version     TEXT NOT NULL DEFAULT '1.0.0',
+  source      TEXT NOT NULL,
+  scope       TEXT NOT NULL,
+  owner_id    TEXT REFERENCES users(id) ON DELETE CASCADE,
+  targets     TEXT NOT NULL DEFAULT '[]',
+  labels      TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resources_owner ON resources(owner_id);
+CREATE INDEX IF NOT EXISTS idx_resources_scope ON resources(scope);
+CREATE INDEX IF NOT EXISTS idx_resources_kind  ON resources(kind);
+    `,
+  },
 ] as const;
 
 /**
