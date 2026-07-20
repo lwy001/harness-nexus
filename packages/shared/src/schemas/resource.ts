@@ -43,6 +43,43 @@ const resourceSourceSchema = z.discriminatedUnion('type', [
     type: z.literal('inline-bundle'),
     files: z.record(z.string(), z.string()),
   }),
+  // Phase 7.1 — a marketplace/plugin skill reference. The nested discriminated
+  // union mirrors the CC marketplace.json `source` kinds. See
+  // `docs/design/phase-7.1-plugin-source.md` Part 2a.
+  z.object({
+    type: z.literal('plugin'),
+    source: z.discriminatedUnion('source', [
+      z.object({
+        source: z.literal('github'),
+        repo: z.string().min(1),
+        ref: z.string().optional(),
+        sha: z.string().optional(),
+        path: z.string().optional(),
+      }),
+      z.object({
+        source: z.literal('url'),
+        url: z.string().min(1),
+        ref: z.string().optional(),
+        sha: z.string().optional(),
+        path: z.string().optional(),
+      }),
+      z.object({
+        source: z.literal('git-subdir'),
+        url: z.string().min(1),
+        path: z.string().min(1),
+        ref: z.string().optional(),
+        sha: z.string().optional(),
+      }),
+      z.object({
+        source: z.literal('npm'),
+        package: z.string().min(1),
+        version: z.string().min(1),
+        registry: z.string().optional(),
+      }),
+    ]),
+    plugin: z.string().min(1),
+    version: z.string().optional(),
+  }),
 ]);
 
 export const createResourceSchema = z.object({

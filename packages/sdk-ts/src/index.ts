@@ -16,6 +16,9 @@ import type {
   ResourceKind,
   AgentTarget,
   ResourceSource,
+  TrustTier,
+  SkillMeta,
+  SkillBundle,
 } from '@agent-nexus/core';
 export { HOOK_EVENTS, HOOK_SUPPORT, type HookEvent } from '@agent-nexus/shared';
 
@@ -369,4 +372,8 @@ export type {
   ResourceKind,
   ResourceSource,
   AgentTarget,
+  // Phase 7.1 — skill-sourcing domain types (back the SkillSource port).
+  TrustTier,
+  SkillMeta,
+  SkillBundle,
 };

@@ -615,5 +615,104 @@ expect('delete single-file skill', r.status, 200);
 r = await req('DELETE', `/api/resources/${skillBundleId}`, { token: userToken });
 expect('delete multi-file skill', r.status, 200);
 
+// ---------------------------------------------------------------------------
+// Phase 7.1 — plugin source + trust/provenance labels
+// ---------------------------------------------------------------------------
+
+log('\n--- [7.1] skill with plugin source accepted; trust computed (trusted) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:plugin-trusted',
+    kind: 'skill',
+    name: 'trusted-plugin-skill',
+    scope: 'personal',
+    source: {
+      type: 'plugin',
+      source: { source: 'github', repo: 'anthropics/skills', sha: 'abc123def456' },
+      plugin: 'skill-creator',
+    },
+    targets: ['claude-code'],
+  },
+});
+expect('plugin skill created', r.status, 201);
+expect('plugin source round-trips', r.json.resource.source.type, 'plugin');
+expect('plugin inner source kind', r.json.resource.source.source.source, 'github');
+expect('trust label = trusted', r.json.resource.labels?.trust, 'trusted');
+expect('pin label = sha', r.json.resource.labels?.pin, 'abc123def456');
+expect(
+  'provenance label set',
+  typeof r.json.resource.labels?.provenance,
+  'string',
+);
+
+log('\n--- [7.1] community plugin, no pin (floating ref) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:plugin-community',
+    kind: 'skill',
+    name: 'community-plugin-skill',
+    scope: 'personal',
+    source: {
+      type: 'plugin',
+      source: { source: 'github', repo: 'random/dev' },
+      plugin: 'thing',
+    },
+    targets: ['claude-code'],
+  },
+});
+expect('community plugin skill created', r.status, 201);
+expect('trust label = community', r.json.resource.labels?.trust, 'community');
+expect('no pin label when floating', r.json.resource.labels?.pin, undefined);
+
+log('\n--- [7.1] unsafe plugin path rejected (400) ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:plugin-badpath',
+    kind: 'skill',
+    name: 'badpath',
+    scope: 'personal',
+    source: {
+      type: 'plugin',
+      source: { source: 'github', repo: 'anthropics/skills', path: '../etc/passwd' },
+      plugin: 'x',
+    },
+    targets: ['claude-code'],
+  },
+});
+expect('unsafe plugin path rejected', r.status, 400);
+
+log('\n--- [7.1] npm plugin source requires version ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:plugin-npm-no-version',
+    kind: 'skill',
+    name: 'npm-no-version',
+    scope: 'personal',
+    // version omitted at the plugin level AND the inner source level — zod
+    // rejects (inner .version is required), so this is a 400 VALIDATION_ERROR
+    // before our handler-level check runs.
+    source: {
+      type: 'plugin',
+      source: { source: 'npm', package: '@org/foo' },
+      plugin: 'foo',
+    },
+    targets: ['claude-code'],
+  },
+});
+expect('npm plugin without version rejected', r.status, 400);
+
+log('\n--- [7.1] cleanup plugin skills ---');
+r = await req('GET', '/api/resources?kind=skill', { token: userToken });
+for (const res of r.json.resources) {
+  if (res.source.type === 'plugin') {
+    const del = await req('DELETE', `/api/resources/${res.id}`, { token: userToken });
+    expect(`delete ${res.key}`, del.status, 200);
+  }
+}
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

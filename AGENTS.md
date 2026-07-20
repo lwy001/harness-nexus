@@ -271,14 +271,25 @@ RESOURCE_IMMUTABLE`); mutate-by-recreate instead.
   unique index over nullable `owner_id`). The `key` is the `kind:key` handle
   profiles reference.
 - **Sub-agent/rule editors produce `source: { type: 'inline', content }`**
-  (markdown) only. `command` (4.4) and `hook` (4.5) will also be single-file
-  inline. **`skill` (4.6) needs a new `inline-bundle` `ResourceSource` variant**
+  (markdown) only. `command` (4.4) and `hook` (4.5) are also single-file
+  inline. **`skill` (4.6) added the `inline-bundle` `ResourceSource` variant**
   for multi-file skills (SKILL.md + `references/` + `scripts/`; ~42% of real
   skills are multi-file) — single-file skills reuse `inline`. A bundle must
   contain `SKILL.md` at root (`409 SKILL_BUNDLE_MISSING_SKILL_MD`) and paths are
   validated for traversal safety (`400`). The external git/tarball/local variants
-  are accepted by the schema but not yet exercised by an editor;
-  plugin/marketplace references are Phase 7.
+  are accepted by the schema but not exercised by an editor.
+- **`skill` plugin source (Phase 7.1)** — a sixth `ResourceSource` variant
+  `{ type: 'plugin', source, plugin, version? }` mirrors the CC marketplace
+  `source` kinds (github/url/git-subdir/npm). `validateSkillResource` accepts
+  `inline`/`inline-bundle`/`plugin` and still rejects `git`/`tarball`/`local`
+  for skills (`409 INVALID_SKILL_SOURCE` — `plugin` is the correct external-skill
+  representation; it preserves the plugin namespace). Trust/provenance ride on
+  the existing `labels` field (no migration): `resolveTrustTier` (in
+  `packages/shared/src/trust.ts`) stamps `labels.trust` = `builtin`/`trusted`/
+  `community` (the 4 `TRUSTED_REPOS` ⇒ `trusted`), plus `labels.pin` (sha/version)
+  and `labels.provenance`. A `SkillSource` port (`packages/core/src/ports/
+skill-source.ts`, mirroring Hermes's ABC) shapes future adapters — 7.1 ships
+  one no-op impl; real fetchers are 7.2+.
 - **Hooks (4.5)** store a `hooks.json` document in `source.inline.content`
   (event→command map). The **event × target support matrix** lives in
   `packages/shared/src/hooks.ts` (`HOOK_EVENTS`, `HOOK_SUPPORT`). Hermes is
@@ -336,10 +347,12 @@ connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
 HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
 management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
 editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
-4.5), and the skill editor with multi-file bundles (Phase 4.6 — Phase 4
-complete). See `docs/roadmap.md` for what remains. Still NOT done: external
-skill references & multi-source hub search (Phase 7, split from 4.6), the stdio
-bridge entry, CLI install writers, ECC/Superpower adapters, the ACP bridge,
-Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is on
-hold** — not currently planned. When you add the first real logic for a pillar,
-also add tests (vitest, not yet wired) and update the relevant `docs/` file.
+4.5), the skill editor with multi-file bundles (Phase 4.6 — Phase 4 complete),
+and the `plugin` skill source variant + trust/provenance labels + `SkillSource`
+port (Phase 7.1). See `docs/roadmap.md` for what remains. Still NOT done:
+Phase 7.2–7.4 (marketplace allowlist fetch, hub search UI, Hermes-style
+multi-source adapters), the stdio bridge entry, CLI install writers,
+ECC/Superpower adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes.
+**Phase 2.3 (callable-function scripts) is on hold** — not currently planned.
+When you add the first real logic for a pillar, also add tests (vitest, not yet
+wired) and update the relevant `docs/` file.

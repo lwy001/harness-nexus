@@ -6,6 +6,7 @@ import {
   updateResourceSchema,
   HOOK_EVENTS,
   HOOK_SUPPORT,
+  resolveTrustTier,
   type CreateResourceInput,
   type UpdateResourceInput,
   type HookEvent,
@@ -73,8 +74,9 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
       createdAt: now,
       updatedAt: now,
     };
-    await app.uow.resources.save(resource);
-    return reply.code(201).send({ resource: resourceView(resource) });
+    const trusted = withTrustLabels(resource);
+    await app.uow.resources.save(trusted);
+    return reply.code(201).send({ resource: resourceView(trusted) });
   });
 
   // ---- GET /api/resources ----
@@ -165,8 +167,9 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
     };
     validateHookResource(next.kind, next.targets, next.source);
     validateSkillResource(next.kind, next.source);
-    await app.uow.resources.save(next);
-    return { resource: resourceView(next) };
+    const trusted = withTrustLabels(next);
+    await app.uow.resources.save(trusted);
+    return { resource: resourceView(trusted) };
   });
 
   // ---- DELETE /api/resources/:id ----
@@ -266,24 +269,46 @@ function validateHookResource(
 }
 
 /**
- * Skill-specific validation (Phase 4.6). A skill may use either `inline`
- * (single-file SKILL.md as content) or `inline-bundle` (multi-file: a path→content
- * map whose keys are relative paths and one must be `SKILL.md`). File paths are
- * validated for safety (no absolute, no `..` traversal, no leading slash) since
- * the install writer materializes them onto disk.
+ * Skill-specific validation (Phase 4.6 local skills + Phase 7.1 plugin sources).
+ * A skill may use:
+ *   - `inline`        — single-file SKILL.md as content (4.6).
+ *   - `inline-bundle` — multi-file: a path→content map whose keys are relative
+ *                       paths and one must be `SKILL.md` (4.6).
+ *   - `plugin`        — a marketplace/plugin reference (7.1); see
+ *                       `validatePluginSource`.
+ * Other source variants (`git`/`tarball`/`local`) are rejected for skills — a
+ * plugin source is the correct external-skill representation (it preserves the
+ * plugin namespace). File paths are validated for safety (no absolute, no `..`
+ * traversal, no leading slash) since the install writer materializes them.
  */
 function validateSkillResource(kind: ResourceKind, source: Resource['source']): void {
   if (kind !== 'skill') return;
-  if (source.type === 'inline') return; // single-file skill: content is the SKILL.md body
-  if (source.type !== 'inline-bundle') {
-    throw new AppError(
-      `A skill source must be 'inline' or 'inline-bundle', got '${source.type}'`,
-      409,
-      'INVALID_SKILL_SOURCE',
-    );
+  switch (source.type) {
+    case 'inline':
+      return; // single-file skill: content is the SKILL.md body
+    case 'inline-bundle':
+      validateBundlePaths(source.files);
+      return;
+    case 'plugin':
+      validatePluginSource(source);
+      return;
+    default:
+      // git / tarball / local: use 'plugin' for an external skill instead.
+      throw new AppError(
+        `A skill source must be 'inline', 'inline-bundle', or 'plugin', got '${source.type}'`,
+        409,
+        'INVALID_SKILL_SOURCE',
+      );
   }
+}
 
-  const paths = Object.keys(source.files);
+/**
+ * Validate an `inline-bundle` skill's file map. Non-empty, contains `SKILL.md`
+ * at root, and every path is relative with no traversal (the install writer
+ * joins these onto a target directory).
+ */
+function validateBundlePaths(files: Record<string, string>): void {
+  const paths = Object.keys(files);
   if (paths.length === 0) {
     throw new AppError('A skill bundle must contain at least one file', 400, 'VALIDATION_ERROR');
   }
@@ -295,17 +320,71 @@ function validateSkillResource(kind: ResourceKind, source: Resource['source']): 
       'SKILL_BUNDLE_MISSING_SKILL_MD',
     );
   }
-  // Path safety: relative, no traversal, no leading slash — the install writer
-  // joins these onto a target directory.
   for (const p of paths) {
-    if (p === '' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
-      throw new AppError(
-        `Unsafe file path in skill bundle: "${p}" (must be a relative path with no '..')`,
-        400,
-        'VALIDATION_ERROR',
-      );
-    }
+    assertSafeRelativePath(p, 'skill bundle');
   }
+}
+
+/**
+ * Validate a `plugin` skill source (Phase 7.1). Path safety on the optional
+ * `path` field (the install writer joins it onto a target dir — same traversal
+ * risk as bundle paths), and `npm` requires a version (the schema enforces
+ * non-empty, but be explicit).
+ */
+function validatePluginSource(source: Extract<Resource['source'], { type: 'plugin' }>): void {
+  const inner = source.source;
+  if ('path' in inner && inner.path !== undefined) {
+    assertSafeRelativePath(inner.path, 'plugin source');
+  }
+  if (inner.source === 'npm' && !inner.version) {
+    throw new AppError('An npm plugin source requires a version', 400, 'VALIDATION_ERROR');
+  }
+}
+
+/**
+ * Reject paths that are unsafe to join onto a target directory: empty, absolute
+ * (leading `/`), backslash, or `..` traversal. Windows-style backslashes are
+ * rejected too.
+ */
+function assertSafeRelativePath(p: string, ctx: 'skill bundle' | 'plugin source'): void {
+  if (p === '' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
+    throw new AppError(
+      `Unsafe file path in ${ctx}: "${p}" (must be a relative path with no '..')`,
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+}
+
+/**
+ * Phase 7.1 — stamp trust/provenance labels onto a `plugin`-source resource.
+ * Trust and provenance are derived from the spec (a function of the repo
+ * owner), so they ride on the existing `labels` field rather than new columns
+ * — no migration needed. Other source kinds pass through unchanged.
+ *
+ * Authoritative label keys (overwrite any user-supplied value with the same
+ * key; user labels coexist for everything else):
+ *   - `trust`       — 'builtin' | 'trusted' | 'community' (from resolveTrustTier)
+ *   - `pin`         — the sha / version string, omitted when floating
+ *   - `provenance`  — short human string, e.g. 'anthropics/skills@sha:abc123'
+ */
+function withTrustLabels(resource: Resource): Resource {
+  if (resource.source.type !== 'plugin') return resource;
+  const tier = resolveTrustTier(resource.source.source);
+  const inner = resource.source.source;
+  const pin = 'sha' in inner && inner.sha ? inner.sha : resource.source.version;
+  const ownerRepo = 'repo' in inner ? inner.repo : 'url' in inner ? inner.url : inner.package;
+  const pinSuffix = pin ? `@${'sha' in inner && inner.sha ? 'sha:' + inner.sha : 'v' + pin}` : '';
+  const provenance = `${ownerRepo}${pinSuffix}`;
+  return {
+    ...resource,
+    labels: {
+      ...(resource.labels ?? {}),
+      trust: tier,
+      ...(pin ? { pin } : {}),
+      provenance,
+    },
+  };
 }
 
 /** A record is actionable by the caller iff they own it (personal) or are admin. */

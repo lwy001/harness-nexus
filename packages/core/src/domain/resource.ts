@@ -48,4 +48,37 @@ export type ResourceSource =
   | { type: 'tarball'; url: string; checksum?: string }
   | { type: 'local'; path: string }
   | { type: 'inline'; content: string }
-  | { type: 'inline-bundle'; files: Record<string, string> };
+  | { type: 'inline-bundle'; files: Record<string, string> }
+  // Phase 7.1 — a marketplace/plugin skill reference. Skills bundle inside
+  // plugins in the CC/ZCode world; this variant preserves the plugin namespace
+  // and the source-kind distinction that `git` cannot express. See
+  // `docs/design/phase-7.1-plugin-source.md` Part 1a.
+  | {
+      type: 'plugin';
+      /**
+       * Mirrors the CC marketplace.json `source` kinds (research-corrected: 4
+       * live kinds in the official catalog — url / git-subdir / string-path /
+       * github; no npm in production, modeled for completeness). The string
+       * relative-path form (`"./plugins/foo"`) is NOT accepted here — it only
+       * makes sense inside a marketplace repo; AgentNexus stores resolved specs.
+       */
+      source:
+        | { source: 'github'; repo: string; ref?: string; sha?: string; path?: string }
+        | { source: 'url'; url: string; ref?: string; sha?: string; path?: string }
+        | {
+            source: 'git-subdir';
+            url: string;
+            path: string;
+            ref?: string;
+            sha?: string;
+          }
+        | { source: 'npm'; package: string; version: string; registry?: string };
+      /** The plugin this entry resolves to (the `plugin:skill` namespace half). */
+      plugin: string;
+      /**
+       * Optional marketplace-entry version pin. Falls back to `sha` (for git
+       * kinds) or the resolved git commit at install time. Absent ⇒ floating,
+       * tracked to `ref` (default branch).
+       */
+      version?: string;
+    };

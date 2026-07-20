@@ -96,14 +96,26 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 7 — Skill multi-source & plugin references
 
-- ⏳ External skill references: CC/ZCode marketplace `plugin` source spec
-  (github/url/git-subdir/npm), resolution + pinning (sha/version)
-- ⏳ Hermes-style multi-source adapters (skills.sh, direct URL, well-known
-  index, custom taps) behind a `SkillSource` interface — research-backed by
+Split by "independently verifiable + increasing difficulty + outbound network
+last". 7.1 is the zero-outbound foundation; 7.2 opens the first server-side
+outbound path (isolated in its own PR); 7.3 closes the UX loop; 7.4 is the
+large, least-certain multi-source block (can stop partway).
+
+| #       | Sub-phase                   | Status | Carries                                                                                                                                                                                                                                      | Depends on | Outbound?                        |
+| ------- | --------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------- |
+| **7.1** | plugin source + trust model | ✅     | `ResourceSource` `plugin` variant (CC marketplace 4 source kinds); trust tiers (`builtin`/`trusted`/`community`) + provenance pin (`content_hash`); `SkillSource` port (abstract, one no-op `inspect`); flip `validateSkillResource` + smoke | Phase 4.6  | **none** (store spec only)       |
+| **7.2** | marketplace allowlist fetch | ⏳     | server's first outbound path: `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout `marketplace.json`); `MARKETPLACE_ALLOWLIST` config; trust by repo owner; "save marketplace entry as skill resource"                       | 7.1        | **yes** (allowlisted GitHub raw) |
+| **7.3** | hub search UI               | ⏳     | web marketplace browser (category filter + search + trust badge) → "save as skill resource" → reuses 7.1 `plugin` source storage; install-warning UX (trust tier + missing-pin warning)                                                      | 7.2        | no (calls 7.2 endpoint)          |
+| **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (`skills-sh`/`well-known`/`url`/`github`/`claude-marketplace`, value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); `taps.json`-style custom-tap UI; **content scan deferred**  | 7.1, 7.3   | **yes** (each adapter fetches)   |
+
+- PRD: `docs/prd/phase-7-skills.md` · Design 7.1: `docs/design/phase-7.1-plugin-source.md`
+  (7.2–7.4 designs to be written before each ships) · Research:
   `docs/research/phase-4.4-skills.md`
-- ⏳ Hub search UI (browse a marketplace's `marketplace.json`, pick skills)
-- ⏳ Trust tiers (`builtin`/`trusted`/`community`) + provenance pin
-  (`content_hash`, like Hermes `lock.json`) for install-warning UX
-- PRD: _to be written_ · Research: `docs/research/phase-4.4-skills.md`
-- Out of Phase 4.6 scope: outbound-network security model, content scanning
-  (AgentNexus stores references; the target tool executes)
+- **Research corrections carried into the PRD** (ground-truth verified):
+  Hermes has **10** adapters (not 9 — `OptionalSkillSource` is the `official`
+  source); trust is **4** tiers internally (the 4th, `agent-created`, is
+  off-by-default and not surfaced); the live CC `marketplace.json` has **4**
+  source kinds (`url`/`git-subdir`/string-path/`github`) and **no `npm`**;
+  `category` is the filter axis (243/257 entries), not `tags` (3) or `metadata`.
+- Out of scope: content security scanning (Hermes `skills_guard.py` model) —
+  AgentNexus stores references, the target tool executes.

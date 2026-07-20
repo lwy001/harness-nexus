@@ -63,10 +63,12 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 
 - _stdio bridge, Channels, LLM-WIKI, memory/notes._
 
-### Phase 7 — Skill multi-source & plugin references ⏳
+### Phase 7 — Skill multi-source & plugin references 🚧 (7.1 done)
 
-- Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's 9-source `SkillSource` adapter model, trust tiers, provenance pinning.
-- _PRD/design to be written._
+- PRD: [`prd/phase-7-skills.md`](./prd/phase-7-skills.md) — covers all four sub-phases (7.1–7.4); carries the research corrections (10 Hermes adapters, 4 trust tiers internally / 3 surfaced, CC has 4 live source kinds and no npm, `category` is the filter axis).
+- Design 7.1: [`design/phase-7.1-plugin-source.md`](./design/phase-7.1-plugin-source.md) — `plugin` `ResourceSource` variant + trust/provenance labels + `SkillSource` port + validator/smoke flip. Zero outbound network.
+- Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
+- 7.2–7.4 designs to be written before each ships.
 
 ### Concept notes (design/)
 
