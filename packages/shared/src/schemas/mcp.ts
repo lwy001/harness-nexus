@@ -62,9 +62,7 @@ export const mcpTransportSchema = z.discriminatedUnion('type', [
 ]);
 
 /** True iff the transport requires `mode: 'direct'` (stdio cannot be proxied). */
-export function requiresDirect(
-  transport: { type: 'stdio' | 'sse' | 'streamable-http' },
-): boolean {
+export function requiresDirect(transport: { type: 'stdio' | 'sse' | 'streamable-http' }): boolean {
   return transport.type === 'stdio';
 }
 

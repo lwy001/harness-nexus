@@ -16,7 +16,7 @@ its own directory.
 Meanwhile, every major Agent tool has shipped its own **plugin** concept that
 bundles exactly those artifacts (skills, hooks, sub-agents, MCP servers,
 commands) into one installable unit. The shape differs per tool, but the
-*intent* is identical to our profile. There is no one-click path from "a
+_intent_ is identical to our profile. There is no one-click path from "a
 profile in AgentNexus" to "a working plugin in my tool of choice."
 
 Two structural gaps compound this:
@@ -141,7 +141,7 @@ is silently dropped.
   dialed by AgentNexus) but still appear in MCP Management listings.
 - **`Profile.target`** is added (required, immutable post-create). The create
   schema requires it; the update schema omits it (PATCH `target` → `409
-  TARGET_IMMUTABLE`).
+TARGET_IMMUTABLE`).
 - **Hook support matrix** is a fixed table (canonical event → per-target
   support flag) living in `packages/shared`. The profile creation/import path
   consults it to validate hook entries.

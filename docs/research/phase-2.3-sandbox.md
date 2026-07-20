@@ -16,14 +16,14 @@ subprocesses, or make unrestricted network calls.
 
 ## Codebase integration points (what already exists)
 
-| Layer | Current state | How a callable-function plugs in |
-| --- | --- | --- |
-| `McpRegistry` (`server/src/mcp/registry.ts`) | Structurally coupled to upstream `Client` connections + transports. A callable-function has no upstream connection — **it cannot live in this pool.** | Introduce a sibling `ToolSource`; the registry stays focused on upstreams. |
-| Proxy `buildSession` (`server/src/mcp/proxy.ts`) | One loop calls `registerTool(name, meta, handler)` per aggregated tool. Tool-source agnostic — **the easiest seam.** | A callable-function is just another `registerTool` entry on the same per-session `SdkMcpServer`. |
-| `profileEntriesFor()` | Returns only `{ serverIds }`; skips non-`mcp` entries. | Extend the return shape to carry callable-function ids; widen the profile REST entry schema. |
-| `Resource` domain (`core/src/domain/resource.ts`) | `ResourceKind` includes `'command'` but it is unused; the whole `Resource` aggregate is a no-op stub. | Reuse is possible but means building the deferred Resource module; a dedicated entity is lower-risk (see below). |
-| `config.ts` | No sandbox/timeout/allowlist fields. | Add `sandboxTimeoutMs`, `callableFunctionAllowedHosts`, etc. |
-| deps | No sandboxing library present. | New dependency (see comparison). |
+| Layer                                             | Current state                                                                                                                                         | How a callable-function plugs in                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `McpRegistry` (`server/src/mcp/registry.ts`)      | Structurally coupled to upstream `Client` connections + transports. A callable-function has no upstream connection — **it cannot live in this pool.** | Introduce a sibling `ToolSource`; the registry stays focused on upstreams.                                       |
+| Proxy `buildSession` (`server/src/mcp/proxy.ts`)  | One loop calls `registerTool(name, meta, handler)` per aggregated tool. Tool-source agnostic — **the easiest seam.**                                  | A callable-function is just another `registerTool` entry on the same per-session `SdkMcpServer`.                 |
+| `profileEntriesFor()`                             | Returns only `{ serverIds }`; skips non-`mcp` entries.                                                                                                | Extend the return shape to carry callable-function ids; widen the profile REST entry schema.                     |
+| `Resource` domain (`core/src/domain/resource.ts`) | `ResourceKind` includes `'command'` but it is unused; the whole `Resource` aggregate is a no-op stub.                                                 | Reuse is possible but means building the deferred Resource module; a dedicated entity is lower-risk (see below). |
+| `config.ts`                                       | No sandbox/timeout/allowlist fields.                                                                                                                  | Add `sandboxTimeoutMs`, `callableFunctionAllowedHosts`, etc.                                                     |
+| deps                                              | No sandboxing library present.                                                                                                                        | New dependency (see comparison).                                                                                 |
 
 ### Recommended architecture: a `ToolSource` abstraction
 
@@ -42,14 +42,14 @@ keeps the connection-pool semantics of McpRegistry untouched.
 
 ## Sandbox technology comparison
 
-| Option | Isolation | Performance | Dependency cost | Verdict |
-| --- | --- | --- | --- | --- |
-| `node:vm` | ❌ **Not a sandbox** — Node docs say so explicitly | high | none | **Unusable** (escapable) |
-| `vm2` | Deprecated, multiple known escapes | high | none | **Unusable** (unmaintained) |
-| `worker_threads` | Weak — same process; fatal errors can crash the host; no real permission boundary | high | none (built-in) | Not for untrusted code |
-| **`isolated-vm`** | **Strong** — V8 native Isolate, separate heap, memory/CPU limits, crashes don't hit the host | high (V8 JIT) | native build (prebuilt binaries available) | **Recommended** |
-| QuickJS-WASM (`quickjs-emscripten`) | Very strong — separate engine inside a WASM sandbox | slow (interpreted) | pure WASM, no native build | Backup when no native deps allowed |
-| Node Permission Model (`--permission`) | Process-level fs/network restrictions | native | none | **Defense-in-depth supplement**, not a standalone sandbox |
+| Option                                 | Isolation                                                                                    | Performance        | Dependency cost                            | Verdict                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------ | --------------------------------------------------------- |
+| `node:vm`                              | ❌ **Not a sandbox** — Node docs say so explicitly                                           | high               | none                                       | **Unusable** (escapable)                                  |
+| `vm2`                                  | Deprecated, multiple known escapes                                                           | high               | none                                       | **Unusable** (unmaintained)                               |
+| `worker_threads`                       | Weak — same process; fatal errors can crash the host; no real permission boundary            | high               | none (built-in)                            | Not for untrusted code                                    |
+| **`isolated-vm`**                      | **Strong** — V8 native Isolate, separate heap, memory/CPU limits, crashes don't hit the host | high (V8 JIT)      | native build (prebuilt binaries available) | **Recommended**                                           |
+| QuickJS-WASM (`quickjs-emscripten`)    | Very strong — separate engine inside a WASM sandbox                                          | slow (interpreted) | pure WASM, no native build                 | Backup when no native deps allowed                        |
+| Node Permission Model (`--permission`) | Process-level fs/network restrictions                                                        | native             | none                                       | **Defense-in-depth supplement**, not a standalone sandbox |
 
 **Recommendation: `isolated-vm`.** It keeps V8 performance (important for
 frequently-called MCP tools), provides real Isolate-level isolation with

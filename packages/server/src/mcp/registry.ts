@@ -121,10 +121,7 @@ export class McpRegistry {
   /** Establish a single upstream connection (best-effort, non-throwing). */
   private async connectOne(server: McpServer): Promise<void> {
     const transport = server.transport as Extract<McpTransport, { url: string }>;
-    const client = new Client(
-      { name: 'agent-nexus', version: '0.1.0' },
-      { capabilities: {} },
-    );
+    const client = new Client({ name: 'agent-nexus', version: '0.1.0' }, { capabilities: {} });
     const conn: LiveConnection = { server, client, status: 'connecting', tools: new Map() };
     this.pool.set(server.id, conn);
 
@@ -169,9 +166,7 @@ export class McpRegistry {
    * `${cred:NAME}` placeholders, which are replaced with the decrypted plaintext.
    * stdio has no headers and returns `{}`.
    */
-  private async resolveHeaders(
-    transport: McpTransport,
-  ): Promise<Record<string, string>> {
+  private async resolveHeaders(transport: McpTransport): Promise<Record<string, string>> {
     if (transport.type === 'stdio') return {};
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(transport.headers ?? {})) {

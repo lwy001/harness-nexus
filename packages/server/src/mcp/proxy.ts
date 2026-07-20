@@ -55,11 +55,7 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
       throw new AppError('A profile query parameter is required', 400, 'PROFILE_REQUIRED');
     }
     try {
-      const { serverIds } = await registry.profileEntriesFor(
-        profileId,
-        req.user.id,
-        req.user.role,
-      );
+      const { serverIds } = await registry.profileEntriesFor(profileId, req.user.id, req.user.role);
       (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds = serverIds;
     } catch {
       throw new AppError(
@@ -79,8 +75,14 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
       const sessionId = (req.headers['mcp-session-id'] as string | undefined) ?? randomUUID();
       let session = streamableSessions.get(sessionId);
       if (!session) {
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId });
-        session = await buildSession(registry, transport, (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds);
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => sessionId,
+        });
+        session = await buildSession(
+          registry,
+          transport,
+          (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds,
+        );
         streamableSessions.set(sessionId, session);
         transport.onclose = () => {
           streamableSessions.delete(sessionId);
@@ -105,7 +107,11 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
       const sessionId = randomUUID();
       reply.hijack();
       const transport = new SSEServerTransport('/mcp/sse/messages', reply.raw);
-      const session = await buildSession(registry, transport, (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds);
+      const session = await buildSession(
+        registry,
+        transport,
+        (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds,
+      );
       sseSessions.set(sessionId, session);
       await transport.start();
     },

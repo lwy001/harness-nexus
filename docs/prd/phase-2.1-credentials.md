@@ -5,7 +5,7 @@
 ## Problem Statement
 
 To aggregate upstream MCP servers (Phase 2.2), AgentNexus first needs a way to
-*describe* those connections — their transport (SSE, Streamable HTTP, or stdio),
+_describe_ those connections — their transport (SSE, Streamable HTTP, or stdio),
 their endpoints, and the secrets needed to authenticate to them. Many hosted MCP
 servers and vendor APIs require a Bearer token or API key in a header, and stdio
 servers often take an API key as a command-line argument or environment variable.
@@ -19,7 +19,7 @@ plaintext.
 
 A configuration layer with two concepts:
 
-1. **Credential** — a reusable, AES-256-GCM-encrypted *named secret*. It carries
+1. **Credential** — a reusable, AES-256-GCM-encrypted _named secret_. It carries
    only a name and a secret (no `kind`, no type). The name is the handle used to
    reference it elsewhere. Both support global (admin-managed, shared) and
    personal (owner-only) scoping.
@@ -59,8 +59,8 @@ resolution for direct mode happens at install time (Phase 3.3).
 
 ## Implementation Decisions
 
-- **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user *into*
-  AgentNexus; a `Credential` authenticates AgentNexus *out to* an upstream.
+- **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user _into_
+  AgentNexus; a `Credential` authenticates AgentNexus _out to_ an upstream.
 - **Credential is a pure named secret:** `{ name, secret, scope, ownerId }`. No
   `kind` field — a credential is transport-agnostic; its name is the placeholder
   handle.

@@ -10,10 +10,11 @@
 ## Why split this out
 
 Phase 2 as a whole is large: credentials + MCP client config + the live registry
-+ profile organization + callable-function scripts. 2.1 delivers the storage,
-API, and UI surface for *describing* connections so that 2.2 can focus purely on
-*dialing and aggregating* them. Everything in 2.1 is pure CRUD over structured
-config — no subprocesses, no network egress, no MCP protocol handling.
+
+- profile organization + callable-function scripts. 2.1 delivers the storage,
+  API, and UI surface for _describing_ connections so that 2.2 can focus purely on
+  _dialing and aggregating_ them. Everything in 2.1 is pure CRUD over structured
+  config — no subprocesses, no network egress, no MCP protocol handling.
 
 ## Two new concepts
 
@@ -24,7 +25,7 @@ transport at resolve time. It is referenced by **name** via a `${cred:NAME}`
 placeholder inside any transport string field (url, command, args, env values,
 header values); the placeholder is replaced with the decrypted plaintext when
 the connection is opened (proxy mode) or at install time (direct mode). It is
-**distinct** from a `PersonalAccessToken`, which authenticates a user *into*
+**distinct** from a `PersonalAccessToken`, which authenticates a user _into_
 AgentNexus.
 
 ```ts
@@ -46,7 +47,7 @@ A credential is a **pure named secret** — no `kind`, no type discriminator. Th
 name is the placeholder handle (`${cred:NAME}`), so it should be
 human-meaningful (e.g. `context7-key`, `acme-token`).
 
-- **global** — shared across the instance. Any authenticated user can *read*
+- **global** — shared across the instance. Any authenticated user can _read_
   (they need to reference it), but only admins can create/update/delete.
 - **personal** — owned by the creator. Only the owner can read, update, or
   delete it.
@@ -78,7 +79,7 @@ type McpTransport =
 Credential secrets are referenced as `${cred:NAME}` placeholders **directly in
 the transport string fields** — in `url`, `command`, `args[]`, `env` values, and
 `headers` values. There is no separate `credentialBindings` map; the placeholder
-*is* the binding.
+_is_ the binding.
 
 ```jsonc
 // HTTP, proxy mode — headers edited as JSON:
@@ -110,10 +111,10 @@ the transport string fields** — in `url`, `command`, `args[]`, `env` values, a
 
 **Resolution timing:**
 
-| mode | when | where | plaintext lifetime |
-| --- | --- | --- | --- |
-| `proxy` | connect time | `McpRegistry.resolveHeaders` / `resolveUrl` | in-memory only, discarded after dial |
-| `direct` | install time | Phase 3.3 target writer | written into the emitted plugin config (bundle is sensitive) |
+| mode     | when         | where                                       | plaintext lifetime                                           |
+| -------- | ------------ | ------------------------------------------- | ------------------------------------------------------------ |
+| `proxy`  | connect time | `McpRegistry.resolveHeaders` / `resolveUrl` | in-memory only, discarded after dial                         |
+| `direct` | install time | Phase 3.3 target writer                     | written into the emitted plugin config (bundle is sensitive) |
 
 In 2.1 scope, the server stores placeholders verbatim — it does not validate
 that `${cred:X}` references a real credential at create time. A dangling
@@ -141,11 +142,11 @@ Applies identically to **credentials** and **mcp-servers**. The instance-level
 auth guards (`requireAuth` / `requireAdmin` from Phase 1) are the first gate; the
 per-resource ownership check layers on top.
 
-| Operation            | `global` scope             | `personal` scope          |
-| -------------------- | -------------------------- | ------------------------- |
-| List / get           | any authenticated user     | owner only                |
-| Create               | admin only                 | any authenticated user    |
-| Update / delete      | admin only                 | owner only                |
+| Operation       | `global` scope         | `personal` scope       |
+| --------------- | ---------------------- | ---------------------- |
+| List / get      | any authenticated user | owner only             |
+| Create          | admin only             | any authenticated user |
+| Update / delete | admin only             | owner only             |
 
 Not-found returns `404` (not `403`) to avoid leaking existence.
 
@@ -173,16 +174,16 @@ API.
 
 All under `/api`, JSON bodies. Same `{ error, message }` error shape as Phase 1.
 
-| Method | Path                    | Auth           | Notes                                                                       |
-| ------ | ----------------------- | -------------- | --------------------------------------------------------------------------- |
-| POST   | `/api/credentials`      | `requireAuth`† | create; admin required iff `scope === 'global'`; returns masked view        |
-| GET    | `/api/credentials`      | `requireAuth`  | list caller's personal + all global; secrets masked                         |
-| PATCH  | `/api/credentials/:id`  | `requireAuth`‡ | update name/secret; owner-or-admin                                          |
-| DELETE | `/api/credentials/:id`  | `requireAuth`‡ | delete; owner-or-admin                                                      |
-| POST   | `/api/mcp-servers`      | `requireAuth`† | create; admin required iff `scope === 'global'`; accepts `mode` + transport |
-| GET    | `/api/mcp-servers`      | `requireAuth`  | list caller's personal + all global                                         |
-| PATCH  | `/api/mcp-servers/:id`  | `requireAuth`‡ | update; owner-or-admin                                                      |
-| DELETE | `/api/mcp-servers/:id`  | `requireAuth`‡ | delete; owner-or-admin                                                      |
+| Method | Path                   | Auth           | Notes                                                                       |
+| ------ | ---------------------- | -------------- | --------------------------------------------------------------------------- |
+| POST   | `/api/credentials`     | `requireAuth`† | create; admin required iff `scope === 'global'`; returns masked view        |
+| GET    | `/api/credentials`     | `requireAuth`  | list caller's personal + all global; secrets masked                         |
+| PATCH  | `/api/credentials/:id` | `requireAuth`‡ | update name/secret; owner-or-admin                                          |
+| DELETE | `/api/credentials/:id` | `requireAuth`‡ | delete; owner-or-admin                                                      |
+| POST   | `/api/mcp-servers`     | `requireAuth`† | create; admin required iff `scope === 'global'`; accepts `mode` + transport |
+| GET    | `/api/mcp-servers`     | `requireAuth`  | list caller's personal + all global                                         |
+| PATCH  | `/api/mcp-servers/:id` | `requireAuth`‡ | update; owner-or-admin                                                      |
+| DELETE | `/api/mcp-servers/:id` | `requireAuth`‡ | delete; owner-or-admin                                                      |
 
 † `requireAuth` plus an in-handler scope check: creating a `global` record
 requires `role === 'admin'`, else `403 FORBIDDEN`.

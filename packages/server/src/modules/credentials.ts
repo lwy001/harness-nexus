@@ -54,8 +54,7 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       app.uow.credentials.list({ scope: 'global' }),
     ]);
     // Decrypt for masking only; the plaintext is not returned.
-    const view = (c: Credential) =>
-      credentialView(c, maskSecret(decryptSecret(c.secret, key)));
+    const view = (c: Credential) => credentialView(c, maskSecret(decryptSecret(c.secret, key)));
     return { credentials: [...personal, ...global].map(view) };
   });
 
@@ -74,7 +73,8 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
     await app.uow.credentials.save(next);
-    const plaintext = input.secret !== undefined ? input.secret : decryptSecret(existing.secret, key);
+    const plaintext =
+      input.secret !== undefined ? input.secret : decryptSecret(existing.secret, key);
     return { credential: credentialView(next, maskSecret(plaintext)) };
   });
 
@@ -90,10 +90,6 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /** A record is actionable by the caller iff they own it (personal) or are admin. */
-function ownsOrAdmin(
-  c: Credential,
-  userId: string,
-  role: 'admin' | 'user',
-): boolean {
+function ownsOrAdmin(c: Credential, userId: string, role: 'admin' | 'user'): boolean {
   return role === 'admin' || c.ownerId === userId;
 }

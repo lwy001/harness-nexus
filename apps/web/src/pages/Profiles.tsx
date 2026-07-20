@@ -4,13 +4,7 @@ import { LayersIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon } from 'lucide-rea
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -75,8 +69,8 @@ export function ProfilesPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Bundles of MCP servers that agent tools connect through. An agent tool authenticates with
-          a PAT and targets a profile via{' '}
-          <code className="font-mono">/mcp?profile=&lt;id&gt;</code>.
+          a PAT and targets a profile via <code className="font-mono">/mcp?profile=&lt;id&gt;</code>
+          .
         </p>
       </div>
 
@@ -119,9 +113,7 @@ export function ProfilesPage() {
                     <TableCell className="pl-6">
                       <div className="font-medium">{p.name}</div>
                       {p.description && (
-                        <div className="text-muted-foreground mt-0.5 text-xs">
-                          {p.description}
-                        </div>
+                        <div className="text-muted-foreground mt-0.5 text-xs">{p.description}</div>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
@@ -264,11 +256,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="prof-scope">Scope</Label>
-              <Select
-                value={scope}
-                onValueChange={(v) => setScope(v as Scope)}
-                disabled={!isAdmin}
-              >
+              <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
                 <SelectTrigger id="prof-scope">
                   <SelectValue />
                 </SelectTrigger>

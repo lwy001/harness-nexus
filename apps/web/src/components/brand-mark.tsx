@@ -43,7 +43,13 @@ export function BrandMark({ size = 28, className }: BrandMarkProps) {
       {/* the nexus */}
       <circle cx="15" cy="16" r="3.6" fill="currentColor" />
       {/* re-exposed fan-out */}
-      <path d="M15 16 L26 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.55" />
+      <path
+        d="M15 16 L26 16"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
       <circle cx="26" cy="16" r="1.7" fill="currentColor" opacity="0.5" />
     </svg>
   );

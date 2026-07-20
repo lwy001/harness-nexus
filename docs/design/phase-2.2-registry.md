@@ -6,19 +6,19 @@
 
 ## What 2.2 adds on top of 2.1
 
-Phase 2.1 (see `docs/phase-2.md`) delivered the *configuration layer*: how to
+Phase 2.1 (see `docs/phase-2.md`) delivered the _configuration layer_: how to
 describe upstream MCP connections and their credentials. 2.2 makes those
-descriptions *live* — it dials the configured servers, aggregates their tools,
+descriptions _live_ — it dials the configured servers, aggregates their tools,
 and re-exposes a single MCP server endpoint that Agent tools authenticate to
 with a PAT and route through a profile.
 
-| Piece                  | 2.1 (done)              | 2.2 (this doc)                              |
-| ---------------------- | ----------------------- | ------------------------------------------- |
-| `McpServer` rows       | CRUD + storage          | read by the registry, dialed live           |
-| `${cred:NAME}` placeholders | stored verbatim     | resolved into real values at connect time    |
-| `Profile`              | domain + port only      | CRUD + scope rules + entry validation        |
-| `mountMcpProxy`        | stub (logs + returns)   | mounts `/mcp` + `/mcp/sse`                   |
-| Agent-tool access      | —                       | PAT auth → `?profile=<id>` → aggregated tools |
+| Piece                       | 2.1 (done)            | 2.2 (this doc)                                |
+| --------------------------- | --------------------- | --------------------------------------------- |
+| `McpServer` rows            | CRUD + storage        | read by the registry, dialed live             |
+| `${cred:NAME}` placeholders | stored verbatim       | resolved into real values at connect time     |
+| `Profile`                   | domain + port only    | CRUD + scope rules + entry validation         |
+| `mountMcpProxy`             | stub (logs + returns) | mounts `/mcp` + `/mcp/sse`                    |
+| Agent-tool access           | —                     | PAT auth → `?profile=<id>` → aggregated tools |
 
 ## Architecture overview
 
@@ -87,7 +87,7 @@ Holds live connections and aggregates capabilities. Key design:
   returns the result. The namespace is documented in the tool description so
   Agent tools see the origin.
 - **Health & reconnect.** Each connection has a status: `connecting |
-  connected | error | disconnected`. `listTools()` best-effort skips errored
+connected | error | disconnected`. `listTools()` best-effort skips errored
   upstreams (logged, not fatal). The registry does NOT block startup on upstream
   availability — a missing/unreachable upstream simply yields fewer tools.
   `reload()` re-reads the config table and reconciles the pool (connect new,
@@ -122,13 +122,13 @@ valid `?profile=<id>` visible to that user. Missing/invalid → `401` /
 
 New REST module, scope rules identical to credentials/mcp-servers:
 
-| Method | Path                | Auth           | Notes                                            |
-| ------ | ------------------- | -------------- | ------------------------------------------------ |
-| POST   | `/api/profiles`     | `requireAuth`† | create; admin required iff `scope === 'global'`  |
-| GET    | `/api/profiles`     | `requireAuth`  | list caller's personal + all global              |
-| GET    | `/api/profiles/:id` | `requireAuth`‡ | detail with resolved entries                     |
-| PATCH  | `/api/profiles/:id` | `requireAuth`‡ | update name/description/entries                  |
-| DELETE | `/api/profiles/:id` | `requireAuth`‡ | delete; owner-or-admin                           |
+| Method | Path                | Auth           | Notes                                           |
+| ------ | ------------------- | -------------- | ----------------------------------------------- |
+| POST   | `/api/profiles`     | `requireAuth`† | create; admin required iff `scope === 'global'` |
+| GET    | `/api/profiles`     | `requireAuth`  | list caller's personal + all global             |
+| GET    | `/api/profiles/:id` | `requireAuth`‡ | detail with resolved entries                    |
+| PATCH  | `/api/profiles/:id` | `requireAuth`‡ | update name/description/entries                 |
+| DELETE | `/api/profiles/:id` | `requireAuth`‡ | delete; owner-or-admin                          |
 
 † global scope requires admin. ‡ ownership check: owner (personal) or admin.
 

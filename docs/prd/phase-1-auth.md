@@ -55,7 +55,7 @@ channels share the same permission guards.
   - PAT — format `anpat_<base64url(32)>`, stored as sha256. Resolved via DB
     lookup; `lastUsedAt` updated fire-and-forget.
 - **Bootstrap:** the first registrant becomes admin (detected via `users.count()
-  === 0`). Registration is **not** auto-closed after bootstrap.
+=== 0`). Registration is **not** auto-closed after bootstrap.
 - **Registration switch:** `SystemSettings.allowRegistration` (default open).
   `POST /api/auth/register` is gated by it; `POST /api/users` (admin) bypasses.
 - **Password hashing:** argon2id (`@node-rs/argon2`), OWASP-recommended params.

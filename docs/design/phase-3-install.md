@@ -33,7 +33,7 @@ The `McpServer` interface (currently at `user.ts:43`) gains `mode`. The
 export interface McpServer {
   id: string;
   name: string;
-  transport: McpTransport;          // unchanged (already supports stdio)
+  transport: McpTransport; // unchanged (already supports stdio)
   /**
    * proxy  — AgentNexus dials the upstream and re-exposes it via /mcp.
    *          Only SSE / Streamable HTTP. Pooled by the registry.
@@ -42,7 +42,7 @@ export interface McpServer {
    *          it never opens the connection. stdio forces direct.
    */
   mode: 'proxy' | 'direct';
-  proxied: boolean;                 // still drives registry pooling (proxy mode only)
+  proxied: boolean; // still drives registry pooling (proxy mode only)
   scope: 'global' | 'personal';
   ownerId: string | null;
   createdAt: string;
@@ -52,10 +52,10 @@ export interface McpServer {
 
 ### mode × transport matrix
 
-| mode      | `sse` | `streamable-http` | `stdio` |
-| --------- | :---: | :---------------: | :-----: |
-| `proxy`   |   ✅  |        ✅         | ❌ `409 STDIO_REQUIRES_DIRECT` |
-| `direct`  |   ✅  |        ✅         |   ✅    |
+| mode     | `sse` | `streamable-http` |            `stdio`             |
+| -------- | :---: | :---------------: | :----------------------------: |
+| `proxy`  |  ✅   |        ✅         | ❌ `409 STDIO_REQUIRES_DIRECT` |
+| `direct` |  ✅   |        ✅         |               ✅               |
 
 The registry (Phase 2.2) only ever dials `mode === 'proxy'` rows. A `direct`
 row is never opened by AgentNexus — it is emitted verbatim into a plugin at
@@ -70,21 +70,27 @@ Lift the Phase 2.1 stdio exclusion **for direct mode only**, and add `mode`:
 const mcpModeSchema = z.enum(['proxy', 'direct']);
 
 export const mcpTransportSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('stdio'), command: z.string().min(1),
-             args: z.array(z.string()).optional(),
-             env: z.record(z.string(), z.string()).optional() }),
+  z.object({
+    type: z.literal('stdio'),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  }),
   z.object({ type: z.literal('sse'), url: z.string().url(), ...headerBindingsBase }),
   z.object({ type: z.literal('streamable-http'), url: z.string().url(), ...headerBindingsBase }),
 ]);
 
-export const createMcpServerSchema = z.object({
-  name: z.string().min(1).max(64),
-  transport: mcpTransportSchema,
-  mode: mcpModeSchema.default('proxy'),
-  proxied: z.boolean().default(false),
-  scope: scopeSchema,
-}).refine((v) => !(v.transport.type === 'stdio' && v.mode === 'proxy'),
-  { message: 'stdio transport requires direct mode' });
+export const createMcpServerSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    transport: mcpTransportSchema,
+    mode: mcpModeSchema.default('proxy'),
+    proxied: z.boolean().default(false),
+    scope: scopeSchema,
+  })
+  .refine((v) => !(v.transport.type === 'stdio' && v.mode === 'proxy'), {
+    message: 'stdio transport requires direct mode',
+  });
 ```
 
 The handler maps the refine failure to `409 STDIO_REQUIRES_DIRECT` (same shape
@@ -120,7 +126,7 @@ export interface Profile {
   description?: string;
   version: string;
   /** Single target tool this profile is shaped for. Immutable post-create. */
-  target: AgentTarget;            // 'claude-code' | 'zcode' | 'hermes' | 'generic'
+  target: AgentTarget; // 'claude-code' | 'zcode' | 'hermes' | 'generic'
   scope: 'global' | 'personal';
   ownerId: string | null;
   entries: ProfileEntry[];
@@ -167,21 +173,36 @@ consult it; the writers consult it to skip unsupported events defensively.
 ```ts
 // packages/shared/src/target-compat.ts
 export const HOOK_EVENTS = [
-  'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
-  'PostToolUseFailure', 'PermissionRequest', 'Stop',
+  'SessionStart',
+  'UserPromptSubmit',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionRequest',
+  'Stop',
   // Claude-Code-only (ZCode supports the 7 above; Hermes differs):
-  'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop',
-  'Notification', 'SessionEnd', /* …the rest of the CC set */
+  'PreCompact',
+  'PostCompact',
+  'SubagentStart',
+  'SubagentStop',
+  'Notification',
+  'SessionEnd' /* …the rest of the CC set */,
 ] as const;
-export type HookEvent = typeof HOOK_EVENTS[number];
+export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 export const HOOK_SUPPORT: Record<AgentTarget, ReadonlySet<HookEvent>> = {
-  'claude-code': new Set(HOOK_EVENTS),                 // full ~30
-  'zcode': new Set([                                   // the 7 ZCode supports
-    'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
-    'PostToolUseFailure', 'PermissionRequest', 'Stop',
+  'claude-code': new Set(HOOK_EVENTS), // full ~30
+  zcode: new Set([
+    // the 7 ZCode supports
+    'SessionStart',
+    'UserPromptSubmit',
+    'PreToolUse',
+    'PostToolUse',
+    'PostToolUseFailure',
+    'PermissionRequest',
+    'Stop',
   ]),
-  hermes: new Set([ /* verified against the Hermes repo before shipping */ ]),
+  hermes: new Set([/* verified against the Hermes repo before shipping */]),
   generic: new Set(HOOK_EVENTS),
 };
 ```
@@ -266,14 +287,14 @@ on the referenced `McpServer.mode`:
     "agentnexus-cloud": {
       "type": "streamable-http",
       "url": "https://anx.example.com/mcp?profile=<profileId>",
-      "headers": { "Authorization": "Bearer ${user_config.PAT}" }
+      "headers": { "Authorization": "Bearer ${user_config.PAT}" },
     },
     // direct mode → connection verbatim (stdio preserved)
     "local-fs": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
-    }
-  }
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+    },
+  },
 }
 ```
 
@@ -329,22 +350,22 @@ interface CompatibilityReport {
     sourceEntryId: string;
     kind: ResourceKind;
     status: 'portable' | 'convertible' | 'unsupported';
-    reason?: string;             // present iff unsupported (e.g. "ZCode plugins do not execute sub-agents")
-    convertedPreview?: unknown;  // iff convertible (e.g. hook event filtered, mcp shape changed)
+    reason?: string; // present iff unsupported (e.g. "ZCode plugins do not execute sub-agents")
+    convertedPreview?: unknown; // iff convertible (e.g. hook event filtered, mcp shape changed)
   }>;
 }
 ```
 
 Mapping rules (from the research doc's matrix):
 
-| Kind | Portable | Convertible | Unsupported |
-| --- | --- | --- | --- |
-| skill | all targets | — | — |
-| command | all | — | — |
-| rule | — | all (wrap-as-skill vs AGENTS.md) | — |
-| sub_agent | claude-code, hermes | — | zcode (plugin doesn't execute) |
-| hook | event ∈ target's `HOOK_SUPPORT` | event filtered out | event ∉ support set |
-| mcp | proxy mode | JSON↔YAML, proxy↔single endpoint | — |
+| Kind      | Portable                        | Convertible                      | Unsupported                    |
+| --------- | ------------------------------- | -------------------------------- | ------------------------------ |
+| skill     | all targets                     | —                                | —                              |
+| command   | all                             | —                                | —                              |
+| rule      | —                               | all (wrap-as-skill vs AGENTS.md) | —                              |
+| sub_agent | claude-code, hermes             | —                                | zcode (plugin doesn't execute) |
+| hook      | event ∈ target's `HOOK_SUPPORT` | event filtered out               | event ∉ support set            |
+| mcp       | proxy mode                      | JSON↔YAML, proxy↔single endpoint | —                              |
 
 `import-apply` copies entries marked `portable` or `convertible`, skips
 `unsupported`, and only the `selectedEntryIds` the user confirmed.
@@ -353,14 +374,14 @@ Mapping rules (from the research doc's matrix):
 
 All under `/api`, same `{ error, message }` shape.
 
-| Method | Path | Auth | Notes |
-| --- | --- | --- | --- |
-| POST | `/api/mcp-servers` | `requireAuth`† | now accepts `mode`; stdio requires `direct` |
-| PATCH | `/api/mcp-servers/:id` | `requireAuth`‡ | mode change allowed (proxy↔direct) if transport permits |
-| POST | `/api/profiles` | `requireAuth`† | now requires `target` |
-| PATCH | `/api/profiles/:id` | `requireAuth`‡ | omits `target`; carrying it → `409 TARGET_IMMUTABLE` |
-| POST | `/api/profiles/:id/import-from` | `requireAuth`‡ | owner-or-admin on both profiles |
-| POST | `/api/profiles/:id/import-apply` | `requireAuth`‡ | owner-or-admin on both profiles |
+| Method | Path                             | Auth           | Notes                                                   |
+| ------ | -------------------------------- | -------------- | ------------------------------------------------------- |
+| POST   | `/api/mcp-servers`               | `requireAuth`† | now accepts `mode`; stdio requires `direct`             |
+| PATCH  | `/api/mcp-servers/:id`           | `requireAuth`‡ | mode change allowed (proxy↔direct) if transport permits |
+| POST   | `/api/profiles`                  | `requireAuth`† | now requires `target`                                   |
+| PATCH  | `/api/profiles/:id`              | `requireAuth`‡ | omits `target`; carrying it → `409 TARGET_IMMUTABLE`    |
+| POST   | `/api/profiles/:id/import-from`  | `requireAuth`‡ | owner-or-admin on both profiles                         |
+| POST   | `/api/profiles/:id/import-apply` | `requireAuth`‡ | owner-or-admin on both profiles                         |
 
 † admin required iff `scope === 'global'`. ‡ ownership check on both profiles
 (source must be visible to the caller too; else `404 NOT_FOUND`).
@@ -411,7 +432,7 @@ Follows the Signal design system (AGENTS.md "Web UI design system").
 - Hosted per-profile marketplace / registry.
 - `--apply` shelling out to target CLIs.
 - Per-PAT profile binding and tool-level authorization (still from 2.2).
-- The stdio bridge entry (Phase 6) — direct mode here is the *tool* spawning
+- The stdio bridge entry (Phase 6) — direct mode here is the _tool_ spawning
   stdio, not AgentNexus.
 
 ## Suggested sub-phasing

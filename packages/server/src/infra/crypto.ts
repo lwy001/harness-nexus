@@ -78,16 +78,11 @@ export function decryptSecret(blob: string, keyMaterial: string): string {
   const [ivB64, ctB64, tagB64] = blob.split(':');
   if (!ivB64 || !ctB64 || !tagB64) throw new Error('malformed ciphertext blob');
   const key = deriveKey(keyMaterial);
-  const decipher = createDecipheriv(
-    'aes-256-gcm',
-    key,
-    Buffer.from(ivB64, 'base64'),
-  );
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
   decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
-  return Buffer.concat([
-    decipher.update(Buffer.from(ctB64, 'base64')),
-    decipher.final(),
-  ]).toString('utf8');
+  return Buffer.concat([decipher.update(Buffer.from(ctB64, 'base64')), decipher.final()]).toString(
+    'utf8',
+  );
 }
 
 /**
@@ -96,7 +91,5 @@ export function decryptSecret(blob: string, keyMaterial: string): string {
  * ≥8 chars → `abc…xyz`; shorter → `***`.
  */
 export function maskSecret(secret: string): string {
-  return secret.length >= 8
-    ? `${secret.slice(0, 3)}…${secret.slice(-3)}`
-    : '***';
+  return secret.length >= 8 ? `${secret.slice(0, 3)}…${secret.slice(-3)}` : '***';
 }

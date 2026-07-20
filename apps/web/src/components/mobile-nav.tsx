@@ -25,12 +25,7 @@ export function MobileNav({ children }: { children: ReactNode }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          aria-label="Open navigation"
-        >
+        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation">
           <MenuIcon className="size-5" />
         </Button>
       </DialogPrimitive.Trigger>
@@ -41,9 +36,7 @@ export function MobileNav({ children }: { children: ReactNode }) {
           aria-description="Site navigation"
         >
           <div className="flex items-center justify-between">
-            <span className="text-foreground text-sm font-semibold tracking-tight">
-              Menu
-            </span>
+            <span className="text-foreground text-sm font-semibold tracking-tight">Menu</span>
             <DialogPrimitive.Close asChild>
               <Button variant="ghost" size="icon" aria-label="Close navigation">
                 <XIcon className="size-5" />

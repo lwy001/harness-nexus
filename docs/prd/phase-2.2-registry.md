@@ -4,7 +4,7 @@
 
 ## Problem Statement
 
-Phase 2.1 lets users *describe* upstream MCP connections, but nothing actually
+Phase 2.1 lets users _describe_ upstream MCP connections, but nothing actually
 dials them. Each coding tool (Claude Code, ZCode, Hermes) still has to manage its
 own MCP server list and repeat the same connection config across machines. There
 is no way for an agent tool to connect to AgentNexus and get an aggregated set of

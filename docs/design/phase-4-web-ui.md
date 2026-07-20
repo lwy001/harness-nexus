@@ -15,13 +15,13 @@ exists and is unchanged:
 ```ts
 interface Resource {
   id: string;
-  key: string;           // stable id within instance, e.g. "sub_agent:reviewer"
-  kind: ResourceKind;    // 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'command'
+  key: string; // stable id within instance, e.g. "sub_agent:reviewer"
+  kind: ResourceKind; // 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'command'
   name: string;
   description?: string;
-  version: string;       // asset semver, independent of packaging
+  version: string; // asset semver, independent of packaging
   source: ResourceSource;
-  scope: ResourceScope;  // 'global' | 'personal'
+  scope: ResourceScope; // 'global' | 'personal'
   ownerId: string | null;
   targets: AgentTarget[];
   labels?: Record<string, string>;
@@ -82,6 +82,7 @@ unique index over a nullable `owner_id` (global rows have NULL owner).
 ### `sqliteResourceRepository` (repos.ts)
 
 A new exported factory following the credential/mcp-server shape:
+
 - `findById(id)` — `SELECT * FROM resources WHERE id = ?`.
 - `findByKey(key, scope, ownerId?)` — `WHERE key = ? AND scope = ?` plus
   `owner_id = ?` when `ownerId` is given (personal); global rows match
@@ -119,10 +120,13 @@ const scopeSchema = z.enum(['global', 'personal']);
 // import them rather than redefining.
 
 const resourceSourceSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('git'), url: z.string().min(1),
-             ref: z.string().optional(), path: z.string().optional() }),
-  z.object({ type: z.literal('tarball'), url: z.string().min(1),
-             checksum: z.string().optional() }),
+  z.object({
+    type: z.literal('git'),
+    url: z.string().min(1),
+    ref: z.string().optional(),
+    path: z.string().optional(),
+  }),
+  z.object({ type: z.literal('tarball'), url: z.string().min(1), checksum: z.string().optional() }),
   z.object({ type: z.literal('local'), path: z.string().min(1) }),
   z.object({ type: z.literal('inline'), content: z.string() }),
 ]);
@@ -158,13 +162,13 @@ Route module `packages/server/src/modules/resources.ts`, registered in `app.ts`
 (replacing the `// TODO: resources route module` comment). Scope rules identical
 to credentials/mcp-servers.
 
-| Method | Path | Auth | Notes |
-| --- | --- | --- | --- |
-| POST | `/api/resources` | requireAuth | global⇒admin; kind constrained to sub_agent/rule (4.2/4.3); key uniqueness 409 |
-| GET | `/api/resources` | requireAuth | query `?kind=&scope=&target=`; returns personal+global like mcp-servers |
-| GET | `/api/resources/:id` | requireAuth | owner-or-admin for personal, else 404 |
-| PATCH | `/api/resources/:id` | requireAuth | owner-or-admin; kind/scope immutable (409) |
-| DELETE | `/api/resources/:id` | requireAuth | owner-or-admin; 404 not-found on others |
+| Method | Path                 | Auth        | Notes                                                                          |
+| ------ | -------------------- | ----------- | ------------------------------------------------------------------------------ |
+| POST   | `/api/resources`     | requireAuth | global⇒admin; kind constrained to sub_agent/rule (4.2/4.3); key uniqueness 409 |
+| GET    | `/api/resources`     | requireAuth | query `?kind=&scope=&target=`; returns personal+global like mcp-servers        |
+| GET    | `/api/resources/:id` | requireAuth | owner-or-admin for personal, else 404                                          |
+| PATCH  | `/api/resources/:id` | requireAuth | owner-or-admin; kind/scope immutable (409)                                     |
+| DELETE | `/api/resources/:id` | requireAuth | owner-or-admin; 404 not-found on others                                        |
 
 **List behavior** mirrors `GET /api/mcp-servers`: returns the caller's personal
 resources + all global resources. Query filters (`kind`/`scope`/`target`) map to
@@ -172,6 +176,7 @@ resources + all global resources. Query filters (`kind`/`scope`/`target`) map to
 the caller's; default both.
 
 **Create flow:**
+
 1. `createResourceSchema.parse(body)`.
 2. global scope + non-admin ⇒ 403.
 3. kind not in the allowlist (sub_agent/rule) ⇒ 409 `KIND_NOT_AVAILABLE`.
@@ -188,6 +193,7 @@ for symmetry with `credentialView` and future redaction).
 ## SDK
 
 `packages/sdk-ts/src/index.ts`:
+
 - Re-export `Resource`, `ResourceKind`, `AgentTarget` from `@agent-nexus/core`.
 - Add `listResources(filter?)`, `getResource(id)`, `createResource(input)`,
   `updateResource(id, input)`, `deleteResource(id)`.
@@ -216,11 +222,13 @@ create/edit via Dialog). New nav item **"Resources"** (`/resources`,
 ### Kind editors (sub-agent, rule)
 
 A shared `ResourceEditor` Dialog component (module scope) renders common fields
-+ a kind-specific body. Common: key (mono, `spellCheck=false`), name,
-description, version, scope (admin-only global toggle), targets (checkboxes of
-the 4 targets for simplicity in 4.2). Kind-specific:
-- **Sub-agent:** a `Textarea` labeled "System prompt" → `source.inline.content`.
-- **Rule:** a `Textarea` labeled "Policy / guideline" → `source.inline.content`.
+
+- a kind-specific body. Common: key (mono, `spellCheck=false`), name,
+  description, version, scope (admin-only global toggle), targets (checkboxes of
+  the 4 targets for simplicity in 4.2). Kind-specific:
+
+* **Sub-agent:** a `Textarea` labeled "System prompt" → `source.inline.content`.
+* **Rule:** a `Textarea` labeled "Policy / guideline" → `source.inline.content`.
 
 Both force `source.type = 'inline'` (the only variant the markdown editors
 produce). The Dialog reuses `components/ui/dialog.tsx` (built in 4.1).
@@ -235,10 +243,10 @@ produce). The Dialog reuses `components/ui/dialog.tsx` (built in 4.1).
 
 Same as credentials & mcp-servers (unchanged):
 
-| | list global | list personal | create global | create personal | mutate own | mutate foreign |
-| --- | --- | --- | --- | --- | --- | --- |
-| admin | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (admin) |
-| user | ✓ | ✓ | ✗ 403 | ✓ | ✓ | ✗ 404 |
+|       | list global | list personal | create global | create personal | mutate own | mutate foreign |
+| ----- | ----------- | ------------- | ------------- | --------------- | ---------- | -------------- |
+| admin | ✓           | ✓             | ✓             | ✓               | ✓          | ✓ (admin)      |
+| user  | ✓           | ✓             | ✗ 403         | ✓               | ✓          | ✗ 404          |
 
 Not-found returns `404` (not `403`) to avoid leaking existence — identical to
 credentials.
@@ -246,6 +254,7 @@ credentials.
 ## Testing
 
 Extend `scripts/smoke.mjs` with a `[4.2]` block:
+
 - user creates a personal `sub_agent` resource (201), inline body.
 - admin creates a global `rule` resource (201).
 - list returns personal + global.

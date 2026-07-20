@@ -13,13 +13,7 @@ import {
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -46,7 +40,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { AgentNexusError, type McpServer, type McpMode, type CredentialView } from '@agent-nexus/sdk';
+import {
+  AgentNexusError,
+  type McpServer,
+  type McpMode,
+  type CredentialView,
+} from '@agent-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 type TransportType = 'sse' | 'streamable-http' | 'stdio';
@@ -137,7 +136,10 @@ export function McpManagementPage() {
                   <TableRow key={s.id}>
                     <TableCell className="pl-6 font-medium">{s.name}</TableCell>
                     <TableCell>
-                      <Badge variant={s.mode === 'proxy' ? 'default' : 'secondary'} className="font-mono text-[10px]">
+                      <Badge
+                        variant={s.mode === 'proxy' ? 'default' : 'secondary'}
+                        className="font-mono text-[10px]"
+                      >
                         {s.mode}
                       </Badge>
                     </TableCell>
@@ -490,11 +492,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
         </form>
       </CardContent>
 
-      <ImportJsonDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImport={applyImport}
-      />
+      <ImportJsonDialog open={importOpen} onOpenChange={setImportOpen} onImport={applyImport} />
     </Card>
   );
 }
@@ -556,7 +554,9 @@ function ImportJsonDialog({
       return;
     }
     if (entries.length > 1) {
-      toast.error(`Multiple entries found (${entries.length}). Only one server at a time is supported.`);
+      toast.error(
+        `Multiple entries found (${entries.length}). Only one server at a time is supported.`,
+      );
       return;
     }
     const first = entries[0];
@@ -582,8 +582,10 @@ function ImportJsonDialog({
             Import MCP server JSON
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="text-muted-foreground mt-1 text-sm">
-            Paste a single-entry <code className="font-mono">{'{ "mcpServers": { "name": {...} } }'}</code> blob.
-            Mode is inferred (<code className="font-mono">command</code> → direct, <code className="font-mono">serverUrl</code> → proxy).
+            Paste a single-entry{' '}
+            <code className="font-mono">{'{ "mcpServers": { "name": {...} } }'}</code> blob. Mode is
+            inferred (<code className="font-mono">command</code> → direct,{' '}
+            <code className="font-mono">serverUrl</code> → proxy).
           </DialogPrimitive.Description>
           <Textarea
             value={text}
@@ -591,7 +593,9 @@ function ImportJsonDialog({
             className="mt-4 font-mono text-xs"
             rows={10}
             spellCheck={false}
-            placeholder={'{\n  "mcpServers": {\n    "context7": {\n      "serverUrl": "https://mcp.context7.com/mcp",\n      "headers": { "CONTEXT7_API_KEY": "${cred:context7-key}" }\n    }\n  }\n}'}
+            placeholder={
+              '{\n  "mcpServers": {\n    "context7": {\n      "serverUrl": "https://mcp.context7.com/mcp",\n      "headers": { "CONTEXT7_API_KEY": "${cred:context7-key}" }\n    }\n  }\n}'
+            }
             autoFocus
           />
           <div className="mt-4 flex justify-end gap-2">

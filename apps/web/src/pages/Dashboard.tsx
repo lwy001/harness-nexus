@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { UsersIcon, SettingsIcon, KeyRoundIcon, ServerIcon, LayersIcon, ArrowRightIcon } from 'lucide-react';
+import {
+  UsersIcon,
+  SettingsIcon,
+  KeyRoundIcon,
+  ServerIcon,
+  LayersIcon,
+  ArrowRightIcon,
+} from 'lucide-react';
 import { useAuth, withAuthGuard } from '@/auth';
 import { api } from '@/api';
 import {
@@ -33,7 +40,10 @@ export function DashboardPage() {
       try {
         const [s, st, c, p] = await Promise.all([
           withAuthGuard(() => api.listMcpServers(), logout),
-          withAuthGuard(() => api.listMcpServerStatuses().catch(() => [] as McpServerStatus[]), logout),
+          withAuthGuard(
+            () => api.listMcpServerStatuses().catch(() => [] as McpServerStatus[]),
+            logout,
+          ),
           withAuthGuard(() => api.listCredentials(), logout),
           withAuthGuard(() => api.listProfiles(), logout),
         ]);
@@ -151,8 +161,9 @@ export function DashboardPage() {
       </section>
 
       <p className="text-muted-foreground mt-6 text-xs">
-        Agent tools connect via a PAT and a profile: <code className="font-mono">/mcp?profile=&lt;id&gt;</code>.
-        callable-function scripts (wrapping vendor APIs as MCP tools) arrive in a later phase.
+        Agent tools connect via a PAT and a profile:{' '}
+        <code className="font-mono">/mcp?profile=&lt;id&gt;</code>. callable-function scripts
+        (wrapping vendor APIs as MCP tools) arrive in a later phase.
       </p>
     </AppShell>
   );

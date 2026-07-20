@@ -4,13 +4,7 @@ import { KeyRoundIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon } from 'lucide-r
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -183,10 +177,7 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setBusy(true);
     try {
-      await withAuthGuard(
-        () => api.createCredential({ name, secret, scope }),
-        logout,
-      );
+      await withAuthGuard(() => api.createCredential({ name, secret, scope }), logout);
       toast.success('Credential created');
       setName('');
       setSecret('');
@@ -205,7 +196,9 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
           <PlusIcon className="size-4" />
           Add credential
         </CardTitle>
-        <CardDescription>The secret is encrypted immediately and shown only as a preview afterwards.</CardDescription>
+        <CardDescription>
+          The secret is encrypted immediately and shown only as a preview afterwards.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -236,11 +229,7 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="cred-scope">Scope</Label>
-              <Select
-                value={scope}
-                onValueChange={(v) => setScope(v as Scope)}
-                disabled={!isAdmin}
-              >
+              <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
                 <SelectTrigger id="cred-scope">
                   <SelectValue />
                 </SelectTrigger>

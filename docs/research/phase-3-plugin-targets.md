@@ -12,9 +12,9 @@ We already have a `Profile` (a named, versioned bundle of resources — MCP
 servers, skills, hooks, sub-agents, rules, commands — plus optional third-party
 imports). Phase 3 is the **install pipeline**: one command that materializes a
 profile into a target Agent tool's config directories so the tool loads
-everything the bundle carries. This doc answers: *what is the native "plugin"
+everything the bundle carries. This doc answers: _what is the native "plugin"
 concept of each target, what can a plugin bundle, and how do we emit one from a
-profile?*
+profile?_
 
 Scope is the three targets named in the PRD: **Claude Code**, **ZCode**,
 **Hermes**. (`generic` exists in `agentTargetSchema` for future targets.)
@@ -39,28 +39,28 @@ Profile  ──▶  PluginWriter (claude-code)  ──▶  also-valid-for-zcode
 
 ## How each target does "plugins" (side by side)
 
-| Aspect | Claude Code | ZCode | Hermes |
-| --- | --- | --- | --- |
-| Engine | Node/TypeScript | Node/TypeScript (GLM) | **Python** |
-| Plugin concept | "Plugin" (directory + manifest) | "Plugin" (clone of CC) | "Plugin" (folder + `plugin.yaml`, Python code) **and** "Skill Bundle" (lighter, MD-only) |
-| Manifest path | `.claude-plugin/plugin.json` | `.zcode-plugin/plugin.json` (**also probes `.claude-plugin/`**) | `plugin.yaml` |
-| Manifest format | JSON | JSON (identical schema) | YAML |
-| Marketplace | git-based `marketplace.json` | same, **+ Anthropic's marketplace registered by default** | GitHub "taps" (`hermes skills add <repo>`); community hub |
-| Bundle skills | `skills/<name>/SKILL.md` | same | `skills/<name>/SKILL.md` (SKILL.md-compatible) |
-| Bundle commands | `commands/*.md` | same | dynamic, from skill dirs + "quick commands" |
-| Bundle hooks | `hooks/hooks.json` (rich events) | `hooks/hooks.json` (**7 events only**) | 3 hook systems; event hooks via config/code |
-| Bundle MCP servers | `.mcp.json` / manifest `mcpServers` | same | `mcp_servers:` in `config.yaml` (**YAML**, not JSON) |
-| Bundle sub-agents | `agents/*.md` (frontmatter) | manifest `agents` field **recorded but NOT executed** | `delegate_task` runtime; Claude-format `.claude/agents/` |
-| Bundle rules/memory | **cannot** (no CLAUDE.md auto-load) | **cannot** (AGENTS.md is not a plugin field) | drop `AGENTS.md`/`.hermes.md` at project root |
-| Memory file | `CLAUDE.md` | `AGENTS.md` | `.hermes.md` / `AGENTS.md` / `CLAUDE.md` (all auto-injected) |
-| Variables | `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${user_config.*}` | `${ZCODE_*}` **(still expands `${CLAUDE_*}`)** | n/a (Python) |
-| Headless install CLI | ✅ `claude plugin install …` | ❓ UI-driven ("Get" button); no confirmed `zcode plugin install` | ✅ `hermes skills add`, Python entry-points |
-| Confidence | **High** (official docs, authoritative) | **High** (built-in `zcode-guide` plugin + on-disk evidence) | **Medium** (docs partly AI-generated; verify `plugin.yaml` schema in-repo) |
+| Aspect               | Claude Code                                                          | ZCode                                                            | Hermes                                                                                   |
+| -------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Engine               | Node/TypeScript                                                      | Node/TypeScript (GLM)                                            | **Python**                                                                               |
+| Plugin concept       | "Plugin" (directory + manifest)                                      | "Plugin" (clone of CC)                                           | "Plugin" (folder + `plugin.yaml`, Python code) **and** "Skill Bundle" (lighter, MD-only) |
+| Manifest path        | `.claude-plugin/plugin.json`                                         | `.zcode-plugin/plugin.json` (**also probes `.claude-plugin/`**)  | `plugin.yaml`                                                                            |
+| Manifest format      | JSON                                                                 | JSON (identical schema)                                          | YAML                                                                                     |
+| Marketplace          | git-based `marketplace.json`                                         | same, **+ Anthropic's marketplace registered by default**        | GitHub "taps" (`hermes skills add <repo>`); community hub                                |
+| Bundle skills        | `skills/<name>/SKILL.md`                                             | same                                                             | `skills/<name>/SKILL.md` (SKILL.md-compatible)                                           |
+| Bundle commands      | `commands/*.md`                                                      | same                                                             | dynamic, from skill dirs + "quick commands"                                              |
+| Bundle hooks         | `hooks/hooks.json` (rich events)                                     | `hooks/hooks.json` (**7 events only**)                           | 3 hook systems; event hooks via config/code                                              |
+| Bundle MCP servers   | `.mcp.json` / manifest `mcpServers`                                  | same                                                             | `mcp_servers:` in `config.yaml` (**YAML**, not JSON)                                     |
+| Bundle sub-agents    | `agents/*.md` (frontmatter)                                          | manifest `agents` field **recorded but NOT executed**            | `delegate_task` runtime; Claude-format `.claude/agents/`                                 |
+| Bundle rules/memory  | **cannot** (no CLAUDE.md auto-load)                                  | **cannot** (AGENTS.md is not a plugin field)                     | drop `AGENTS.md`/`.hermes.md` at project root                                            |
+| Memory file          | `CLAUDE.md`                                                          | `AGENTS.md`                                                      | `.hermes.md` / `AGENTS.md` / `CLAUDE.md` (all auto-injected)                             |
+| Variables            | `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${user_config.*}` | `${ZCODE_*}` **(still expands `${CLAUDE_*}`)**                   | n/a (Python)                                                                             |
+| Headless install CLI | ✅ `claude plugin install …`                                         | ❓ UI-driven ("Get" button); no confirmed `zcode plugin install` | ✅ `hermes skills add`, Python entry-points                                              |
+| Confidence           | **High** (official docs, authoritative)                              | **High** (built-in `zcode-guide` plugin + on-disk evidence)      | **Medium** (docs partly AI-generated; verify `plugin.yaml` schema in-repo)               |
 
 ## Target 1 — Claude Code (the reference target)
 
-Source of truth: the official docs. A plugin is *a self-contained directory of
-components*. Installation, manifest, and marketplace are all first-class and
+Source of truth: the official docs. A plugin is _a self-contained directory of
+components_. Installation, manifest, and marketplace are all first-class and
 headless-scriptable.
 
 ### Manifest — `.claude-plugin/plugin.json`
@@ -71,33 +71,34 @@ we will always emit one for explicitness.
 
 ```jsonc
 {
-  "name": "frontend-daily",          // required, kebab-case, immutable
+  "name": "frontend-daily", // required, kebab-case, immutable
   "displayName": "Frontend Daily",
-  "version": "1.2.0",                // omit → uses git SHA (every push = update)
+  "version": "1.2.0", // omit → uses git SHA (every push = update)
   "description": "Frontend toolchain profile",
   "author": { "name": "AgentNexus" },
-  "skills": "./skills",              // dir | array | inline
-  "commands": ["./commands"],        // legacy; prefer skills/ for new plugins
+  "skills": "./skills", // dir | array | inline
+  "commands": ["./commands"], // legacy; prefer skills/ for new plugins
   "agents": ["./agents/reviewer.md"],
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./mcp-config.json", // or inline mcpServers object
-  "userConfig": {                    // prompted at enable; sensitive → keychain
-    "apiToken": { "type": "string", "sensitive": true, "description": "…" }
+  "userConfig": {
+    // prompted at enable; sensitive → keychain
+    "apiToken": { "type": "string", "sensitive": true, "description": "…" },
   },
-  "defaultEnabled": true
+  "defaultEnabled": true,
 }
 ```
 
 ### What a plugin can bundle (and where)
 
-| Artifact | Location | Notes |
-| --- | --- | --- |
-| Skills | `skills/<name>/SKILL.md` | MD + YAML frontmatter (`name`, `description`, …). Namespaced `plugin:skill`. |
-| Commands | `commands/*.md` | Filename = command name. "Use skills/ for new plugins." |
-| Sub-agents | `agents/*.md` | Frontmatter (`name`, `description`, `model`, `tools`, …). **`hooks`/`mcpServers`/`permissionMode` forbidden in plugin agents.** |
-| Hooks | `hooks/hooks.json` | Full event set (~30 events: SessionStart, PreToolUse, PostToolUse, Stop, PreCompact, …). |
-| MCP servers | `.mcp.json` or manifest `mcpServers` | **Declared in the plugin, NOT written into host's `~/.claude.json`.** Uses `${CLAUDE_PLUGIN_ROOT}`, `${user_config.KEY}`. |
-| Memory/rules | — | **`CLAUDE.md` at plugin root is NOT loaded.** Wrap rules as a skill instead. |
+| Artifact     | Location                             | Notes                                                                                                                           |
+| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Skills       | `skills/<name>/SKILL.md`             | MD + YAML frontmatter (`name`, `description`, …). Namespaced `plugin:skill`.                                                    |
+| Commands     | `commands/*.md`                      | Filename = command name. "Use skills/ for new plugins."                                                                         |
+| Sub-agents   | `agents/*.md`                        | Frontmatter (`name`, `description`, `model`, `tools`, …). **`hooks`/`mcpServers`/`permissionMode` forbidden in plugin agents.** |
+| Hooks        | `hooks/hooks.json`                   | Full event set (~30 events: SessionStart, PreToolUse, PostToolUse, Stop, PreCompact, …).                                        |
+| MCP servers  | `.mcp.json` or manifest `mcpServers` | **Declared in the plugin, NOT written into host's `~/.claude.json`.** Uses `${CLAUDE_PLUGIN_ROOT}`, `${user_config.KEY}`.       |
+| Memory/rules | —                                    | **`CLAUDE.md` at plugin root is NOT loaded.** Wrap rules as a skill instead.                                                    |
 
 ### Install paths (on disk)
 
@@ -141,12 +142,12 @@ inspection of `~/.zcode/`. **Verified on this machine.**
 
 ### Where ZCode is NARROWER than Claude Code (important for our writer)
 
-| Component | Claude Code | ZCode | Impact on us |
-| --- | --- | --- | --- |
-| Sub-agents in plugins | `agents/*.md` loaded | manifest `agents` **"recorded but not executed"** | **Cannot ship working sub-agents via a ZCode plugin.** Fall back to user-scope `~/.zcode/agents/`. |
-| Hook events | ~30 | **7 only**: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop` | Filter the hooks we emit; drop unsupported events for ZCode. |
-| Headless install | `claude plugin install` | UI-driven ("Get" button on Discover tab); **no confirmed `zcode plugin install`** | ZCode install may require the user to add our marketplace in the UI, or we write to user-scope dirs directly. |
-| MCP schema strictness | lenient | **unknown key drops the whole server** | Validate aggressively before emitting. |
+| Component             | Claude Code             | ZCode                                                                                                                          | Impact on us                                                                                                  |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Sub-agents in plugins | `agents/*.md` loaded    | manifest `agents` **"recorded but not executed"**                                                                              | **Cannot ship working sub-agents via a ZCode plugin.** Fall back to user-scope `~/.zcode/agents/`.            |
+| Hook events           | ~30                     | **7 only**: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop` | Filter the hooks we emit; drop unsupported events for ZCode.                                                  |
+| Headless install      | `claude plugin install` | UI-driven ("Get" button on Discover tab); **no confirmed `zcode plugin install`**                                              | ZCode install may require the user to add our marketplace in the UI, or we write to user-scope dirs directly. |
+| MCP schema strictness | lenient                 | **unknown key drops the whole server**                                                                                         | Validate aggressively before emitting.                                                                        |
 
 ### On-disk layout (user scope)
 
@@ -176,8 +177,8 @@ absolute paths. All scopes auto-connect at session start.
 
 ### userConfig caveat
 
-ZCode supports `userConfig` (referenced via `${user_config.KEY}`) but *"a
-sensitive value cannot currently be entered in the interface or persisted"* —
+ZCode supports `userConfig` (referenced via `${user_config.KEY}`) but _"a
+sensitive value cannot currently be entered in the interface or persisted"_ —
 **no secure credential store yet.** For secrets we must inject resolved values
 at install time rather than rely on prompted `userConfig`.
 
@@ -195,7 +196,7 @@ partly AI-generated; exact `plugin.yaml` schema must be verified against
 ### What it is
 
 A **self-improving, Python-based** agent by Nous Research. Distinct from the
-Hermes *LLM models*. It has skills, hooks (3 systems), sub-agents (`delegate_task`),
+Hermes _LLM models_. It has skills, hooks (3 systems), sub-agents (`delegate_task`),
 slash commands, context files, and MCP — but the packaging model differs from
 CC/ZCode.
 
@@ -205,7 +206,7 @@ CC/ZCode.
    Python code. Used for custom **tools** / lifecycle **hooks** / CLI commands
    via a `PluginManager`. Registration also via Python entry-points.
 2. **Skill Bundle** (newer, mid-2026) — a lighter, **non-Python** set of skills
-   + a triggering slash command. **This is the closer analog to our profile.**
+   - a triggering slash command. **This is the closer analog to our profile.**
 
 ### Manifest — `plugin.yaml` (inferred; verify in-repo)
 
@@ -215,14 +216,14 @@ schema not extracted — verify.
 
 ### What a bundle carries, and where
 
-| Artifact | Format | Location | Confidence |
-| --- | --- | --- | --- |
-| Skills | `SKILL.md` (CC-compatible frontmatter) | `~/.hermes/skills/<name>/` | High |
-| Hooks | event hooks via config + code | config + `~/.hermes/` | Medium (format partial) |
-| MCP servers | **YAML** `mcp_servers:` in `config.yaml` | `~/.hermes/config.yaml` | High |
-| Sub-agents | `delegate_task` runtime; Claude-format `.claude/agents/*.md` | runtime + `.claude/agents/` | High |
-| Rules/memory | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` (**all auto-injected**) | project root / global | High |
-| Commands | dynamic from skill dirs + "quick commands" | user + project | Medium |
+| Artifact     | Format                                                           | Location                    | Confidence              |
+| ------------ | ---------------------------------------------------------------- | --------------------------- | ----------------------- |
+| Skills       | `SKILL.md` (CC-compatible frontmatter)                           | `~/.hermes/skills/<name>/`  | High                    |
+| Hooks        | event hooks via config + code                                    | config + `~/.hermes/`       | Medium (format partial) |
+| MCP servers  | **YAML** `mcp_servers:` in `config.yaml`                         | `~/.hermes/config.yaml`     | High                    |
+| Sub-agents   | `delegate_task` runtime; Claude-format `.claude/agents/*.md`     | runtime + `.claude/agents/` | High                    |
+| Rules/memory | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` (**all auto-injected**) | project root / global       | High                    |
+| Commands     | dynamic from skill dirs + "quick commands"                       | user + project              | Medium                  |
 
 ### MCP integration
 
@@ -232,14 +233,14 @@ Hermes uses **YAML, not JSON**:
 # ~/.hermes/config.yaml
 mcp_servers:
   myserver:
-    url: https://...          # HTTP
+    url: https://... # HTTP
   another:
-    command: "..."            # stdio
+    command: '...' # stdio
     args: [...]
 ```
 
 There is **no `.mcp.json`** for Hermes's own servers (that file appears only
-when registering Hermes *as a server inside another client*).
+when registering Hermes _as a server inside another client_).
 
 ### Distribution
 
@@ -276,14 +277,14 @@ ProfileEntry { resourceId, kind: 'skill'|'hook'|'sub_agent'|'rule'|'mcp'|'comman
 
 Each `entry.kind` maps onto a plugin component:
 
-| Our `ProfileEntry.kind` | Claude Code plugin component | ZCode | Hermes |
-| --- | --- | --- | --- |
-| `mcp` | `.mcp.json` / manifest `mcpServers` | same (MCP block) | `config.yaml` `mcp_servers:` |
-| `skill` | `skills/<name>/SKILL.md` | same | `~/.hermes/skills/<name>/` |
-| `command` | `commands/*.md` | same | skill-dir command / quick command |
-| `hook` | `hooks/hooks.json` (event-filtered) | `hooks/hooks.json` (**7 events**) | config/code hooks |
-| `sub_agent` | `agents/*.md` | **not executable** → fall back to `~/.zcode/agents/` | `.claude/agents/*.md` |
-| `rule` | **wrap as a skill** (no CLAUDE.md auto-load) | **wrap as a skill** | drop `AGENTS.md` |
+| Our `ProfileEntry.kind` | Claude Code plugin component                 | ZCode                                                | Hermes                            |
+| ----------------------- | -------------------------------------------- | ---------------------------------------------------- | --------------------------------- |
+| `mcp`                   | `.mcp.json` / manifest `mcpServers`          | same (MCP block)                                     | `config.yaml` `mcp_servers:`      |
+| `skill`                 | `skills/<name>/SKILL.md`                     | same                                                 | `~/.hermes/skills/<name>/`        |
+| `command`               | `commands/*.md`                              | same                                                 | skill-dir command / quick command |
+| `hook`                  | `hooks/hooks.json` (event-filtered)          | `hooks/hooks.json` (**7 events**)                    | config/code hooks                 |
+| `sub_agent`             | `agents/*.md`                                | **not executable** → fall back to `~/.zcode/agents/` | `.claude/agents/*.md`             |
+| `rule`                  | **wrap as a skill** (no CLAUDE.md auto-load) | **wrap as a skill**                                  | drop `AGENTS.md`                  |
 
 ### The MCP server split — the key architectural decision
 
@@ -308,9 +309,9 @@ crux of Phase 3:
     "agentnexus-frontend-daily": {
       "type": "streamable-http",
       "url": "https://anx.example.com/mcp?profile=<profileId>",
-      "headers": { "Authorization": "Bearer ${user_config.PAT}" }
-    }
-  }
+      "headers": { "Authorization": "Bearer ${user_config.PAT}" },
+    },
+  },
 }
 ```
 
@@ -344,7 +345,7 @@ Installer (per target)
 - **CC/ZCode output diverges from Hermes output** at the format level (JSON vs
   YAML, `.mcp.json` vs `config.yaml`). A single generic emitter would be a
   mess of conditionals.
-- **CC → ZCode** is *narrowing*, not rewriting: emit CC-format, then strip
+- **CC → ZCode** is _narrowing_, not rewriting: emit CC-format, then strip
   unsupported hook events and move sub-agents to user-scope. A thin ZCode writer
   that post-processes the CC output (or shares an emitter with a target flag)
   is cleaner than two independent ones.
@@ -406,7 +407,7 @@ leaves our trust boundary).
 ## Suggested sub-phasing
 
 - **3.1 — CC/ZCode writer + proxy mode.** `anx install --profile <id> --target
-  claude-code` emits the CC-format plugin dir above with a single proxy MCP
+claude-code` emits the CC-format plugin dir above with a single proxy MCP
   entry. Verify it loads in both Claude Code and ZCode. No sub-agents/hooks yet.
 - **3.2 — full artifact emission.** skills, commands, hooks (event-filtered),
   rules-as-skill, sub-agents (CC; ZCode fallback). Direct MCP mode as an option.
