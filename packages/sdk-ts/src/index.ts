@@ -20,7 +20,9 @@ import type {
   SkillMeta,
   SkillBundle,
 } from '@agent-nexus/core';
+import type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource } from '@agent-nexus/shared';
 export { HOOK_EVENTS, HOOK_SUPPORT, type HookEvent } from '@agent-nexus/shared';
+export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource };
 
 export interface SdkOptions {
   baseUrl: string;
@@ -328,6 +330,28 @@ export class AgentNexusClient {
 
   async deleteResource(id: string): Promise<void> {
     await this.request('DELETE', `/api/resources/${id}`);
+  }
+
+  // ---- skills hub (Phase 7.2) ----
+
+  /** List the configured marketplace allowlist (no fetch). */
+  async listMarketplaces(): Promise<{ marketplaces: { id: string }[] }> {
+    return this.request('GET', '/api/skills/marketplaces');
+  }
+
+  /**
+   * List a marketplace's plugins (fetched + cached server-side). Optional
+   * `category` and free-text `q` filters narrow the result.
+   */
+  async listMarketplacePlugins(
+    id: string,
+    filter?: { category?: string; q?: string },
+  ): Promise<{ plugins: MarketplacePlugin[] }> {
+    const params = new URLSearchParams();
+    if (filter?.category) params.set('category', filter.category);
+    if (filter?.q) params.set('q', filter.q);
+    const qs = params.toString();
+    return this.request('GET', `/api/skills/marketplaces/${id}/plugins${qs ? `?${qs}` : ''}`);
   }
 
   // ---- core request helper ----

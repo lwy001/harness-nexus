@@ -18,6 +18,21 @@ export interface ServerConfig {
   jwtAccessTtl: string;
   /** Key material for encrypting Credential secrets (AES-256-GCM). */
   credentialEncryptionKey: string;
+  /**
+   * Phase 7.2 — comma-separated marketplace allowlist (`name=owner/repo` or
+   * `name=url`). The server's only outbound-fetch surface. See
+   * `infra/source-fetchers/allowlist.ts`.
+   */
+  marketplaceAllowlist: string;
+  /** Phase 7.2 — marketplace catalog cache TTL, in milliseconds. */
+  marketplaceFetchTtlMs: number;
+  /** Phase 7.2 — per-fetch timeout, in milliseconds. */
+  marketplaceFetchTimeoutMs: number;
+  /**
+   * Phase 7.2 — if set, the marketplace fetcher reads this local file instead
+   * of making HTTP requests (test/fixture mode; production leaves it unset).
+   */
+  marketplaceFixturePath?: string;
 }
 
 export class ConfigError extends Error {
@@ -47,5 +62,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jwtIssuer: env.JWT_ISSUER ?? 'agentnexus',
     jwtAccessTtl: env.JWT_ACCESS_TTL ?? '7d',
     credentialEncryptionKey: env.CREDENTIAL_ENCRYPTION_KEY ?? jwtSecret,
+    marketplaceAllowlist:
+      env.MARKETPLACE_ALLOWLIST ?? 'claude-plugins-official=anthropics/claude-plugins-official',
+    marketplaceFetchTtlMs: Number(env.MARKETPLACE_FETCH_TTL_MS ?? '3600000'),
+    marketplaceFetchTimeoutMs: Number(env.MARKETPLACE_FETCH_TIMEOUT_MS ?? '10000'),
+    ...(env.MARKETPLACE_FIXTURE_PATH
+      ? { marketplaceFixturePath: env.MARKETPLACE_FIXTURE_PATH }
+      : {}),
   };
 }

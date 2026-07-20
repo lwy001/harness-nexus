@@ -1,6 +1,6 @@
 # PRD: Phase 7 — Skill multi-source & plugin references
 
-> Status: 7.1 designed (🚧); 7.2–7.4 ⏳. This PRD covers all four sub-phases.
+> Status: 7.1–7.2 implemented (✅); 7.3–7.4 ⏳. This PRD covers all four sub-phases.
 > Research: `docs/research/phase-4.4-skills.md` (read it first). Technical
 > design: `docs/design/phase-7.1-plugin-source.md` (7.1); 7.2–7.4 designs are
 > written before each ships.
@@ -118,7 +118,7 @@ Plus two structural facts from the research that stay authoritative:
 | #       | Sub-phase                   | Status | Carries                                                                                                                                                             | Depends on | Outbound? |
 | ------- | --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------- |
 | **7.1** | plugin source + trust model | 🚧     | `ResourceSource` `plugin` variant; trust tiers + provenance pin; `SkillSource` port (one no-op impl); flip `validateSkillResource` + smoke                          | Phase 4.6  | **none**  |
-| **7.2** | marketplace allowlist fetch | ⏳     | `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout); `MARKETPLACE_ALLOWLIST` config; server-side trust; "save marketplace entry as skill resource" | 7.1        | **yes**   |
+| **7.2** | marketplace allowlist fetch | ✅     | `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout); `MARKETPLACE_ALLOWLIST` config; server-side trust; "save marketplace entry as skill resource" | 7.1        | **yes**   |
 | **7.3** | hub search UI               | ⏳     | web marketplace browser (category filter + search + trust badge) → "save as skill resource"; install-warning UX                                                     | 7.2        | no        |
 | **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); custom-tap UI; **content scan deferred**         | 7.1, 7.3   | **yes**   |
 
@@ -264,16 +264,19 @@ interface SkillSource {
 7.1 ships exactly one implementation: a no-op `inspect` used to satisfy the
 port shape (the real implementations arrive in 7.2 / 7.4).
 
-### Marketplace allowlist (lands in 7.2)
+### Marketplace allowlist (implemented in 7.2)
 
 The server's first outbound path. `MARKETPLACE_ALLOWLIST` env (comma-separated
-list of `name=github-owner/repo` or `name=url`); default includes
-`claude-plugins-official=anthropics/claude-plugins-official`. A new module
-`packages/server/src/infra/source-fetcher.ts` performs the fetch with Node ≥20's
-built-in `globalThis.fetch` (**no new HTTP dependency**), an in-memory cache
-(default 1 h TTL, matching Hermes), and a per-fetch timeout (default 10 s; 30 s
-overall matches Hermes but we are single-source so 10 s is enough). A new route
-`GET /api/skills/marketplaces/:id/plugins` returns the cached, parsed catalog.
+list of `name=github-owner/repo` or `name=url`); default is
+`claude-plugins-official=anthropics/claude-plugins-official`. A new module set
+`packages/server/src/infra/source-fetchers/` (`SkillCatalogService` + allowlist
+parser + fetcher factory) performs the fetch with Node ≥20's built-in
+`globalThis.fetch` (**no new HTTP dependency**), a lazy-TTL in-memory cache
+(default 1 h, expired-on-read with per-key in-flight dedup mirroring
+`McpRegistry.reloadPromise`), and a per-fetch timeout (default 10 s). Routes
+`GET /api/skills/marketplaces` + `GET /api/skills/marketplaces/:id/plugins`
+return the cached, parsed, filtered catalog. Full design:
+`docs/design/phase-7.2-marketplace-fetch.md`.
 
 ### Hub search UI (lands in 7.3)
 

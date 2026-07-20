@@ -17,7 +17,11 @@ import { credentialsRoutes } from './modules/credentials.js';
 import { mcpServersRoutes } from './modules/mcp-servers.js';
 import { profilesRoutes } from './modules/profiles.js';
 import { resourcesRoutes } from './modules/resources.js';
+import { skillsRoutes } from './modules/skills.js';
 import { mountMcpProxy } from './mcp/proxy.js';
+import { SkillCatalogService } from './infra/source-fetchers/catalog-service.js';
+import { parseAllowlist, type MarketplaceEntry } from './infra/source-fetchers/allowlist.js';
+import { createMarketplaceFetcher } from './infra/source-fetchers/factory.js';
 
 /**
  * Build the Fastify instance. Wiring order matters:
@@ -59,6 +63,19 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   app.decorate('requireAdmin', requireAdmin);
   app.decorate('credentialEncryptionKey', config.credentialEncryptionKey);
 
+  // Phase 7.2 — marketplace catalog service + its allowlist. The only
+  // outbound-fetch surface in the server. `createMarketplaceFetcher` returns a
+  // fixture reader when `MARKETPLACE_FIXTURE_PATH` is set (test mode).
+  const skillCatalog = new SkillCatalogService({
+    fetcher: createMarketplaceFetcher(config.marketplaceFixturePath),
+    ttlMs: config.marketplaceFetchTtlMs,
+    timeoutMs: config.marketplaceFetchTimeoutMs,
+    logger: app.log,
+  });
+  const marketplaceAllowlist: MarketplaceEntry[] = parseAllowlist(config.marketplaceAllowlist);
+  app.decorate('skillCatalog', skillCatalog);
+  app.decorate('marketplaceAllowlist', marketplaceAllowlist);
+
   // Auth hook must be registered on the root instance (not inside a child
   // plugin context) so it applies to all routes. See plugins/auth.ts.
   registerAuthHook(app);
@@ -91,6 +108,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await mcpServersRoutes(api);
     await profilesRoutes(api);
     await resourcesRoutes(api);
+    await skillsRoutes(api);
   });
 
   await mountMcpProxy(app);

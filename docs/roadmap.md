@@ -104,12 +104,13 @@ large, least-certain multi-source block (can stop partway).
 | #       | Sub-phase                   | Status | Carries                                                                                                                                                                                                                                      | Depends on | Outbound?                        |
 | ------- | --------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------- |
 | **7.1** | plugin source + trust model | ✅     | `ResourceSource` `plugin` variant (CC marketplace 4 source kinds); trust tiers (`builtin`/`trusted`/`community`) + provenance pin (`content_hash`); `SkillSource` port (abstract, one no-op `inspect`); flip `validateSkillResource` + smoke | Phase 4.6  | **none** (store spec only)       |
-| **7.2** | marketplace allowlist fetch | ⏳     | server's first outbound path: `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout `marketplace.json`); `MARKETPLACE_ALLOWLIST` config; trust by repo owner; "save marketplace entry as skill resource"                       | 7.1        | **yes** (allowlisted GitHub raw) |
+| **7.2** | marketplace allowlist fetch | ✅     | server's first outbound path: `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout `marketplace.json`); `MARKETPLACE_ALLOWLIST` config; trust by repo owner; "save marketplace entry as skill resource"                       | 7.1        | **yes** (allowlisted GitHub raw) |
 | **7.3** | hub search UI               | ⏳     | web marketplace browser (category filter + search + trust badge) → "save as skill resource" → reuses 7.1 `plugin` source storage; install-warning UX (trust tier + missing-pin warning)                                                      | 7.2        | no (calls 7.2 endpoint)          |
 | **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (`skills-sh`/`well-known`/`url`/`github`/`claude-marketplace`, value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); `taps.json`-style custom-tap UI; **content scan deferred**  | 7.1, 7.3   | **yes** (each adapter fetches)   |
 
 - PRD: `docs/prd/phase-7-skills.md` · Design 7.1: `docs/design/phase-7.1-plugin-source.md`
-  (7.2–7.4 designs to be written before each ships) · Research:
+  · Design 7.2: `docs/design/phase-7.2-marketplace-fetch.md`
+  (7.3–7.4 designs to be written before each ships) · Research:
   `docs/research/phase-4.4-skills.md`
 - **Research corrections carried into the PRD** (ground-truth verified):
   Hermes has **10** adapters (not 9 — `OptionalSkillSource` is the `official`

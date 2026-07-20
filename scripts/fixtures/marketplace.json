@@ -1,0 +1,69 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-plugins-official",
+  "description": "Test fixture — a sliced copy of the CC marketplace.json for smoke tests.",
+  "owner": { "name": "Anthropic", "email": "support@anthropic.com" },
+  "plugins": [
+    {
+      "name": "42crunch-api-security-testing",
+      "description": "Automate API security directly in Claude Code with 42Crunch.",
+      "author": { "name": "42Crunch" },
+      "category": "security",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/42Crunch-AI/claude-plugins.git",
+        "path": "plugins/api-security-testing",
+        "ref": "v1.5.5",
+        "sha": "0f325999a7106eadb2d0ecbcccabf6c12dc06aef"
+      },
+      "homepage": "https://42crunch.com"
+    },
+    {
+      "name": "aikido-claude-plugin",
+      "description": "Aikido Security plugin for Claude Code.",
+      "category": "security",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
+        "sha": "fbe11e287175e5eda448516dd2f741a63b276514"
+      }
+    },
+    {
+      "name": "jfrog",
+      "description": "JFrog plugin for artifact management.",
+      "author": { "name": "JFrog", "url": "https://jfrog.com" },
+      "category": "deployment",
+      "source": {
+        "source": "github",
+        "repo": "jfrog/claude-plugin",
+        "commit": "259c8e718266c16e99b4f30ae9b1ed0f9f00d98d",
+        "sha": "abadbc634f2acb10387737c4116defaabecec2da"
+      },
+      "homepage": "https://jfrog.com"
+    },
+    {
+      "name": "convex",
+      "description": "Build full-stack apps with Convex.",
+      "author": { "name": "Convex" },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/get-convex/convex-claude-plugin.git",
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "homepage": "https://convex.dev"
+    },
+    {
+      "name": "agent-sdk-dev",
+      "description": "In-repo plugin that uses a relative-path source (should be filtered out).",
+      "category": "development",
+      "source": "./plugins/agent-sdk-dev"
+    },
+    {
+      "name": "asana",
+      "description": "Another in-repo relative-path source (should be filtered out).",
+      "category": "productivity",
+      "source": "./external_plugins/asana"
+    }
+  ]
+}

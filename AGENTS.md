@@ -299,6 +299,41 @@ skill-source.ts`, mirroring Hermes's ABC) shapes future adapters — 7.1 ships
   offers only events supported by the chosen targets. **To add an event or
   target**, edit the matrix — no other change needed.
 
+## Marketplace fetch (Phase 7.2)
+
+Full design in `docs/design/phase-7.2-marketplace-fetch.md`. Summary for daily
+work:
+
+- **This is the server's ONLY outbound HTTP path.** All marketplace browsing
+  goes through one allowlisted fetch surface; no other module may make
+  outbound requests. Bounded by `MARKETPLACE_ALLOWLIST` (which catalogs) and a
+  per-fetch timeout (how long).
+- **`SkillCatalogService`** (`packages/server/src/infra/source-fetchers/
+catalog-service.ts`) owns a lazy-TTL cache (`Map<id, {catalog, expiresAt}>`,
+  expired-on-read; no `setTimeout`) and a per-key in-flight dedup (mirrors
+  `McpRegistry.reloadPromise`). It fetches via an injectable `MarketplaceFetcher`
+  (default `globalThis.fetch`; fixture reader when `MARKETPLACE_FIXTURE_PATH`
+  is set for tests). Decorated on the instance as `app.skillCatalog`.
+- **Allowlist** (`app.marketplaceAllowlist: MarketplaceEntry[]`) is parsed at
+  boot from `MARKETPLACE_ALLOWLIST` (default
+  `claude-plugins-official=anthropics/claude-plugins-official`). Two token
+  forms: `name=owner/repo` (→ GitHub raw URL) or `name=url` (verbatim).
+- **Routes** (`packages/server/src/modules/skills.ts`):
+  `GET /api/skills/marketplaces` (list ids, no fetch) +
+  `GET /api/skills/marketplaces/:id/plugins` (fetch+cache, `?category=&q=`
+  filters). Non-allowlisted id → `404 MARKETPLACE_NOT_ALLOWED` (not 403, to
+  avoid leaking which ids are configured). Any authenticated user may browse;
+  saving a skill resource from an entry still goes through the normal
+  `/api/resources` scope rules.
+- **Catalog parsing**: `marketplace.json`'s string relative-path `source`
+  entries (`"./plugins/foo"`, ~30/257 of the live catalog) are dropped during
+  per-entry validation — they only make sense inside the marketplace repo and
+  cannot form a standalone-installable spec. The 3 object kinds (`git-subdir`/
+  `url`/`github`) are kept; `github` carries `commit`+`sha` (aliases).
+- **Config** (3 env keys): `MARKETPLACE_ALLOWLIST`, `MARKETPLACE_FETCH_TTL_MS`
+  (1h), `MARKETPLACE_FETCH_TIMEOUT_MS` (10s); plus `MARKETPLACE_FIXTURE_PATH`
+  for tests.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -348,11 +383,12 @@ HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
 management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
 editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
 4.5), the skill editor with multi-file bundles (Phase 4.6 — Phase 4 complete),
-and the `plugin` skill source variant + trust/provenance labels + `SkillSource`
-port (Phase 7.1). See `docs/roadmap.md` for what remains. Still NOT done:
-Phase 7.2–7.4 (marketplace allowlist fetch, hub search UI, Hermes-style
-multi-source adapters), the stdio bridge entry, CLI install writers,
-ECC/Superpower adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes.
-**Phase 2.3 (callable-function scripts) is on hold** — not currently planned.
-When you add the first real logic for a pillar, also add tests (vitest, not yet
-wired) and update the relevant `docs/` file.
+the `plugin` skill source variant + trust/provenance labels + `SkillSource`
+port (Phase 7.1), and the marketplace allowlist fetch + `SkillCatalogService`
+cache + `/api/skills/marketplaces` browse API (Phase 7.2). See
+`docs/roadmap.md` for what remains. Still NOT done: Phase 7.3–7.4 (hub search
+UI, Hermes-style multi-source adapters), the stdio bridge entry, CLI install
+writers, ECC/Superpower adapters, the ACP bridge, Channels, LLM-WIKI,
+memory/notes. **Phase 2.3 (callable-function scripts) is on hold** — not
+currently planned. When you add the first real logic for a pillar, also add
+tests (vitest, not yet wired) and update the relevant `docs/` file.

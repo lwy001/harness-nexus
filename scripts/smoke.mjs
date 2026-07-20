@@ -714,5 +714,67 @@ for (const res of r.json.resources) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 7.2 — marketplace allowlist fetch
+// Server must be booted with MARKETPLACE_FIXTURE_PATH=scripts/fixtures/
+// marketplace.json so the catalog fetcher reads the local fixture instead of
+// hitting GitHub. The fixture has 6 plugins: 4 object-sourced (git-subdir×1,
+// url×2, github×1) + 2 relative-path-sourced (must be filtered out).
+// ---------------------------------------------------------------------------
+
+log('\n--- [7.2] list configured marketplaces ---');
+r = await req('GET', '/api/skills/marketplaces', { token: userToken });
+expect('marketplaces list ok', r.status, 200);
+expect(
+  'default marketplace present',
+  r.json.marketplaces.some((m) => m.id === 'claude-plugins-official'),
+  true,
+);
+
+log('\n--- [7.2] fetch catalog; relative-path sources filtered out ---');
+r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins', {
+  token: userToken,
+});
+expect('catalog fetch ok', r.status, 200);
+expect('4 plugins after filtering 2 relative-path', r.json.plugins.length, 4);
+const sourceKinds = r.json.plugins.map((p) => p.source.source).sort();
+expect('source kinds are object kinds only', JSON.stringify(sourceKinds), JSON.stringify(['git-subdir', 'github', 'url', 'url']));
+
+log('\n--- [7.2] filter by category=security ---');
+r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins?category=security', {
+  token: userToken,
+});
+expect('security filter ok', r.status, 200);
+expect('2 security plugins', r.json.plugins.length, 2);
+expect(
+  'all returned are security',
+  r.json.plugins.every((p) => p.category === 'security'),
+  true,
+);
+
+log('\n--- [7.2] free-text search q=artifact ---');
+r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins?q=artifact', {
+  token: userToken,
+});
+expect('search ok', r.status, 200);
+expect('search matches 1 (jfrog description)', r.json.plugins.length, 1);
+expect('matched plugin is jfrog', r.json.plugins[0].name, 'jfrog');
+
+log('\n--- [7.2] non-allowlisted marketplace id → 404 ---');
+r = await req('GET', '/api/skills/marketplaces/evil-untrusted/plugins', { token: userToken });
+expect('non-allowlisted 404', r.status, 404);
+expect('error code MARKETPLACE_NOT_ALLOWED', r.json.error, 'MARKETPLACE_NOT_ALLOWED');
+
+log('\n--- [7.2] second catalog read hits cache (same result set) ---');
+r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins', {
+  token: userToken,
+});
+expect('cached read ok', r.status, 200);
+expect('cached result still 4 plugins', r.json.plugins.length, 4);
+
+log('\n--- [7.2] unauthenticated request → 401 ---');
+r = await req('GET', '/api/skills/marketplaces');
+expect('no-token 401', r.status, 401);
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);
