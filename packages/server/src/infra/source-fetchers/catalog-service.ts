@@ -5,7 +5,7 @@ import {
   marketplacePluginSchema,
   type MarketplaceCatalog,
   type MarketplacePlugin,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import type { MarketplaceFetcher } from './types.js';
 
 /**

@@ -6,10 +6,10 @@ import { z } from 'zod';
  * (credentials + placeholder injection) and docs/design/phase-3-install.md
  * (Part 1, the mode × transport policy).
  *
- * These mirror the domain types in @agent-nexus/core; keep them in sync.
+ * These mirror the domain types in @harness-nexus/core; keep them in sync.
  *
  * Mode policy (Phase 3.1): every McpServer has a `mode`.
- *   - `proxy`  — AgentNexus dials the upstream; only SSE / Streamable HTTP.
+ *   - `proxy`  — Harness Nexus dials the upstream; only SSE / Streamable HTTP.
  *   - `direct` — the target tool dials it; SSE / Streamable HTTP **and stdio**.
  * stdio forces `direct` (409 STDIO_REQUIRES_DIRECT at the route layer).
  *

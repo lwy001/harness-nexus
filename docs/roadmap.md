@@ -13,7 +13,7 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 - ✅ SQLite storage + migrations
 - ✅ Users / roles (admin, user) / registration switch + bootstrap admin
-- ✅ JWT access tokens + PAT (`anpat_…`)
+- ✅ JWT access tokens + PAT (`hnpat_…`)
 - ✅ Front- and back-end permission interceptors
 - ✅ Web auth UI (login, register, dashboard, users, settings)
 - PRD: `docs/prd/phase-1-auth.md` · Design: `docs/design/phase-1-auth.md`
@@ -52,7 +52,7 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
 - ⏳ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + hook compatibility matrix
-- ⏳ 3.3 — Claude-Code writer (+ zcode narrowing) + `anx install` (local manifest + SDK) + proxy/direct MCP emission
+- ⏳ 3.3 — Claude-Code writer (+ zcode narrowing) + `hnx install` (local manifest + SDK) + proxy/direct MCP emission
 - ⏳ 3.4 — Cross-target profile import with compatibility report
 - ⏳ 3.5 — Hermes writer
 - ⏳ 3.6 — ECC + Superpower import adapters
@@ -84,7 +84,7 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 5 — ACP bridge
 
-- ⏳ `@agent-nexus/acp-bridge` daemon
+- ⏳ `@harness-nexus/acp-bridge` daemon
 - ⏳ Server-side remote push of profiles to a connected tool
 
 ## Phase 6 — Platform features
@@ -121,4 +121,4 @@ large, least-certain multi-source block (can stop partway).
   source kinds (`url`/`git-subdir`/string-path/`github`) and **no `npm`**;
   `category` is the filter axis (243/257 entries), not `tags` (3) or `metadata`.
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
-  AgentNexus stores references, the target tool executes.
+  Harness Nexus stores references, the target tool executes.

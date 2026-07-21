@@ -1,4 +1,4 @@
-import type { User, Credential, Resource } from '@agent-nexus/core';
+import type { User, Credential, Resource } from '@harness-nexus/core';
 
 /** Strip secrets from a user for API responses. */
 export function publicUser(u: User): Omit<User, 'passwordHash'> {

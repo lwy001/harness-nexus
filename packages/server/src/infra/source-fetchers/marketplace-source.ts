@@ -1,9 +1,9 @@
-import type { SkillBundle, SkillMeta, SkillSource } from '@agent-nexus/core';
+import type { SkillBundle, SkillMeta, SkillSource } from '@harness-nexus/core';
 import {
   marketplacePluginToResourceSource,
   resolveTrustTier,
   type MarketplacePlugin,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import type { SkillCatalogService } from './catalog-service.js';
 import type { MarketplaceEntry } from './allowlist.js';
 

@@ -13,7 +13,7 @@
  * User-visible trust tier for a sourced skill. Three surfaced tiers mirroring
  * Hermes's `INSTALL_POLICY` (the 4th, `agent-created`, is off-by-default in
  * Hermes and intentionally NOT modeled here):
- *   - `builtin`   — ships with the target tool (AgentNexus owns none today).
+ *   - `builtin`   — ships with the target tool (Harness Nexus owns none today).
  *   - `trusted`   — the 4 named repos in `TRUSTED_REPOS` (shared/trust.ts).
  *   - `community` — everything else (the default).
  */

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 
 /**
  * Dashboard signature: a mesh topology of configured upstreams converging on
- * the AgentNexus node.
+ * the Harness Nexus node.
  *
  * Each node's dot reflects its real connection state from the live registry
  * (Phase 2.2): `connected` shows the live `--ok` accent, `error`/`connecting`
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
  * overflow is summarized so the diagram never lies by omission.
  */
 
-import type { McpServerStatus } from '@agent-nexus/sdk';
+import type { McpServerStatus } from '@harness-nexus/sdk';
 
 type Upstream = { id: string; name: string };
 
@@ -122,7 +122,7 @@ export function MeshTopology({
         viewBox={`0 0 ${W} ${H}`}
         className="h-[238px] w-full"
         role="img"
-        aria-label={`Mesh of ${servers.length} configured upstream MCP servers converging on AgentNexus.`}
+        aria-label={`Mesh of ${servers.length} configured upstream MCP servers converging on Harness Nexus.`}
       >
         {/* signal lines: upstreams -> nexus */}
         <g stroke="currentColor" strokeWidth="1.5" className="text-signal/45">
@@ -181,7 +181,7 @@ export function MeshTopology({
           fontWeight={600}
           textAnchor="middle"
         >
-          AgentNexus
+          Harness Nexus
         </text>
 
         {/* downstream consumer dot */}

@@ -5,7 +5,7 @@ import {
   updateRoleSchema,
   type CreateUserInput,
   type UpdateRoleInput,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { hashPassword, generateId } from '../infra/crypto.js';
 import { publicUser } from './serialize.js';
 

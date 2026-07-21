@@ -1,7 +1,7 @@
 # MCP connection config & credential management (Phase 2.1)
 
 > Status: implemented. Covers the **configuration layer** for connecting
-> AgentNexus to upstream MCP servers (as a client) plus the encrypted
+> Harness Nexus to upstream MCP servers (as a client) plus the encrypted
 > **credential** store. This sub-phase does **not** include live MCP traffic —
 > the registry/proxy that resolves and dials the configured connections lands
 > in 2.2 (see "Out of scope" below). MCP `mode` (proxy/direct) and stdio
@@ -20,13 +20,13 @@ Phase 2 as a whole is large: credentials + MCP client config + the live registry
 
 ### 1. Credential (a named encrypted secret)
 
-A `Credential` is a reusable, named secret that AgentNexus injects into an MCP
+A `Credential` is a reusable, named secret that Harness Nexus injects into an MCP
 transport at resolve time. It is referenced by **name** via a `${cred:NAME}`
 placeholder inside any transport string field (url, command, args, env values,
 header values); the placeholder is replaced with the decrypted plaintext when
 the connection is opened (proxy mode) or at install time (direct mode). It is
 **distinct** from a `PersonalAccessToken`, which authenticates a user _into_
-AgentNexus.
+Harness Nexus.
 
 ```ts
 // packages/core/src/domain/credential.ts
@@ -63,10 +63,10 @@ install).
 The `McpServer` domain entity is the record of an MCP server this instance knows
 about. Each carries a `mode` (Phase 3.1):
 
-- **`proxy`** — AgentNexus dials the upstream and re-exposes it via `/mcp`.
+- **`proxy`** — Harness Nexus dials the upstream and re-exposes it via `/mcp`.
   Only SSE / Streamable HTTP. Pooled by the registry when `proxied: true`.
 - **`direct`** — the target tool dials the upstream itself. SSE / Streamable
-  HTTP **and stdio**. AgentNexus stores the connection + encrypted credentials
+  HTTP **and stdio**. Harness Nexus stores the connection + encrypted credentials
   only; it never opens the connection. stdio forces `direct`.
 
 ```ts
@@ -126,10 +126,10 @@ because it cannot cause a silent failure.
 
 **Supported in `direct` mode only.** stdio is the most common transport for
 local tools (filesystem, shell, language runtimes), but spawning third-party
-subprocesses on the AgentNexus host is the highest-risk transport. The `mode`
+subprocesses on the Harness Nexus host is the highest-risk transport. The `mode`
 field resolves this cleanly:
 
-- `stdio` + `direct` → accepted. AgentNexus never spawns the process; the target
+- `stdio` + `direct` → accepted. Harness Nexus never spawns the process; the target
   tool does, locally, at install time.
 - `stdio` + `proxy` → rejected with `409 STDIO_REQUIRES_DIRECT`.
 

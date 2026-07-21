@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { SkillBundle, SkillMeta, SkillSource } from '@agent-nexus/core';
-import type { PluginResourceSource } from '@agent-nexus/shared';
+import type { SkillBundle, SkillMeta, SkillSource } from '@harness-nexus/core';
+import type { PluginResourceSource } from '@harness-nexus/shared';
 import type { MarketplaceFetcher } from './types.js';
 
 /**

@@ -1,5 +1,5 @@
 import type { ServerConfig } from '../../config.js';
-import type { UnitOfWork } from '@agent-nexus/core';
+import type { UnitOfWork } from '@harness-nexus/core';
 
 /**
  * Storage factory — the single place a driver is chosen.

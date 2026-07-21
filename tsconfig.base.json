@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "AgentNexus — shared compiler options",
+  "display": "Harness Nexus — shared compiler options",
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2023"],

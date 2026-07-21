@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  AgentNexusError,
+  HarnessNexusError,
   marketplacePluginToResourceSource,
   skillMetaToResourceSource,
   resolveTrustTier,
@@ -48,7 +48,7 @@ import {
   type PluginResourceSource,
   type SkillMeta,
   type TrustTier,
-} from '@agent-nexus/sdk';
+} from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
@@ -111,7 +111,7 @@ export function SkillHubPage() {
           if (first) setSelectedMkt(first.id);
         }
       } catch (e) {
-        toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load marketplaces');
+        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load marketplaces');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,7 +138,7 @@ export function SkillHubPage() {
           setRows(res.plugins.map((p) => pluginToRow(p)));
         }
       } catch (e) {
-        toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load skills');
+        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load skills');
         setRows([]);
       }
     })();
@@ -425,7 +425,7 @@ function SavePluginDialog({
       );
       onSaved();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to save skill');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to save skill');
     } finally {
       setBusy(false);
     }

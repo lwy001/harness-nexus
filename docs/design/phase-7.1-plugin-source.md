@@ -52,7 +52,7 @@ export type ResourceSource =
        * 4 live kinds in the official catalog — url / git-subdir / string-path /
        * github; no npm in production, modeled for completeness). The string
        * relative-path form (`"./plugins/foo"`) is NOT accepted here — it only
-       * makes sense inside a marketplace repo; AgentNexus stores resolved specs.
+       * makes sense inside a marketplace repo; Harness Nexus stores resolved specs.
        */
       source:
         | { source: 'github'; repo: string; ref?: string; sha?: string; path?: string }
@@ -118,7 +118,7 @@ import type { TrustTier, SkillMeta, SkillBundle } from '../domain/skill.js';
  * Hermes's `SkillSource` ABC (`~/.hermes/hermes-agent/tools/skills_hub.py`).
  *
  * This is a PORT — pure interface. Concrete adapters live in
- * `@agent-nexus/server` under `src/infra/source-fetchers/*`. Phase 7.1 ships
+ * `@harness-nexus/server` under `src/infra/source-fetchers/*`. Phase 7.1 ships
  * one no-op implementation (to prove the shape); 7.2 ships the marketplace
  * adapter; 7.4 ships the rest.
  */
@@ -235,9 +235,9 @@ table — both server and (eventually) web consult it. Mirrors
 `hooks.ts` (also at the shared root) as a peer.
 
 > **Layering correction (verified during implementation).** An earlier draft of
-> this section had `import type { TrustTier } from '@agent-nexus/core'` here.
+> this section had `import type { TrustTier } from '@harness-nexus/core'` here.
 > That violates the one-way dependency rule — `shared/package.json` depends
-> only on `zod`, never on `core` (the existing `@agent-nexus/core` mentions in
+> only on `zod`, never on `core` (the existing `@harness-nexus/core` mentions in
 > `shared/src` are comments only). The implemented file mirrors `TrustTier`
 > locally via `z.infer`, exactly how `schemas/profile.ts` mirrors `AgentTarget`
 > — see `packages/shared/src/trust.ts`. Keep the two definitions in sync.
@@ -246,7 +246,7 @@ table — both server and (eventually) web consult it. Mirrors
 import { z } from 'zod';
 
 /**
- * The zod mirror of `@agent-nexus/core` `TrustTier`. Defined locally (not
+ * The zod mirror of `@harness-nexus/core` `TrustTier`. Defined locally (not
  * imported from core) because `shared` does not depend on `core` — matches
  * the `AgentTarget` pattern in `schemas/profile.ts`. Keep in sync with
  * `core/src/domain/skill.ts` `TrustTier`.
@@ -269,7 +269,7 @@ export const TRUSTED_REPOS: ReadonlySet<string> = new Set([
 /**
  * Resolve the trust tier for a plugin source. Rules (mirror Hermes
  * `_resolve_trust_level`, skills_hub.py:1050-1061):
- *   - `official` source kind      ⇒ `builtin`  (AgentNexus owns none today)
+ *   - `official` source kind      ⇒ `builtin`  (Harness Nexus owns none today)
  *   - repo owner ∈ TRUSTED_REPOS  ⇒ `trusted`
  *   - otherwise                   ⇒ `community`
  *
@@ -377,7 +377,7 @@ before `save`, if `source.type === 'plugin'`, compute the three labels (Part
 1b) and merge them into `labels`:
 
 ```ts
-import { resolveTrustTier } from '@agent-nexus/shared';
+import { resolveTrustTier } from '@harness-nexus/shared';
 
 function withTrustLabels(resource: Resource): Resource {
   if (resource.source.type !== 'plugin') return resource;
@@ -430,7 +430,7 @@ custom `registry` URL — this is the seam.)
 **No code change.** `packages/sdk-ts/src/index.ts` is pure pass-through: it
 `JSON.stringify`s the request body and ships it. `createResource` /
 `updateResource` accept `source: ResourceSource`, and `ResourceSource` is
-re-exported (line 370) from `@agent-nexus/core` — once `core` adds `plugin`,
+re-exported (line 370) from `@harness-nexus/core` — once `core` adds `plugin`,
 the SDK accepts it automatically. The `TrustTier` / `SkillMeta` / `SkillBundle`
 types should be added to the SDK's re-export list (line 369-371) for client
 ergonomics.
@@ -441,7 +441,7 @@ To prove the port shape compiles and round-trips, ship one no-op adapter in
 `packages/server/src/infra/source-fetchers/noop-source.ts`:
 
 ```ts
-import type { SkillSource } from '@agent-nexus/core';
+import type { SkillSource } from '@harness-nexus/core';
 
 /** No-op adapter — proves the port shape. Real adapters arrive in 7.2/7.4. */
 export class NoopSkillSource implements SkillSource {
@@ -594,7 +594,7 @@ For the implementer — every spot that changes in 7.1:
 - **The hub search UI** — 7.3.
 - **Real `SkillSource` adapters** (github, url, skills-sh, …) — 7.4. 7.1 ships
   only the no-op proof-of-shape.
-- **Content security scanning** — not modeled; AgentNexus stores references,
+- **Content security scanning** — not modeled; Harness Nexus stores references,
   the target tool executes.
 - **Promoting `trust` to a real column / indexed filter** — only if a
   `?trust=trusted` list filter is needed; `labels` suffices for 7.1's UI badge.
@@ -607,13 +607,13 @@ For the implementer — every spot that changes in 7.1:
 
 When implementing 7.1:
 
-1. `pnpm --filter @agent-nexus/core run build` — the new union member + port +
+1. `pnpm --filter @harness-nexus/core run build` — the new union member + port +
    domain types compile.
-2. `pnpm --filter @agent-nexus/shared run build` — zod picks up the new arm;
+2. `pnpm --filter @harness-nexus/shared run build` — zod picks up the new arm;
    `resolveTrustTier` typechecks.
-3. `pnpm --filter @agent-nexus/server run build` — `validateSkillResource` and
+3. `pnpm --filter @harness-nexus/server run build` — `validateSkillResource` and
    `withTrustLabels` compile; the no-op adapter satisfies `SkillSource`.
-4. `pnpm --filter @agent-nexus/sdk-ts run build` — re-exports compile.
+4. `pnpm --filter @harness-nexus/sdk-ts run build` — re-exports compile.
 5. `pnpm -r run typecheck` — whole tree.
 6. Boot a memory-driver server (`STORAGE_DRIVER=memory JWT_SECRET=… pnpm dev:server`)
    and run `node scripts/smoke.mjs` — the flipped `[7.1]` block passes.

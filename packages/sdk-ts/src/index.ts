@@ -1,9 +1,9 @@
 /**
- * @agent-nexus/sdk — thin HTTP client for the AgentNexus REST API.
+ * @harness-nexus/sdk — thin HTTP client for the Harness Nexus REST API.
  *
  * Used by the web SPA, the install CLI (when it talks to a running server),
  * and external scripts. Auth is via a JWT (from login/register) or a PAT
- * (`anpat_…`), sent as `Authorization: Bearer <token>`.
+ * (`hnpat_…`), sent as `Authorization: Bearer <token>`.
  */
 import type {
   Role,
@@ -19,13 +19,13 @@ import type {
   TrustTier,
   SkillMeta,
   SkillBundle,
-} from '@agent-nexus/core';
+} from '@harness-nexus/core';
 import type {
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
   PluginResourceSource,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 export {
   HOOK_EVENTS,
   HOOK_SUPPORT,
@@ -33,7 +33,7 @@ export {
   marketplacePluginToResourceSource,
   skillMetaToResourceSource,
   type HookEvent,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource, PluginResourceSource };
 
 export interface SdkOptions {
@@ -88,7 +88,7 @@ interface ApiErrorBody {
   details?: unknown;
 }
 
-export class AgentNexusError extends Error {
+export class HarnessNexusError extends Error {
   constructor(
     message: string,
     readonly code: string,
@@ -96,11 +96,11 @@ export class AgentNexusError extends Error {
     readonly details?: unknown,
   ) {
     super(message);
-    this.name = 'AgentNexusError';
+    this.name = 'HarnessNexusError';
   }
 }
 
-export class AgentNexusClient {
+export class HarnessNexusClient {
   private token: string | undefined;
   private readonly opts: SdkOptions;
   private readonly fetchImpl: typeof fetch;
@@ -402,7 +402,7 @@ export class AgentNexusClient {
 
     if (!res.ok) {
       const err = parsed as ApiErrorBody | undefined;
-      throw new AgentNexusError(
+      throw new HarnessNexusError(
         err?.message ?? `request failed: ${res.status}`,
         err?.error ?? 'REQUEST_FAILED',
         err?.statusCode ?? res.status,

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { updateRegistrationSchema, type UpdateRegistrationInput } from '@agent-nexus/shared';
+import { updateRegistrationSchema, type UpdateRegistrationInput } from '@harness-nexus/shared';
 
 /** System settings — registration toggle. GET is public, PUT is admin-only. */
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {

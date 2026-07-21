@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon } from 'lucide-react';
-import { AgentNexusError, type CredentialView } from '@agent-nexus/sdk';
+import { HarnessNexusError, type CredentialView } from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
@@ -44,7 +44,7 @@ export function CredentialsPage() {
     try {
       setItems(await withAuthGuard(() => api.listCredentials(), logout));
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load credentials');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load credentials');
     }
   }
 
@@ -59,7 +59,7 @@ export function CredentialsPage() {
       toast.success('Credential deleted');
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
     }
   }
 
@@ -183,7 +183,7 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
       setSecret('');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
     } finally {
       setBusy(false);
     }

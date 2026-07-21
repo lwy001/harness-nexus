@@ -5,7 +5,7 @@ import { z } from 'zod';
  * author writes and the CLI installs from. Kept in `shared` so server, web,
  * and CLI all validate against the same source of truth.
  *
- * These mirror the domain types in @agent-nexus/core; keep them in sync.
+ * These mirror the domain types in @harness-nexus/core; keep them in sync.
  */
 
 export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 'mcp', 'command']);

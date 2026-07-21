@@ -1,4 +1,4 @@
-# AgentNexus documentation
+# Harness Nexus documentation
 
 Documentation is split by type so it's clear what each file is for.
 

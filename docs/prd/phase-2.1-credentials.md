@@ -4,7 +4,7 @@
 
 ## Problem Statement
 
-To aggregate upstream MCP servers (Phase 2.2), AgentNexus first needs a way to
+To aggregate upstream MCP servers (Phase 2.2), Harness Nexus first needs a way to
 _describe_ those connections — their transport (SSE, Streamable HTTP, or stdio),
 their endpoints, and the secrets needed to authenticate to them. Many hosted MCP
 servers and vendor APIs require a Bearer token or API key in a header, and stdio
@@ -24,7 +24,7 @@ A configuration layer with two concepts:
    reference it elsewhere. Both support global (admin-managed, shared) and
    personal (owner-only) scoping.
 2. **MCP server record** (an `McpServer` row) describing an upstream server, its
-   transport, and its `mode` (`proxy` — AgentNexus dials it; `direct` — the
+   transport, and its `mode` (`proxy` — Harness Nexus dials it; `direct` — the
    target tool dials it). A credential's secret is injected via **placeholder
    interpolation**: a `${cred:NAME}` token written inside any transport string
    field (url, command, args, env values, header values) is replaced with the
@@ -51,7 +51,7 @@ resolution for direct mode happens at install time (Phase 3.3).
 14. As a user, I want to see the available `${cred:NAME}` placeholders listed in the MCP form, so that I know what to paste.
 15. As a user, I want to import an MCP server config from a JSON blob (`{ "mcpServers": { "name": {...} } }`), so that I don't hand-type vendor-provided config.
 16. As a user, I want multi-entry JSON import rejected with a clear message, so that I import one server at a time deliberately.
-17. As a developer, I want stdio supported in `direct` mode only, so that AgentNexus never spawns a third-party subprocess but local tools still work.
+17. As a developer, I want stdio supported in `direct` mode only, so that Harness Nexus never spawns a third-party subprocess but local tools still work.
 18. As a developer, I want config validated by shared zod schemas, so that server, SDK, and web agree on accepted shapes.
 19. As a user, I want to delete my own credential, so that I can retire a leaked token.
 20. As an admin, I want to delete a global credential, so that shared secrets can be rotated out.
@@ -60,7 +60,7 @@ resolution for direct mode happens at install time (Phase 3.3).
 ## Implementation Decisions
 
 - **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user _into_
-  AgentNexus; a `Credential` authenticates AgentNexus _out to_ an upstream.
+  Harness Nexus; a `Credential` authenticates Harness Nexus _out to_ an upstream.
 - **Credential is a pure named secret:** `{ name, secret, scope, ownerId }`. No
   `kind` field — a credential is transport-agnostic; its name is the placeholder
   handle.
@@ -81,7 +81,7 @@ resolution for direct mode happens at install time (Phase 3.3).
   - **direct mode:** resolved at install time by the Phase 3.3 writer (the tool
     dials the connection, so the placeholder becomes a literal in the emitted
     plugin config; the bundle is then sensitive).
-- **MCP mode (`proxy` | `direct`):** `proxy` — AgentNexus dials; SSE / HTTP only.
+- **MCP mode (`proxy` | `direct`):** `proxy` — Harness Nexus dials; SSE / HTTP only.
   `direct` — the tool dials; SSE / HTTP / stdio. stdio forces `direct`
   (`409 STDIO_REQUIRES_DIRECT`). See Phase 3.1 design.
 - **Custom headers:** HTTP transports accept a `headers` record whose values may

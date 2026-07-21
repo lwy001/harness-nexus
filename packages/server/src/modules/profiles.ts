@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Profile, ProfileEntry } from '@agent-nexus/core';
+import type { Profile, ProfileEntry } from '@harness-nexus/core';
 import {
   AppError,
   createProfileSchema,
@@ -7,7 +7,7 @@ import {
   type CreateProfileInput,
   type UpdateProfileInput,
   type ProfileEntryInput,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**

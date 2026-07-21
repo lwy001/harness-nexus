@@ -22,13 +22,13 @@ export interface User {
 /**
  * Personal Access Token. The raw token is shown once at creation; only its
  * sha256 hash is stored. `prefix` (first chars) is kept for UI recognition.
- * Format: `anpat_<base64url(32 random bytes)>`.
+ * Format: `hnpat_<base64url(32 random bytes)>`.
  */
 export interface PersonalAccessToken {
   id: string;
   userId: string;
   name: string;
-  /** sha256 of the full `anpat_…` token. */
+  /** sha256 of the full `hnpat_…` token. */
   tokenHash: string;
   /** First chars of the raw token, for display only. */
   prefix: string;
@@ -42,13 +42,13 @@ export interface PersonalAccessToken {
 /**
  * How an MCP server connection is dialed (Phase 3.1).
  *
- * - `proxy`  — AgentNexus dials the upstream and re-exposes it via `/mcp`.
+ * - `proxy`  — Harness Nexus dials the upstream and re-exposes it via `/mcp`.
  *              Only SSE / Streamable HTTP. Pooled by the registry; `proxied`
  *              drives whether it actually enters the pool.
  * - `direct` — the target tool dials the upstream itself. SSE / Streamable
- *              HTTP **and stdio**. AgentNexus stores the connection + encrypted
+ *              HTTP **and stdio**. Harness Nexus stores the connection + encrypted
  *              credentials only; it never opens the connection. stdio forces
- *              this mode, so AgentNexus never spawns a subprocess.
+ *              this mode, so Harness Nexus never spawns a subprocess.
  */
 export type McpMode = 'proxy' | 'direct';
 
@@ -61,7 +61,7 @@ export interface McpServer {
   /**
    * Whether this instance dials it (proxy) or the tool does (direct). The
    * registry pools `proxy` rows only; `direct` rows are never dialed by
-   * AgentNexus (the target tool dials them at install time).
+   * Harness Nexus (the target tool dials them at install time).
    */
   mode: McpMode;
   scope: 'global' | 'personal';

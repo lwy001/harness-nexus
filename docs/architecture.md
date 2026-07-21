@@ -1,6 +1,6 @@
 # Architecture
 
-AgentNexus is a polyglot-friendly monorepo (all-TypeScript for now) that provides
+Harness Nexus is a polyglot-friendly monorepo (all-TypeScript for now) that provides
 a unified platform for managing Agent-tool assets across Claude Code, ZCode, and
 Hermes. Four pillars:
 
@@ -15,10 +15,10 @@ Hermes. Four pillars:
 ## Layering (enforced, not just convention)
 
 ```
-apps/web ──────────────► @agent-nexus/sdk ──► HTTP ──► packages/server
+apps/web ──────────────► @harness-nexus/sdk ──► HTTP ──► packages/server
                                                                   │
 packages/cli ─┐                                                  ▼
-              ├──► @agent-nexus/core  ◄──── packages/server (infra/storage/*)
+              ├──► @harness-nexus/core  ◄──── packages/server (infra/storage/*)
 packages/acp─┘        (domain + ports)            implements ports
 ```
 

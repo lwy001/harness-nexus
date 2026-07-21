@@ -1,5 +1,5 @@
 /**
- * @agent-nexus/core — pure domain layer.
+ * @harness-nexus/core — pure domain layer.
  *
  * Re-exports all entities and repository ports. This package must stay free of
  * runtime I/O and framework imports so it can be consumed by every other

@@ -5,7 +5,7 @@ import { resourceKindSchema, agentTargetSchema } from './profile.js';
  * Resource validation schemas — single source of truth for request shapes
  * across server, SDK, and web. See docs/design/phase-4-web-ui.md.
  *
- * These mirror the domain types in @agent-nexus/core; keep them in sync.
+ * These mirror the domain types in @harness-nexus/core; keep them in sync.
  *
  * The schemas are intentionally kind-agnostic (any `ResourceKind` is accepted
  * here). Which kinds are *currently available* is enforced at the route layer

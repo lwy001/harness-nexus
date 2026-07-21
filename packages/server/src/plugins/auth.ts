@@ -10,7 +10,7 @@ import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
  *
  * Two credential channels (see docs/design/phase-1-auth.md):
  *   - JWT access token  → verified by jose, stateless
- *   - PAT `anpat_…`     → sha256 lookup in the tokens repository
+ *   - PAT `hnpat_…`     → sha256 lookup in the tokens repository
  *
  * The hook resolves either into `req.user = { id, role }` or leaves it null.
  * Route guards (`requireAuth` / `requireAdmin`) then enforce access — they are

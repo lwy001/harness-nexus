@@ -1,5 +1,5 @@
 /**
- * AgentNexus brand mark.
+ * Harness Nexus brand mark.
  *
  * The glyph encodes the product thesis: upstream nodes (left) converge via
  * signal lines on a central nexus node, which re-exposes one connection
@@ -58,7 +58,7 @@ export function BrandMark({ size = 28, className }: BrandMarkProps) {
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={className}>
-      Agent<span className="text-signal">Nexus</span>
+      Harness<span className="text-signal">Nexus</span>
     </span>
   );
 }

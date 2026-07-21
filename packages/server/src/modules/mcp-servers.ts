@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { McpServer, McpMode, McpTransport } from '@agent-nexus/core';
+import type { McpServer, McpMode, McpTransport } from '@harness-nexus/core';
 import {
   AppError,
   createMcpServerSchema,
@@ -7,16 +7,16 @@ import {
   updateMcpServerSchema,
   type CreateMcpServerInput,
   type UpdateMcpServerInput,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
  * MCP management — records of MCP servers, each with a `mode` (Phase 3.1):
- *   proxy  — AgentNexus dials the upstream (SSE / Streamable HTTP) and
+ *   proxy  — Harness Nexus dials the upstream (SSE / Streamable HTTP) and
  *            re-exposes it via `/mcp`; pooled by the registry automatically.
- *   direct — the target tool dials it itself (SSE / HTTP / stdio). AgentNexus
+ *   direct — the target tool dials it itself (SSE / HTTP / stdio). Harness Nexus
  *            stores the connection + encrypted credentials only.
- * stdio forces `direct` (AgentNexus never spawns the subprocess), enforced as
+ * stdio forces `direct` (Harness Nexus never spawns the subprocess), enforced as
  * a 409 STDIO_REQUIRES_DIRECT here.
  *
  * Scope rules (see docs/design/phase-2.1-credentials.md) are identical to credentials:
@@ -108,13 +108,13 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
 
 /**
  * Enforce the mode × transport rule: stdio can only run in `direct` mode, since
- * AgentNexus must never spawn a stdio subprocess (that's the target tool's job).
+ * Harness Nexus must never spawn a stdio subprocess (that's the target tool's job).
  * Throws 409 STDIO_REQUIRES_DIRECT otherwise.
  */
 function assertDirectForTransport(transport: McpTransport, mode: McpMode): void {
   if (requiresDirect(transport) && mode !== 'direct') {
     throw new AppError(
-      'stdio transport requires direct mode (AgentNexus does not spawn stdio servers)',
+      'stdio transport requires direct mode (Harness Nexus does not spawn stdio servers)',
       409,
       'STDIO_REQUIRES_DIRECT',
     );

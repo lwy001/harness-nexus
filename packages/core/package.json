@@ -1,8 +1,8 @@
 {
-  "name": "@agent-nexus/core",
+  "name": "@harness-nexus/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Pure-TS domain core for AgentNexus — entities and repository ports, zero I/O or framework dependencies.",
+  "description": "Pure-TS domain core for Harness Nexus — entities and repository ports, zero I/O or framework dependencies.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

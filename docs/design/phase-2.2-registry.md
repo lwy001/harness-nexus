@@ -47,7 +47,7 @@ the owning upstream client.
 **Explicit profile selection.** An Agent tool connects with:
 
 ```
-GET /mcp?profile=<profileId>   (Authorization: Bearer anpat_…)
+GET /mcp?profile=<profileId>   (Authorization: Bearer hnpat_…)
 ```
 
 The proxy exposes **only** the MCP servers listed in that profile's entries
@@ -73,12 +73,12 @@ Holds live connections and aggregates capabilities. Key design:
   `StreamableHTTPClientTransport` or `SSEClientTransport` (per `transport.type`).
   Connections are kept in a `Map<serverId, LiveConnection>`. Only `proxy`-mode
   servers are pooled; `direct`-mode servers (including all stdio) are never
-  dialed by AgentNexus.
+  dialed by Harness Nexus.
 - **Placeholder resolution.** Before connecting, `${cred:NAME}` placeholders in
   the transport's header values and URL are resolved: each name →
   `credentials.findByName(name)` → `decryptSecret(credential.secret, key)` →
   substituted into the string. Uses `resolvePlaceholders`
-  (`@agent-nexus/shared`) with the same `credentialEncryptionKey` decorated on
+  (`@harness-nexus/shared`) with the same `credentialEncryptionKey` decorated on
   the Fastify instance (2.1).
 - **Aggregation.** `listTools(filterServerIds?)` merges tools from all (or a
   filtered subset of) upstreams. To avoid name collisions across upstreams, each

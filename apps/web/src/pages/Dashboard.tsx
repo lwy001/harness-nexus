@@ -13,12 +13,12 @@ import {
 import { useAuth, withAuthGuard } from '@/auth';
 import { api } from '@/api';
 import {
-  AgentNexusError,
+  HarnessNexusError,
   type CredentialView,
   type McpServer,
   type McpServerStatus,
   type Profile,
-} from '@agent-nexus/sdk';
+} from '@harness-nexus/sdk';
 import { AppShell } from '@/components/app-shell';
 import { MeshTopology } from '@/components/mesh-topology';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,7 +54,7 @@ export function DashboardPage() {
         setProfiles(p);
       } catch (e) {
         if (cancelled) return;
-        toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load overview');
+        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load overview');
         setServers([]);
         setStatuses([]);
         setCreds([]);

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { AppError } from '@agent-nexus/shared';
+import { AppError } from '@harness-nexus/shared';
 import { resolveAllowlistId } from '../infra/source-fetchers/allowlist.js';
 
 /**

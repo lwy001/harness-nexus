@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/auth';
-import { AgentNexusError } from '@agent-nexus/sdk';
+import { HarnessNexusError } from '@harness-nexus/sdk';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,7 @@ export function LoginPage() {
       // eslint-disable-next-line no-console
       console.error('login failed:', e);
       setError(
-        e instanceof AgentNexusError
+        e instanceof HarnessNexusError
           ? e.message
           : `Login failed: ${e instanceof Error ? e.message : String(e)}`,
       );
@@ -46,7 +46,7 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Welcome back</CardTitle>
-          <CardDescription>Sign in to your AgentNexus account</CardDescription>
+          <CardDescription>Sign in to your Harness Nexus account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">

@@ -3,7 +3,7 @@
  *
  * The core package defines ONLY these interfaces. Concrete implementations
  * (SQLite default, in-memory for tests, a future Postgres adapter) live in
- * `@agent-nexus/server` under `src/infra/storage/*`. Nothing in `core` may
+ * `@harness-nexus/server` under `src/infra/storage/*`. Nothing in `core` may
  * import a concrete driver.
  */
 

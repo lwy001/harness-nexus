@@ -15,8 +15,8 @@ import type {
   McpServerRepository,
   ProfileRepository,
   ResourceRepository,
-} from '@agent-nexus/core';
-import { DEFAULT_SYSTEM_SETTINGS } from '@agent-nexus/core';
+} from '@harness-nexus/core';
+import { DEFAULT_SYSTEM_SETTINGS } from '@harness-nexus/core';
 
 /**
  * In-memory storage driver — used by tests and `STORAGE_DRIVER=memory`.

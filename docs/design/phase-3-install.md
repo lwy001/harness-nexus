@@ -13,7 +13,7 @@ Three coupled changes, summarized then detailed below:
    renamed "MCP Management".
 2. **Target-bound profiles** — `Profile` gains a required, immutable `target`.
    The creation form narrows offered resources/hook events to the target.
-3. **Install pipeline** — `anx install` resolves a profile, a **target writer**
+3. **Install pipeline** — `hnx install` resolves a profile, a **target writer**
    emits a plugin directory in the target's native format, and an installer
    places it. CC + ZCode share a writer; Hermes has its own.
 
@@ -35,10 +35,10 @@ export interface McpServer {
   name: string;
   transport: McpTransport; // unchanged (already supports stdio)
   /**
-   * proxy  — AgentNexus dials the upstream and re-exposes it via /mcp.
+   * proxy  — Harness Nexus dials the upstream and re-exposes it via /mcp.
    *          Only SSE / Streamable HTTP. Pooled by the registry.
    * direct — the target tool dials the upstream itself. SSE / HTTP / stdio.
-   *          AgentNexus stores the connection + encrypted credentials only;
+   *          Harness Nexus stores the connection + encrypted credentials only;
    *          it never opens the connection. stdio forces direct.
    */
   mode: 'proxy' | 'direct';
@@ -58,9 +58,9 @@ export interface McpServer {
 | `direct` |  ✅   |        ✅         |               ✅               |
 
 The registry (Phase 2.2) only ever dials `mode === 'proxy'` rows. A `direct`
-row is never opened by AgentNexus — it is emitted verbatim into a plugin at
+row is never opened by Harness Nexus — it is emitted verbatim into a plugin at
 install time. This is what re-enables stdio without weakening the server trust
-boundary: AgentNexus still never spawns a stdio subprocess.
+boundary: Harness Nexus still never spawns a stdio subprocess.
 
 ### Schema change (`packages/shared/src/schemas/mcp.ts`)
 
@@ -220,7 +220,7 @@ import report (Part 5): for each `(resourceKind, fromTarget, toTarget)` it says
 ### CLI entry
 
 ```bash
-anx install --profile <id> [--target <t>] [--mode auto|proxy|direct] [--out <dir>]
+hnx install --profile <id> [--target <t>] [--mode auto|proxy|direct] [--out <dir>]
 ```
 
 - `--profile` resolves via the SDK (running server) or a local manifest
@@ -236,7 +236,7 @@ fetched artifacts for each entry (skill bodies, hook configs, the McpServer
 rows for MCP entries). For direct-mode MCP entries whose transport string fields
 (url, command, args, env, headers) carry `${cred:NAME}` placeholders, the
 writer resolves those placeholders to decrypted plaintext at emit time
-(`resolvePlaceholders` from `@agent-nexus/shared`); the secret is attached
+(`resolvePlaceholders` from `@harness-nexus/shared`); the secret is attached
 **in-memory only** and written into the emitted plugin config only for direct
 mode (the output dir is then flagged sensitive).
 
@@ -284,9 +284,9 @@ on the referenced `McpServer.mode`:
 {
   "mcpServers": {
     // proxy mode → single aggregated endpoint
-    "agentnexus-cloud": {
+    "harnessnexus-cloud": {
       "type": "streamable-http",
-      "url": "https://anx.example.com/mcp?profile=<profileId>",
+      "url": "https://hnx.example.com/mcp?profile=<profileId>",
       "headers": { "Authorization": "Bearer ${user_config.PAT}" },
     },
     // direct mode → connection verbatim (stdio preserved)
@@ -298,7 +298,7 @@ on the referenced `McpServer.mode`:
 }
 ```
 
-- **proxy entries collapse into one** `agentnexus-<profile>` server (the whole
+- **proxy entries collapse into one** `harnessnexus-<profile>` server (the whole
   point of aggregation). The PAT is a `${user_config.PAT}` placeholder;
   `userConfig` in the manifest prompts for it at enable time (CC stores it in
   the keychain). No upstream secret is shipped.
@@ -433,7 +433,7 @@ Follows the Signal design system (AGENTS.md "Web UI design system").
 - `--apply` shelling out to target CLIs.
 - Per-PAT profile binding and tool-level authorization (still from 2.2).
 - The stdio bridge entry (Phase 6) — direct mode here is the _tool_ spawning
-  stdio, not AgentNexus.
+  stdio, not Harness Nexus.
 
 ## Suggested sub-phasing
 
@@ -442,7 +442,7 @@ Follows the Signal design system (AGENTS.md "Web UI design system").
   change yet. Smoke-test stdio create (success) and stdio+proxy (409).
 - **3.2** — `target` on Profile + create form narrowing + hook matrix in
   `shared` + `TARGET_IMMUTABLE`. No install yet.
-- **3.3** — Claude-Code writer (CC + ZCode narrowing) + `anx install` +
+- **3.3** — Claude-Code writer (CC + ZCode narrowing) + `hnx install` +
   resolver + proxy/direct MCP emission. Verify the emitted plugin loads in
   both tools.
 - **3.4** — Import flow (report + apply) + UI.

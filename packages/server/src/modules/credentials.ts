@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import type { Credential } from '@agent-nexus/core';
+import type { Credential } from '@harness-nexus/core';
 import {
   AppError,
   createCredentialSchema,
   updateCredentialSchema,
   type CreateCredentialInput,
   type UpdateCredentialInput,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { generateId, encryptSecret, decryptSecret, maskSecret } from '../infra/crypto.js';
 import { credentialView } from './serialize.js';
 

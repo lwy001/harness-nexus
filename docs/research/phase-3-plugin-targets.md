@@ -75,7 +75,7 @@ we will always emit one for explicitness.
   "displayName": "Frontend Daily",
   "version": "1.2.0", // omit → uses git SHA (every push = update)
   "description": "Frontend toolchain profile",
-  "author": { "name": "AgentNexus" },
+  "author": { "name": "Harness Nexus" },
   "skills": "./skills", // dir | array | inline
   "commands": ["./commands"], // legacy; prefer skills/ for new plugins
   "agents": ["./agents/reviewer.md"],
@@ -306,9 +306,9 @@ crux of Phase 3:
 // .mcp.json in a profile-generated plugin (recommended: proxy mode)
 {
   "mcpServers": {
-    "agentnexus-frontend-daily": {
+    "harnessnexus-frontend-daily": {
       "type": "streamable-http",
-      "url": "https://anx.example.com/mcp?profile=<profileId>",
+      "url": "https://hnx.example.com/mcp?profile=<profileId>",
       "headers": { "Authorization": "Bearer ${user_config.PAT}" },
     },
   },
@@ -322,7 +322,7 @@ default; direct mode is the escape hatch for offline / no-server installs
 ## Recommended install-pipeline architecture
 
 ```
-anx install --profile <id> [--target claude-code|zcode|hermes|generic]
+hnx install --profile <id> [--target claude-code|zcode|hermes|generic]
    │
    ▼
 ProfileResolver  ── (local manifest OR SDK fetch) ──▶ resolved Profile + artifacts
@@ -399,14 +399,14 @@ leaves our trust boundary).
    plugin. We must wrap `kind=rule` content into a generated `SKILL.md`. Confirm
    that is acceptable vs. instructing users to paste rules into their
    `CLAUDE.md`/`AGENTS.md` manually.
-7. **Marketplace hosting.** For `anx install` to be one-click, the generated
+7. **Marketplace hosting.** For `hnx install` to be one-click, the generated
    bundle should be installable from a marketplace we host (git repo) or a local
-   dir. Decide whether AgentNexus auto-publishes per-profile marketplace entries
+   dir. Decide whether Harness Nexus auto-publishes per-profile marketplace entries
    or only emits a local dir the user adds.
 
 ## Suggested sub-phasing
 
-- **3.1 — CC/ZCode writer + proxy mode.** `anx install --profile <id> --target
+- **3.1 — CC/ZCode writer + proxy mode.** `hnx install --profile <id> --target
 claude-code` emits the CC-format plugin dir above with a single proxy MCP
   entry. Verify it loads in both Claude Code and ZCode. No sub-agents/hooks yet.
 - **3.2 — full artifact emission.** skills, commands, hooks (event-filtered),

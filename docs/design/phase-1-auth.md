@@ -54,7 +54,7 @@ them by prefix:
    and `POST /api/auth/register`. Format: a standard JWT signed with `JWT_SECRET`.
    Lifetime: 7 days (configurable via `JWT_ACCESS_TTL`). Stateless — the server
    verifies the signature and expiry, no DB lookup needed.
-2. **PAT** (for CLI / automation / SDK). Format: `anpat_<base64url(32 random bytes)>`.
+2. **PAT** (for CLI / automation / SDK). Format: `hnpat_<base64url(32 random bytes)>`.
    Only its **sha256** is stored. Resolved via a DB lookup on each request;
    `lastUsedAt` is updated fire-and-forget.
 

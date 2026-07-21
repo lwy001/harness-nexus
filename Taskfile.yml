@@ -1,4 +1,4 @@
-# AgentNexus — cross-package task orchestration
+# Harness Nexus — cross-package task orchestration
 # Usage:
 #   task dev        # start all packages in watch mode (parallel)
 #   task build      # build every package
@@ -39,12 +39,12 @@ tasks:
   dev:server:
     desc: Start only the API server in watch mode
     cmds:
-      - '{{.PNPM}} --filter @agent-nexus/server run dev'
+      - '{{.PNPM}} --filter @harness-nexus/server run dev'
 
   dev:web:
     desc: Start only the web SPA (Vite dev server)
     cmds:
-      - '{{.PNPM}} --filter @agent-nexus/web run dev'
+      - '{{.PNPM}} --filter @harness-nexus/web run dev'
 
   build:
     desc: Build every package

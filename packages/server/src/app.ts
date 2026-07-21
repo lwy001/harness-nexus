@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
-import { isAppError } from '@agent-nexus/shared';
+import { isAppError } from '@harness-nexus/shared';
 
 import type { ServerConfig } from './config.js';
 import { createStorage } from './infra/storage/index.js';

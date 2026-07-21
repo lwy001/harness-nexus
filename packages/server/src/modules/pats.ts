@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { AppError, createPatSchema, type CreatePatInput } from '@agent-nexus/shared';
+import { AppError, createPatSchema, type CreatePatInput } from '@harness-nexus/shared';
 import { generatePat, hashToken, patDisplayPrefix, generateId } from '../infra/crypto.js';
 
 /** Personal access token management — each user manages their own. */
@@ -45,8 +45,8 @@ export async function patsRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
-type PatView = Omit<import('@agent-nexus/core').PersonalAccessToken, 'tokenHash'>;
-function stripSecret(pat: import('@agent-nexus/core').PersonalAccessToken): PatView {
+type PatView = Omit<import('@harness-nexus/core').PersonalAccessToken, 'tokenHash'>;
+function stripSecret(pat: import('@harness-nexus/core').PersonalAccessToken): PatView {
   const { tokenHash: _omit, ...rest } = pat;
   return rest;
 }

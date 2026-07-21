@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth';
 import { api } from '@/api';
-import { AgentNexusError } from '@agent-nexus/sdk';
+import { HarnessNexusError } from '@harness-nexus/sdk';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,7 +44,7 @@ export function RegisterPage() {
       // eslint-disable-next-line no-console
       console.error('register failed:', e);
       setError(
-        e instanceof AgentNexusError
+        e instanceof HarnessNexusError
           ? e.message
           : `Registration failed: ${e instanceof Error ? e.message : String(e)}`,
       );
@@ -61,7 +61,7 @@ export function RegisterPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Create account</CardTitle>
-          <CardDescription>Register a new AgentNexus account</CardDescription>
+          <CardDescription>Register a new Harness Nexus account</CardDescription>
         </CardHeader>
         <CardContent>
           {closed && (

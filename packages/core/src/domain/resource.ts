@@ -1,9 +1,9 @@
 /**
- * Domain entities for AgentNexus.
+ * Domain entities for Harness Nexus.
  *
  * This package is intentionally pure: no `import` of Fastify, the MCP SDK, or any
  * storage driver is allowed here. Concrete repository implementations live in
- * `@agent-nexus/server` under `infra/storage/*`. See `ports/` for the contracts.
+ * `@harness-nexus/server` under `infra/storage/*`. See `ports/` for the contracts.
  *
  * NOTE: These types are skeleton placeholders. Fields will evolve as modules are
  * implemented; keep them aligned with `packages/shared/src/schemas/*`.
@@ -60,7 +60,7 @@ export type ResourceSource =
        * live kinds in the official catalog — url / git-subdir / string-path /
        * github; no npm in production, modeled for completeness). The string
        * relative-path form (`"./plugins/foo"`) is NOT accepted here — it only
-       * makes sense inside a marketplace repo; AgentNexus stores resolved specs.
+       * makes sense inside a marketplace repo; Harness Nexus stores resolved specs.
        */
       source:
         | { source: 'github'; repo: string; ref?: string; sha?: string; path?: string }

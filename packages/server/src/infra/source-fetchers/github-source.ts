@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { SkillBundle, SkillMeta, SkillSource } from '@agent-nexus/core';
-import { resolveTrustTier, type PluginResourceSource } from '@agent-nexus/shared';
+import type { SkillBundle, SkillMeta, SkillSource } from '@harness-nexus/core';
+import { resolveTrustTier, type PluginResourceSource } from '@harness-nexus/shared';
 import type { MarketplaceFetcher } from './types.js';
 
 /**
@@ -20,7 +20,7 @@ import type { MarketplaceFetcher } from './types.js';
  *
  * Auth: optional `GITHUB_TOKEN` (5000 req/hr authenticated vs 60/hr anonymous).
  * Hermes's `gh auth token` subprocess + GitHub App fallbacks are deliberately
- * not ported — too heavy for AgentNexus; a user with a token sets the env.
+ * not ported — too heavy for Harness Nexus; a user with a token sets the env.
  */
 
 export interface GitHubTap {

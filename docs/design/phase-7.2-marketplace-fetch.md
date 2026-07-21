@@ -33,7 +33,7 @@ branch, 2026-07). Two facts corrected from earlier research notes:
 | string path  | `"./plugins/foo"` — relative to the marketplace's own repo | ~52          |
 
 **The string-path form is intentionally dropped** during parsing. Those
-entries only make sense inside the marketplace repo; AgentNexus stores
+entries only make sense inside the marketplace repo; Harness Nexus stores
 standalone-installable specs, and a relative path cannot be resolved without
 cloning the marketplace repo itself (out of scope for 7.2).
 

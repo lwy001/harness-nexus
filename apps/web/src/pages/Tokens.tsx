@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AgentNexusError, type PatView } from '@agent-nexus/sdk';
+import { HarnessNexusError, type PatView } from '@harness-nexus/sdk';
 
 export function TokensPage() {
   const { logout } = useAuth();
@@ -49,7 +49,7 @@ export function TokensPage() {
     try {
       setItems(await withAuthGuard(() => api.listPats(), logout));
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load tokens');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load tokens');
     }
   }
 
@@ -64,7 +64,7 @@ export function TokensPage() {
       toast.success('Token revoked');
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Revoke failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Revoke failed');
     }
   }
 
@@ -73,7 +73,7 @@ export function TokensPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Access tokens</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Personal access tokens (<code className="font-mono">anpat_…</code>) authenticate the CLI
+          Personal access tokens (<code className="font-mono">hnpat_…</code>) authenticate the CLI
           or automation against this server as you. The full token is shown{' '}
           <strong>only once</strong> at creation — copy it then.
         </p>
@@ -213,7 +213,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
       setExpiresLocal('');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
     } finally {
       setBusy(false);
     }

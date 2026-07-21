@@ -5,7 +5,7 @@
  * (`~/.hermes/hermes-agent/tools/skills_hub.py:424-449`).
  *
  * This is a PORT — a pure interface. Concrete adapters live in
- * `@agent-nexus/server` under `src/infra/source-fetchers/*`. Phase 7.1 ships
+ * `@harness-nexus/server` under `src/infra/source-fetchers/*`. Phase 7.1 ships
  * one no-op implementation (to prove the shape); 7.2 ships the marketplace
  * adapter; 7.4 ships the rest.
  *

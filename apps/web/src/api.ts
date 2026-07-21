@@ -1,12 +1,12 @@
-import { AgentNexusClient } from '@agent-nexus/sdk';
+import { HarnessNexusClient } from '@harness-nexus/sdk';
 
 // Vite dev server proxies /api to the Fastify backend (see vite.config.ts),
 // so we just call same-origin. In production, set VITE_API_BASE_URL.
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
 
-export const TOKEN_KEY = 'agentnexus.token';
+export const TOKEN_KEY = 'harnessnexus.token';
 
-export const api = new AgentNexusClient({
+export const api = new HarnessNexusClient({
   baseUrl,
   token: localStorage.getItem(TOKEN_KEY) ?? undefined,
 });

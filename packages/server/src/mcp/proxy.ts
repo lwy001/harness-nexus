@@ -6,7 +6,7 @@
  *   - Streamable HTTP  → POST/GET /mcp
  *   - SSE (legacy)     → GET /mcp/sse + POST /mcp/sse/messages
  *
- * Auth: a PAT (Bearer anpat_…) is required, resolved into `req.user` by the
+ * Auth: a PAT (Bearer hnpat_…) is required, resolved into `req.user` by the
  * root auth hook. The `?profile=<id>` query param selects which profile's MCP
  * server entries are exposed (explicit profile routing — see docs/design/phase-2.2-registry.md).
  *
@@ -19,7 +19,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { randomUUID } from 'node:crypto';
-import { AppError } from '@agent-nexus/shared';
+import { AppError } from '@harness-nexus/shared';
 import { McpRegistry } from './registry.js';
 
 /** Session entry: one SDK server + its transport, per Agent-tool connection. */
@@ -154,7 +154,7 @@ async function buildSession(
   transport: StreamableHTTPServerTransport | SSEServerTransport,
   serverIds: string[],
 ): Promise<Session> {
-  const server = new SdkMcpServer({ name: 'agent-nexus', version: '0.1.0' });
+  const server = new SdkMcpServer({ name: 'harness-nexus', version: '0.1.0' });
   for (const tool of registry.listTools(serverIds.length ? serverIds : undefined)) {
     const name = tool.name;
     server.registerTool(

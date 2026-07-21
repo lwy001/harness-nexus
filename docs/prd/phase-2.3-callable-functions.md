@@ -9,15 +9,15 @@
 Some capabilities an agent needs are not available as MCP servers — they live
 behind cloud-vendor HTTP APIs (e.g. a document-translation API, an OCR service,
 an image generator, a proprietary search endpoint). Today there is no way to
-expose those to an agent tool through AgentNexus: the proxy only aggregates
+expose those to an agent tool through Harness Nexus: the proxy only aggregates
 upstream MCP servers. An admin who wants to give agents access to a vendor API
 has no in-product path and must run a separate MCP wrapper server. There needs to
 be a way for an admin to author a small function that calls the vendor API and
-expose it as an MCP tool, running safely on the AgentNexus host.
+expose it as an MCP tool, running safely on the Harness Nexus host.
 
 ## Solution
 
-Admin-authored JavaScript functions, stored and managed in AgentNexus, compiled
+Admin-authored JavaScript functions, stored and managed in Harness Nexus, compiled
 and executed in a sandbox, and exposed as MCP tools alongside upstream tools
 through the same profile-based proxy. The sandbox has no filesystem or
 subprocess access and can only make network calls to an admin-specified host

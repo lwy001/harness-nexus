@@ -1,12 +1,12 @@
 /**
- * A Credential is a reusable named secret that AgentNexus injects into an MCP
+ * A Credential is a reusable named secret that Harness Nexus injects into an MCP
  * transport at resolve time. It is referenced by name via a `${cred:NAME}`
  * placeholder inside transport string fields (url, command, args, env values,
  * header values); the placeholder is replaced with the decrypted plaintext when
  * the connection is opened (proxy mode) or at install time (direct mode).
  *
  * This is distinct from PersonalAccessToken, which authenticates a user *into*
- * AgentNexus. A Credential authenticates AgentNexus *out to* a third party.
+ * Harness Nexus. A Credential authenticates Harness Nexus *out to* a third party.
  *
  * The `secret` field holds AES-256-GCM ciphertext (see server crypto module);
  * the plaintext is never returned by the API (responses carry a masked

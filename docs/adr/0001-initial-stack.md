@@ -19,9 +19,9 @@ PAT, and later ACP bridging, channels, and a knowledge base.
 - **MCP:** official `@modelcontextprotocol/sdk` on both client and server side.
 - **Storage:** pluggable via a `UnitOfWork` of repository ports in core; default
   SQLite (`better-sqlite3`), in-memory driver for tests.
-- **Validation:** zod, schemas centralized in `@agent-nexus/shared`.
+- **Validation:** zod, schemas centralized in `@harness-nexus/shared`.
 - **Frontend:** React + TS + Vite SPA.
-- **Project name / npm scope:** `agentnexus` / `@agent-nexus`.
+- **Project name / npm scope:** `harnessnexus` / `@harness-nexus`.
 
 ## Consequences
 
@@ -29,5 +29,7 @@ PAT, and later ACP bridging, channels, and a knowledge base.
   core domain types directly.
 - Putting repository _ports_ in core (not implementations) is the key rule that
   keeps storage pluggable — any edit adding I/O to core is a regression.
-- The `mcp-proxy` directory name is retained for now; a rename to `agentnexus`
-  can happen independently since the npm scope is already `@agent-nexus`.
+- The `mcp-proxy` directory name is still retained for historical reasons; the
+  project itself is now **Harness Nexus** (npm scope `@harness-nexus`), so the
+  directory name and the package name are independent — a directory rename can
+  happen on its own without affecting the published scope.

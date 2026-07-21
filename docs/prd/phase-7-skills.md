@@ -12,7 +12,7 @@ Phase 4.6 delivered **local** skills only — a user can author a skill inline
 `references/` + `scripts/`). But the vast majority of real-world skills are not
 authored from scratch — they are **sourced from outside**: a Claude Code / ZCode
 plugin marketplace, a GitHub repo, skills.sh, a direct URL, a vendor hub. Today
-AgentNexus has no way to store such a reference: the `ResourceSource` union has
+Harness Nexus has no way to store such a reference: the `ResourceSource` union has
 no `plugin` variant, the skill validator (`validateSkillResource`) actively
 **rejects** any non-inline source (`409 INVALID_SKILL_SOURCE`), and there is no
 way to browse or search a marketplace.
@@ -27,11 +27,11 @@ Three concrete gaps:
    unknown community repo carry the same weight in the UI. There is no trust
    tier, no provenance pin, no install-warning when a community skill lacks a
    pin. Hermes solves this (`TRUSTED_REPOS` + `lock.json` + per-install scan);
-   CC/ZCode do not. AgentNexus should adopt the trust tier + provenance model
+   CC/ZCode do not. Harness Nexus should adopt the trust tier + provenance model
    even though it defers the content scanner (it stores references, the target
    tool executes).
 3. **There is no browse/search surface.** A user who wants a skill from the
-   CC official marketplace must today leave AgentNexus, find the plugin
+   CC official marketplace must today leave Harness Nexus, find the plugin
    manually, and paste a spec. The "search the skill hub" feature — researched
    in `docs/research/phase-4.4-skills.md` — is unbuilt.
 
@@ -66,7 +66,7 @@ outbound-network risk is isolated to 7.2:
    Implement the remaining `SkillSource` adapters (`skills-sh`, `well-known`,
    `url`, `github`, `claude-marketplace`, …), value-ranked. Parallel search
    with merge/dedupe (key = identifier, sort = trust rank). A `taps.json`-style
-   custom-tap management UI. **Content scanning stays deferred** — AgentNexus
+   custom-tap management UI. **Content scanning stays deferred** — Harness Nexus
    stores references; the target tool executes.
 
 > **Why this order.** 7.1 is the data model + trust model with **no outbound
@@ -90,7 +90,7 @@ apply and are authoritative for implementation:
    `browse-sh`.
 2. **Trust is 4 tiers internally, 3 surfaced.** Hermes's `INSTALL_POLICY` has
    `builtin` / `trusted` / `community` / `agent-created` (the 4th is
-   off-by-default, gated behind `guard_agent_created`). AgentNexus surfaces
+   off-by-default, gated behind `guard_agent_created`). Harness Nexus surfaces
    only the 3 user-visible tiers; `agent-created` is not modeled.
 3. **The live CC `marketplace.json` has 4 source kinds and NO `npm`.** Observed
    across 257 entries: `url` (131), `git-subdir` (72), string-path (52),
@@ -107,7 +107,7 @@ apply and are authoritative for implementation:
 Plus two structural facts from the research that stay authoritative:
 
 - **Skills bundle inside plugins** (CC/ZCode) — installing a skill is
-  clone-and-cache a plugin. AgentNexus stores the **source spec**, never a live
+  clone-and-cache a plugin. Harness Nexus stores the **source spec**, never a live
   reference; resolution happens at install time (Phase 3.3's writer pipeline).
 - **Hermes treats skills as first-class across heterogeneous sources** — the
   `SkillSource` ABC (4 abstract methods + 1 concrete default) is the mature
@@ -165,7 +165,7 @@ UI on 7.2's endpoint. 7.4 generalizes 7.2's single fetcher into the
 ### 7.3 — hub search UI
 
 12. As a user, I want a "Skill hub" page reachable from the sidebar, so that I
-    can browse a marketplace without leaving AgentNexus.
+    can browse a marketplace without leaving Harness Nexus.
 13. As a user, I want to filter by `category` and search by free text, so that
     I can narrow a long catalog.
 14. As a user, I want each entry's trust tier shown as a badge, so that I can
@@ -218,7 +218,7 @@ verified CC marketplace source kinds:
 
 Three user-visible tiers, mirroring Hermes's surfaced set:
 
-- **`builtin`** — ships with the target tool (AgentNexus does not own any
+- **`builtin`** — ships with the target tool (Harness Nexus does not own any
   builtin skills today; reserved).
 - **`trusted`** — the 4 named repos: `openai/skills`, `anthropics/skills`,
   `huggingface/skills`, `NVIDIA/skills`. (Exact strings, ground-truth verified
@@ -306,7 +306,7 @@ key = `identifier`, keep highest trust rank, then preserve insertion order.
 has text). **Verified scope**: skills.sh / browse.sh **deferred** (7.5+);
 clawhub / lobehub / hermes-index **skipped** (distrusted post-ClawHavoc, wrong
 artifact class, or Hermes-specific). Content scanning is **deferred**
-(AgentNexus stores references; the target tool executes). Full design:
+(Harness Nexus stores references; the target tool executes). Full design:
 `docs/design/phase-7.4-multi-source.md`.
 
 ## Cross-phase dependencies
@@ -345,7 +345,7 @@ artifact class, or Hermes-specific). Content scanning is **deferred**
 ## Out of Scope
 
 - **Content security scanning** (Hermes's `skills_guard.py` model — regex
-  threat DB, quarantine, verdict × tier gate). AgentNexus stores references;
+  threat DB, quarantine, verdict × tier gate). Harness Nexus stores references;
   the target tool executes. Re-evaluate if we ever materialize/execute skill
   bytes.
 - **`npm` source search.** The official CC catalog has no npm entries; we model
@@ -353,14 +353,14 @@ artifact class, or Hermes-specific). Content scanning is **deferred**
 - **Full Hermes `parallel_search_sources` + merged index for 7.1–7.3.** Only
   7.4 implements parallel multi-source search; 7.1–7.3 are single-marketplace.
 - **The `hermes-index` pre-built merged index adapter.** Hermes uses it to skip
-  ~70 API calls; AgentNexus's single-marketplace browse (7.2) does not need it.
+  ~70 API calls; Harness Nexus's single-marketplace browse (7.2) does not need it.
   Re-evaluate if 7.4's multi-source search proves slow.
 - **Private npm registry / private GitHub credentials.** Reuse the `${cred:NAME}`
   model from Phase 2.1 when there is demand.
 - **Actual install materialization.** Phase 3.3's writer pipeline owns this;
   7.x only stores and browses the reference.
 - **The Hermes 4th trust tier (`agent-created`).** Off-by-default in Hermes;
-  not surfaced in AgentNexus.
+  not surfaced in Harness Nexus.
 
 ## Further Notes
 

@@ -1,12 +1,12 @@
 {
-  "name": "@agent-nexus/server",
+  "name": "@harness-nexus/server",
   "version": "0.0.0",
   "private": true,
-  "description": "AgentNexus API server — Fastify HTTP API, MCP proxy transport, and storage drivers.",
+  "description": "Harness Nexus API server — Fastify HTTP API, MCP proxy transport, and storage drivers.",
   "type": "module",
   "main": "./dist/server.js",
   "bin": {
-    "agent-nexus-server": "./dist/server.js"
+    "harness-nexus-server": "./dist/server.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -17,8 +17,8 @@
     "test": "echo \"(test placeholder) add vitest\""
   },
   "dependencies": {
-    "@agent-nexus/core": "workspace:*",
-    "@agent-nexus/shared": "workspace:*",
+    "@harness-nexus/core": "workspace:*",
+    "@harness-nexus/shared": "workspace:*",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.0",
     "@fastify/sensible": "^6.0.4",

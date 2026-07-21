@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
-import { AgentNexusError } from '@agent-nexus/sdk';
+import { HarnessNexusError } from '@harness-nexus/sdk';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -25,7 +25,7 @@ export function SettingsPage() {
       setAllow(next);
       toast.success(next ? 'Registration opened' : 'Registration closed');
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
     } finally {
       setBusy(false);
     }

@@ -14,7 +14,7 @@ authenticated **server** to your coding tools.
 Each coding tool (Claude Code, ZCode, Hermes) manages its own MCP list, and many
 MCP servers run locally with per-machine config (env vars, secrets, paths).
 Maintaining that across work / home / servers is the pain point. The proxy lets
-you configure each upstream once in AgentNexus and point every tool at one URL.
+you configure each upstream once in Harness Nexus and point every tool at one URL.
 
 ## Intended shape
 
@@ -26,7 +26,7 @@ you configure each upstream once in AgentNexus and point every tool at one URL.
 
 ## Auth
 
-Tools authenticate to the proxy with a PAT (Bearer `anpat_…`). Per-tool scoping
+Tools authenticate to the proxy with a PAT (Bearer `hnpat_…`). Per-tool scoping
 (restrict which upstreams a token may reach) is a follow-up.
 
 ## Status

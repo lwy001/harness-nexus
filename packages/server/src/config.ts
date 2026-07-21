@@ -72,11 +72,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: Number(env.PORT ?? '7477'),
     host: env.HOST ?? '0.0.0.0',
     storageDriver: (env.STORAGE_DRIVER as ServerConfig['storageDriver']) ?? 'sqlite',
-    sqlitePath: env.SQLITE_PATH ?? './data/agentnexus.sqlite',
+    sqlitePath: env.SQLITE_PATH ?? './data/harnessnexus.sqlite',
     dataDir: env.DATA_DIR ?? './data',
     logLevel: (env.LOG_LEVEL as ServerConfig['logLevel']) ?? 'info',
     jwtSecret,
-    jwtIssuer: env.JWT_ISSUER ?? 'agentnexus',
+    jwtIssuer: env.JWT_ISSUER ?? 'harnessnexus',
     jwtAccessTtl: env.JWT_ACCESS_TTL ?? '7d',
     credentialEncryptionKey: env.CREDENTIAL_ENCRYPTION_KEY ?? jwtSecret,
     marketplaceAllowlist:

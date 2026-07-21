@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon } from 'lucide-react';
-import { AgentNexusError, type Profile, type McpServer } from '@agent-nexus/sdk';
+import { HarnessNexusError, type Profile, type McpServer } from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
@@ -44,7 +44,7 @@ export function ProfilesPage() {
     try {
       setItems(await withAuthGuard(() => api.listProfiles(), logout));
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load profiles');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load profiles');
     }
   }
 
@@ -59,7 +59,7 @@ export function ProfilesPage() {
       toast.success('Profile deleted');
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
     }
   }
 
@@ -212,7 +212,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       setSelected(new Set());
       onCreated();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
     } finally {
       setBusy(false);
     }

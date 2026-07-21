@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
-import type { Role } from '@agent-nexus/core';
+import type { Role } from '@harness-nexus/core';
 
-/** Claims carried by an AgentNexus access token. */
+/** Claims carried by an Harness Nexus access token. */
 export interface AccessTokenPayload extends JWTPayload {
   sub: string; // user id
   role: Role;

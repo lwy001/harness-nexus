@@ -3,7 +3,7 @@ import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
 import { toast } from 'sonner';
-import { AgentNexusError, type PublicUser, type Role } from '@agent-nexus/sdk';
+import { HarnessNexusError, type PublicUser, type Role } from '@harness-nexus/sdk';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,7 @@ export function UsersPage() {
     try {
       setUsers(await withAuthGuard(() => api.listUsers(), logout));
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load users');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load users');
     }
   }
   useEffect(() => {
@@ -55,7 +55,7 @@ export function UsersPage() {
       toast.success(`${u.username} is now ${role}`);
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
     }
   }
 
@@ -66,7 +66,7 @@ export function UsersPage() {
       toast.success(`Deleted ${u.username}`);
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
     }
   }
 
@@ -175,7 +175,7 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
       setRole('user');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
     }
   }
 

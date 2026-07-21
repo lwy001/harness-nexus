@@ -19,8 +19,8 @@ import type {
   CredentialRepository,
   ProfileRepository,
   ResourceRepository,
-} from '@agent-nexus/core';
-import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@agent-nexus/core';
+} from '@harness-nexus/core';
+import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@harness-nexus/core';
 
 // ---- row shapes ----
 interface UserRow {

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api, TOKEN_KEY, isUnauthorized } from './api.js';
-import type { PublicUser } from '@agent-nexus/sdk';
+import type { PublicUser } from '@harness-nexus/sdk';
 
 interface AuthState {
   user: PublicUser | null;

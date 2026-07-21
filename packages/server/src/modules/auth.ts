@@ -5,7 +5,7 @@ import {
   registerSchema,
   type LoginInput,
   type RegisterInput,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { hashPassword, verifyPassword, generateId } from '../infra/crypto.js';
 import { publicUser } from './serialize.js';
 

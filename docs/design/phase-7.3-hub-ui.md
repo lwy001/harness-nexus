@@ -94,8 +94,8 @@ The existing `ResourceEditor` therefore still emits only `inline` /
 
 `MarketplacePlugin` has no `trust` field (7.2's catalog schema doesn't carry
 it). Rather than add it to the 7.2 endpoint response (which would change a
-shipped shape), the page imports `resolveTrustTier` from `@agent-nexus/sdk`
-(re-exported from `@agent-nexus/shared`) and computes the tier for display from
+shipped shape), the page imports `resolveTrustTier` from `@harness-nexus/sdk`
+(re-exported from `@harness-nexus/shared`) and computes the tier for display from
 the plugin's `source`. The same function runs server-side in `withTrustLabels`
 at save time, so the displayed badge and the stored `labels.trust` agree.
 
@@ -133,7 +133,7 @@ show no callout.
 - **SDK**: no new SDK methods (7.2's `listMarketplaces` /
   `listMarketplacePlugins` + 7.1's `createResource` cover it). The page
   imports `resolveTrustTier` / `marketplacePluginToResourceSource` /
-  `TrustTier` re-exported through `@agent-nexus/sdk`.
+  `TrustTier` re-exported through `@harness-nexus/sdk`.
 
 ## Testing
 

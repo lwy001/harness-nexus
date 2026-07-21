@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { SkillMeta, SkillSource, TrustTier } from '@agent-nexus/core';
+import type { SkillMeta, SkillSource, TrustTier } from '@harness-nexus/core';
 
 /**
  * SkillSearchRouter (Phase 7.4) — dispatches a query to all registered

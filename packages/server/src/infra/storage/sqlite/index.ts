@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { UnitOfWork } from '@agent-nexus/core';
+import type { UnitOfWork } from '@harness-nexus/core';
 import { runMigrations } from './migrations.js';
 import {
   sqliteUserRepository,

@@ -1,4 +1,4 @@
-import type { SkillSource } from '@agent-nexus/core';
+import type { SkillSource } from '@harness-nexus/core';
 
 /**
  * Phase 7.1 no-op `SkillSource` implementation. Its only job is to prove the
@@ -24,7 +24,7 @@ export class NoopSkillSource implements SkillSource {
 
   trustLevelFor(): 'community' {
     // Default tier per the port contract. Real adapters override when they
-    // have a source-specific rule (see `resolveTrustTier` in @agent-nexus/shared).
+    // have a source-specific rule (see `resolveTrustTier` in @harness-nexus/shared).
     return 'community';
   }
 }

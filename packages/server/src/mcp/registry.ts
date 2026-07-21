@@ -19,8 +19,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { FastifyBaseLogger } from 'fastify';
-import type { McpServer, McpTransport, Profile, UnitOfWork } from '@agent-nexus/core';
-import { resolvePlaceholders } from '@agent-nexus/shared';
+import type { McpServer, McpTransport, Profile, UnitOfWork } from '@harness-nexus/core';
+import { resolvePlaceholders } from '@harness-nexus/shared';
 import { decryptSecret } from '../infra/crypto.js';
 
 /** Separator between server-name and tool-name in the aggregated namespace. */
@@ -88,7 +88,7 @@ export class McpRegistry {
 
   private async doReload(): Promise<void> {
     // Only proxy-mode servers are pooled — direct-mode servers are dialed by
-    // the target tool at install time, never by AgentNexus.
+    // the target tool at install time, never by Harness Nexus.
     const configured = await this.uow.mcpServers.list({ mode: 'proxy' });
     const configuredById = new Map(configured.map((s) => [s.id, s]));
 
@@ -121,7 +121,7 @@ export class McpRegistry {
   /** Establish a single upstream connection (best-effort, non-throwing). */
   private async connectOne(server: McpServer): Promise<void> {
     const transport = server.transport as Extract<McpTransport, { url: string }>;
-    const client = new Client({ name: 'agent-nexus', version: '0.1.0' }, { capabilities: {} });
+    const client = new Client({ name: 'harness-nexus', version: '0.1.0' }, { capabilities: {} });
     const conn: LiveConnection = { server, client, status: 'connecting', tools: new Map() };
     this.pool.set(server.id, conn);
 

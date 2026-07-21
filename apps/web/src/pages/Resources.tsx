@@ -49,14 +49,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  AgentNexusError,
+  HarnessNexusError,
   HOOK_EVENTS,
   HOOK_SUPPORT,
   type Resource,
   type ResourceKind,
   type AgentTarget,
   type HookEvent,
-} from '@agent-nexus/sdk';
+} from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
@@ -111,7 +111,7 @@ export function ResourcesPage() {
       const all = await withAuthGuard(() => api.listResources(), logout);
       setItems(all);
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load resources');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load resources');
     }
   }
 
@@ -149,7 +149,7 @@ export function ResourcesPage() {
       toast.success('Resource deleted');
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
     }
   }
 
@@ -369,7 +369,7 @@ function ResourceEditor({
       onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Save failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Save failed');
     } finally {
       setBusy(false);
     }

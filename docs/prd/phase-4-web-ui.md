@@ -7,7 +7,7 @@
 ## Problem Statement
 
 Phases 1–2.2 built the management surfaces for _connections_ (MCP servers,
-credentials, profiles, users). But the other half of AgentNexus's second pillar
+credentials, profiles, users). But the other half of Harness Nexus's second pillar
 — **versioned resources (skills, hooks, sub-agents, rules, commands)** — has no
 home at all. The `Resource` domain type and `ResourceRepository` port exist, but
 the storage drivers return a no-op stub (`memoryResourceStub`), there is no
@@ -87,7 +87,7 @@ new `inline-bundle` `ResourceSource` variant.
    copy button, so that I can save it (it is never recoverable afterward).
 4. As a user, I want a clear warning that the token won't be shown again, so
    that I don't dismiss the modal before copying.
-5. As a user, I want to list my PATs seeing name, prefix (`anpat_…`), scopes,
+5. As a user, I want to list my PATs seeing name, prefix (`hnpat_…`), scopes,
    expiry, and last-used time, so that I can recognize each one.
 6. As a user, I want to revoke a PAT, so that a leaked or retired token stops
    working.

@@ -27,10 +27,10 @@ export async function verifyPassword(password: string, passwordHash: string): Pr
   }
 }
 
-/** Prefix for AgentNexus personal access tokens. */
-export const PAT_PREFIX = 'anpat_';
+/** Prefix for Harness Nexus personal access tokens. */
+export const PAT_PREFIX = 'hnpat_';
 
-/** Generate a new PAT. Returns the raw `anpat_…` value (shown to the user once). */
+/** Generate a new PAT. Returns the raw `hnpat_…` value (shown to the user once). */
 export function generatePat(): string {
   return PAT_PREFIX + randomBytes(32).toString('base64url');
 }

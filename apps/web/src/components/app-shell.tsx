@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Sidebar (desktop) */}
       <aside className="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col border-r md:flex">
         <div className="flex h-14 items-center px-5">
-          <Link to="/" aria-label="AgentNexus home">
+          <Link to="/" aria-label="Harness Nexus home">
             <Brand size={22} />
           </Link>
         </div>
@@ -76,7 +76,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavItem key={item.to} {...item} />
             ))}
           </MobileNav>
-          <Link to="/" className="md:hidden" aria-label="AgentNexus home">
+          <Link to="/" className="md:hidden" aria-label="Harness Nexus home">
             <Brand size={20} />
           </Link>
 

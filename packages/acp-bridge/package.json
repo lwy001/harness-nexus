@@ -1,12 +1,12 @@
 {
-  "name": "@agent-nexus/acp-bridge",
+  "name": "@harness-nexus/acp-bridge",
   "version": "0.0.0",
   "private": true,
-  "description": "Local daemon bridging ACP-capable Agent tools to AgentNexus for remote management.",
+  "description": "Local daemon bridging ACP-capable Agent tools to Harness Nexus for remote management.",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "agent-nexus-bridge": "./dist/index.js"
+    "harness-nexus-bridge": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -17,7 +17,7 @@
     "test": "echo \"(test placeholder) add vitest\""
   },
   "dependencies": {
-    "@agent-nexus/core": "workspace:*"
+    "@harness-nexus/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.8.6",

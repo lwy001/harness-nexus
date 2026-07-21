@@ -1,4 +1,4 @@
-# AGENTS.md — AgentNexus workspace guide
+# AGENTS.md — Harness Nexus workspace guide
 
 This file orients future ZCode (and Claude Code) agents working in this repo.
 Read it before making changes. The repo is a **skeleton** as of this writing —
@@ -6,7 +6,7 @@ most logic is TODO; respect the layering below while filling it in.
 
 ## What this project is
 
-**AgentNexus** (`agentnexus`, npm scope `@agent-nexus/*`) is a unified management
+**Harness Nexus** (`harnessnexus`, npm scope `@harness-nexus/*`) is a unified management
 platform for Agent-tool assets (Claude Code, ZCode, Hermes) across machines. Four
 pillars:
 
@@ -20,7 +20,7 @@ pillars:
    (`packages/core/src/domain/user.ts`)
 
 > The directory is still named `mcp-proxy` for historical reasons; the project
-> name is `agentnexus`. Don't be confused by the path.
+> name is `harnessnexus`. Don't be confused by the path.
 
 ## Stack
 
@@ -36,8 +36,8 @@ packages/
   shared/      zod schemas + utils — single source of truth for manifest shapes
   server/      Fastify API + MCP proxy + storage DRIVERS (sqlite/memory)
   sdk-ts/      HTTP client SDK
-  cli/         `anx` one-click install tool (must run WITHOUT the server)
-  acp-bridge/  local ACP <-> AgentNexus daemon (roadmap)
+  cli/         `hnx` one-click install tool (must run WITHOUT the server)
+  acp-bridge/  local ACP <-> Harness Nexus daemon (roadmap)
 apps/web/      React + TS + Vite admin UI
 docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
 ```
@@ -71,8 +71,8 @@ Either form works.
 ```bash
 pnpm install                 # first-time setup
 task dev          | pnpm dev               # all packages, watch mode (parallel)
-task dev:server   | pnpm --filter @agent-nexus/server run dev   # API on :7477
-task dev:web      | pnpm --filter @agent-nexus/web run dev      # UI on :5173
+task dev:server   | pnpm --filter @harness-nexus/server run dev   # API on :7477
+task dev:web      | pnpm --filter @harness-nexus/web run dev      # UI on :5173
 task build        | pnpm -r run build
 task test         | pnpm -r run test
 task typecheck    | pnpm -r run typecheck
@@ -81,7 +81,7 @@ task format       | pnpm format
 task clean        | pnpm clean
 ```
 
-Run a single package by filter, e.g. `pnpm --filter @agent-nexus/core run build`.
+Run a single package by filter, e.g. `pnpm --filter @harness-nexus/core run build`.
 
 To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server`.
 
@@ -93,11 +93,11 @@ To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server
 - **Relative imports inside a package use `.js` extensions** (e.g.
   `./domain/user.js`) — ESM output expects them even for TS sources.
 - **Cross-package imports use the scoped name**, e.g.
-  `import type { Resource } from '@agent-nexus/core'`.
+  `import type { Resource } from '@harness-nexus/core'`.
 - **Ports vs. implementations**: define interfaces in `core/src/ports/`,
   implement them in `server/src/infra/`. Route modules depend on the interface,
   never a concrete driver.
-- **Errors**: throw `AppError` from `@agent-nexus/shared` for expected failures;
+- **Errors**: throw `AppError` from `@harness-nexus/shared` for expected failures;
   Fastify maps `statusCode`/`code` to the response.
 - **Formatting**: Prettier (single quotes, trailing comma `all`, 100 cols). Run
   `pnpm format` before committing.
@@ -187,7 +187,7 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
 
 - **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user _into_
-  AgentNexus. A `Credential` authenticates AgentNexus _out to_ an upstream MCP
+  Harness Nexus. A `Credential` authenticates Harness Nexus _out to_ an upstream MCP
   server. Don't conflate them.
 - **A credential is a pure named secret** (`{ name, secret, scope }`) — no `kind`.
   The name is the handle used in `${cred:NAME}` placeholders.
@@ -202,7 +202,7 @@ Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
   `resolvePlaceholders` helper (`packages/shared/src/utils/placeholders.ts`)
   scans and substitutes at resolve time — proxy mode at connect time (2.2),
   direct mode at install time (3.3). There is no `credentialBindings` map.
-- **MCP mode (`proxy` | `direct`)** (Phase 3.1): `proxy` — AgentNexus dials;
+- **MCP mode (`proxy` | `direct`)** (Phase 3.1): `proxy` — Harness Nexus dials;
   SSE/HTTP only. `direct` — the tool dials; SSE/HTTP/stdio. stdio forces
   `direct` (`409 STDIO_REQUIRES_DIRECT`). The registry only pools `proxy` rows.
 - **Scope model (same for credentials and mcp-servers):** `global` is readable
@@ -384,7 +384,7 @@ Full design in `docs/design/phase-1-auth.md` — read it before touching auth. S
 - **Two credential channels**, both via `Authorization: Bearer <credential>`:
   - **JWT access token** (primary, for the web UI) — signed with `JWT_SECRET`,
     verified statelessly by `jose`. Lifetime `JWT_ACCESS_TTL` (default `7d`).
-  - **PAT** — `anpat_<base64url(32)>`, stored as sha256. For CLI/automation.
+  - **PAT** — `hnpat_<base64url(32)>`, stored as sha256. For CLI/automation.
 - **Backend interceptors** (`packages/server/src/plugins/auth.ts`):
   - `onRequest` (registered on the **root** instance, not inside a child plugin
     context — Fastify hooks added in `app.register()` only apply to that scope)

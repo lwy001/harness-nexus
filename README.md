@@ -1,19 +1,19 @@
-# AgentNexus
+# Harness Nexus
 
 > A unified management platform for the Agent tools you use across work, home, and
 > servers — MCP servers, skills, hooks, sub-agents, rules, and profiles, in one
 > place. Works with Claude Code, ZCode, and Hermes.
 
 The directory is still named `mcp-proxy` for historical reasons; the project /
-npm scope is **`agentnexus`** (`@agent-nexus/*`).
+npm scope is **`harnessnexus`** (`@harness-nexus/*`).
 
 ## Four pillars
 
-1. **MCP proxy** — register your MCP servers once; AgentNexus connects to them as
+1. **MCP proxy** — register your MCP servers once; Harness Nexus connects to them as
    a client and re-exposes a single aggregated MCP server to every tool.
 2. **Resources & profiles** — versioned skills/hooks/sub-agents/rules/MCP
    definitions, bundled into profiles that install into a target tool with one
-   command (`anx install`).
+   command (`hnx install`).
 3. **Third-party harness import** — bring in ECC or Superpower release packages
    and compose them into your profiles.
 4. **Users, roles, PATs** — global vs. personal resources/profiles, with personal
@@ -35,8 +35,8 @@ packages/
   shared/      zod schemas + utils (single source of truth for manifest shapes)
   server/      Fastify API + MCP proxy + storage drivers (sqlite/memory)
   sdk-ts/      HTTP client SDK
-  cli/         `anx` one-click install tool
-  acp-bridge/  local ACP <-> AgentNexus daemon (roadmap)
+  cli/         `hnx` one-click install tool
+  acp-bridge/  local ACP <-> Harness Nexus daemon (roadmap)
 apps/
   web/         React + TS + Vite admin UI
 docs/          architecture, MCP proxy, profiles, roadmap, ADRs

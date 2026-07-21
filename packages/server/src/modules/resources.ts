@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Resource, ResourceKind, AgentTarget } from '@agent-nexus/core';
+import type { Resource, ResourceKind, AgentTarget } from '@harness-nexus/core';
 import {
   AppError,
   createResourceSchema,
@@ -10,7 +10,7 @@ import {
   type CreateResourceInput,
   type UpdateResourceInput,
   type HookEvent,
-} from '@agent-nexus/shared';
+} from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 import { resourceView } from './serialize.js';
 

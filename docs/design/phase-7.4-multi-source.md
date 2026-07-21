@@ -199,7 +199,7 @@ SKILL_GITHUB_TAPS="openai/skills,anthropics/skills,myorg/my-skills"
 - **clawhub / lobehub / hermes-index** — SKIP (verified).
 - **Taps management UI/API** — env config is enough for 7.4; a CRUD surface is
   a follow-on.
-- **Content scanning** — Out of Scope (AgentNexus stores references; the target
+- **Content scanning** — Out of Scope (Harness Nexus stores references; the target
   tool executes).
 - **A pre-built merged index** (the Hermes `hermes-index` pattern with
   `resolved_github_id` shortcuts). Worth revisiting if multi-source search

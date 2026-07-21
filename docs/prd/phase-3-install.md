@@ -17,12 +17,12 @@ Meanwhile, every major Agent tool has shipped its own **plugin** concept that
 bundles exactly those artifacts (skills, hooks, sub-agents, MCP servers,
 commands) into one installable unit. The shape differs per tool, but the
 _intent_ is identical to our profile. There is no one-click path from "a
-profile in AgentNexus" to "a working plugin in my tool of choice."
+profile in Harness Nexus" to "a working plugin in my tool of choice."
 
 Two structural gaps compound this:
 
 1. **stdio MCP servers are unsupported.** Phase 2.1 refused stdio because
-   AgentNexus's server would have to spawn third-party subprocesses — too risky.
+   Harness Nexus's server would have to spawn third-party subprocesses — too risky.
    Yet stdio is the most common transport for local tools (filesystem, shell,
    language runtimes). There is no way to include a stdio server in a profile.
 2. **Profiles are target-agnostic**, so the moment a user wants a hook, there is
@@ -35,10 +35,10 @@ Make the profile a **target-bound, installable bundle**, and make the MCP
 connection carry its own dialing strategy. Three changes:
 
 1. **MCP Management** (rename of "MCP Connections"). Each `McpServer` declares a
-   `mode` at creation: **`proxy`** (AgentNexus dials the upstream and
+   `mode` at creation: **`proxy`** (Harness Nexus dials the upstream and
    re-exposes it via `/mcp`; SSE / Streamable HTTP only) or **`direct`** (the
    target tool dials the upstream itself; SSE / Streamable HTTP **and stdio**).
-   stdio forces `direct`, so AgentNexus never spawns the subprocess — the tool
+   stdio forces `direct`, so Harness Nexus never spawns the subprocess — the tool
    does, locally. This re-opens stdio without weakening the server's trust
    boundary.
 2. **Target-bound profiles.** A `Profile` declares a single `target`
@@ -46,7 +46,7 @@ connection carry its own dialing strategy. Three changes:
    immutable afterward. Resources are stored in that target's native shape. The
    creation UI narrows what it offers (hook events, sub-agent options) to what
    the target actually supports.
-3. **Install pipeline.** `anx install --profile <id> --target <t>` resolves the
+3. **Install pipeline.** `hnx install --profile <id> --target <t>` resolves the
    profile, runs a **target writer** that emits a plugin directory in the
    target's format, and an installer that places it. Claude Code and ZCode
    share a writer (ZCode is a narrowed Claude-Code format); Hermes has its own.
@@ -62,9 +62,9 @@ is silently dropped.
 ### MCP Management & mode
 
 1. As an admin, I want to register an MCP server in `direct` mode, so that the
-   target tool dials it itself and AgentNexus never touches the connection.
+   target tool dials it itself and Harness Nexus never touches the connection.
 2. As a user, I want to register a **stdio** MCP server, so that I can bundle
-   local tools (filesystem, shell) — AgentNexus refuses to spawn the process,
+   local tools (filesystem, shell) — Harness Nexus refuses to spawn the process,
    so it must be direct.
 3. As a user, I want `proxy` mode to remain the simple default for cloud MCP
    servers, so that aggregation and credential centralization still work.
@@ -103,7 +103,7 @@ is silently dropped.
 
 ### Install pipeline
 
-16. As a user, I want `anx install --profile <id> --target claude-code` to emit
+16. As a user, I want `hnx install --profile <id> --target claude-code` to emit
     a working plugin directory, so that I can load it in Claude Code.
 17. As a user, I want the same Claude-Code plugin to also load in ZCode, so
     that I do not maintain two near-identical bundles.
@@ -138,7 +138,7 @@ is silently dropped.
 - **Proxy-mode behavior is unchanged**: the registry still pools `proxy` +
   `proxied: true` servers, dials them, aggregates tools, and re-exposes via
   `/mcp`. Direct-mode servers are invisible to the registry (they are never
-  dialed by AgentNexus) but still appear in MCP Management listings.
+  dialed by Harness Nexus) but still appear in MCP Management listings.
 - **`Profile.target`** is added (required, immutable post-create). The create
   schema requires it; the update schema omits it (PATCH `target` → `409
 TARGET_IMMUTABLE`).
@@ -182,7 +182,7 @@ TARGET_IMMUTABLE`).
   local directory the user adds; hosting is a later concern.
 - Per-PAT profile binding and tool-level authorization (still deferred from
   2.2).
-- stdio **bridge** entry (AgentNexus serving a local stdio tool through a
+- stdio **bridge** entry (Harness Nexus serving a local stdio tool through a
   daemon) — Phase 6; direct mode here is the tool spawning stdio itself.
 - Full resource module (skills/hooks/sub-agents/rules as first-class stored
   entities with their own CRUD). Phase 3 profiles reference them by id where

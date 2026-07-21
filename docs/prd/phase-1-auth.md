@@ -4,7 +4,7 @@
 
 ## Problem Statement
 
-AgentNexus is a multi-user platform that manages sensitive assets (MCP server
+Harness Nexus is a multi-user platform that manages sensitive assets (MCP server
 credentials, profiles, access tokens). Before any of that can be exposed, there
 must be a way to identify who is using the instance and to gate access so that
 only the right people can read or change things. A fresh self-hosted instance
@@ -52,7 +52,7 @@ channels share the same permission guards.
   - JWT access token (primary, for the web UI) — signed with `JWT_SECRET`,
     verified statelessly with `jose`. Lifetime configurable (`JWT_ACCESS_TTL`,
     default `7d`).
-  - PAT — format `anpat_<base64url(32)>`, stored as sha256. Resolved via DB
+  - PAT — format `hnpat_<base64url(32)>`, stored as sha256. Resolved via DB
     lookup; `lastUsedAt` updated fire-and-forget.
 - **Bootstrap:** the first registrant becomes admin (detected via `users.count()
 === 0`). Registration is **not** auto-closed after bootstrap.

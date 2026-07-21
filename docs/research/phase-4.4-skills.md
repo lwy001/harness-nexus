@@ -4,7 +4,7 @@
 > to be written (`docs/design/phase-4.4-skills.md`) before implementation.
 
 This answers the open questions that gate the Skill management sub-phase: how
-AgentNexus should represent and resolve an **external skill reference**, whether
+Harness Nexus should represent and resolve an **external skill reference**, whether
 the existing `ResourceSource` variants cover it, and how a stored reference maps
 onto the three install targets (Claude Code, ZCode, Hermes).
 
@@ -26,7 +26,7 @@ complete answer to "how does an agent find skills from multiple sources," and it
 is the model we should learn from for 4.4. See the dedicated section
 **"Hermes: a multi-source skill hub (verified on this machine)"** below.
 
-This reshapes 4.4: AgentNexus isn't storing a _live_ skill reference — it's
+This reshapes 4.4: Harness Nexus isn't storing a _live_ skill reference — it's
 storing a **source spec** (plugin entry for CC/ZCode; one of several adapter
 kinds for Hermes) that, at install time, gets resolved and materialized. The
 "search the skill hub" feature is really **search across configured sources**.
@@ -325,7 +325,7 @@ extension path if we later want multi-source.)
    store-the-spec, with an optional explicit `sha`/`version` pin for (b).
    Pinning avoids supply-chain drift; floating `ref` tracks upstream.
 4. **Fetching marketplace JSON server-side.** Searching a marketplace requires
-   AgentNexus to fetch a remote `marketplace.json` (or a git repo) — this is a
+   Harness Nexus to fetch a remote `marketplace.json` (or a git repo) — this is a
    new outbound-network path (the server is otherwise fetch-light; only the
    proxy dials configured upstreams). Decision: a dedicated, allowlisted
    marketplace-fetch endpoint, or have the CLI/web fetch client-side. Affects the
@@ -339,7 +339,7 @@ extension path if we later want multi-source.)
 7. **Trust tiers + security scan (from Hermes).** Hermes blocks community skills
    with any non-safe scan finding, and its `clawhub` source is explicitly
    distrusted after a real malicious-skills incident. For 4.4's first cut we
-   likely **don't** run a content scanner (AgentNexus stores references, it
+   likely **don't** run a content scanner (Harness Nexus stores references, it
    doesn't execute them — the target tool does). But the **trust tier** concept
    (`builtin`/`trusted`/`community`, visible in the UI) and provenance pinning
    (`sha`/`content_hash`, recorded like Hermes's `lock.json`) are worth adopting

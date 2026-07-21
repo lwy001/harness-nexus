@@ -41,11 +41,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  AgentNexusError,
+  HarnessNexusError,
   type McpServer,
   type McpMode,
   type CredentialView,
-} from '@agent-nexus/sdk';
+} from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 type TransportType = 'sse' | 'streamable-http' | 'stdio';
@@ -65,7 +65,7 @@ export function McpManagementPage() {
     try {
       setItems(await withAuthGuard(() => api.listMcpServers(), logout));
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Failed to load MCP servers');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load MCP servers');
     }
   }
 
@@ -80,7 +80,7 @@ export function McpManagementPage() {
       toast.success('MCP server deleted');
       await refresh();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
     }
   }
 
@@ -90,7 +90,7 @@ export function McpManagementPage() {
         <h1 className="text-2xl font-semibold tracking-tight">MCP management</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           MCP servers this instance knows about. <span className="font-medium">Proxy</span> servers
-          are dialed by AgentNexus and may be re-exposed to Agent tools;
+          are dialed by Harness Nexus and may be re-exposed to Agent tools;
           <span className="font-medium"> direct</span> servers are dialed by the tool itself
           (including stdio). Organize them into profiles for install.
         </p>
@@ -325,7 +325,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
       setHeadersJson(DEFAULT_HEADERS_JSON);
       onCreated();
     } catch (e) {
-      toast.error(e instanceof AgentNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
     } finally {
       setBusy(false);
     }
@@ -350,7 +350,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
         </CardTitle>
         <CardDescription>
           {mode === 'proxy'
-            ? 'Proxy: AgentNexus dials this server. SSE / Streamable HTTP only.'
+            ? 'Proxy: Harness Nexus dials this server. SSE / Streamable HTTP only.'
             : 'Direct: the Agent tool dials this server itself. SSE / Streamable HTTP / stdio.'}
         </CardDescription>
       </CardHeader>

@@ -194,7 +194,7 @@ for symmetry with `credentialView` and future redaction).
 
 `packages/sdk-ts/src/index.ts`:
 
-- Re-export `Resource`, `ResourceKind`, `AgentTarget` from `@agent-nexus/core`.
+- Re-export `Resource`, `ResourceKind`, `AgentTarget` from `@harness-nexus/core`.
 - Add `listResources(filter?)`, `getResource(id)`, `createResource(input)`,
   `updateResource(id, input)`, `deleteResource(id)`.
 - `listResources` accepts an optional `{ kind?, scope?, target? }` and builds

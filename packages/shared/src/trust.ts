@@ -5,7 +5,7 @@
  * rules. Mirrors Hermes's `TRUSTED_REPOS` + `_resolve_trust_level`
  * (`~/.hermes/hermes-agent/tools/skills_guard.py:40-49`, `skills_hub.py:1050`).
  *
- * Layering note: `shared` does NOT depend on `@agent-nexus/core` (see
+ * Layering note: `shared` does NOT depend on `@harness-nexus/core` (see
  * `packages/shared/package.json` — only `zod`). The `TrustTier` type is
  * therefore mirrored here via `z.infer`, matching how `AgentTarget` is handled
  * in `schemas/profile.ts`. Keep this in sync with
@@ -15,7 +15,7 @@
 import { z } from 'zod';
 
 /**
- * The zod schema mirror of `@agent-nexus/core` `TrustTier`. Surfaces 3 tiers;
+ * The zod schema mirror of `@harness-nexus/core` `TrustTier`. Surfaces 3 tiers;
  * Hermes's 4th (`agent-created`, off-by-default) is intentionally NOT modeled.
  */
 export const trustTierSchema = z.enum(['builtin', 'trusted', 'community']);
@@ -48,7 +48,7 @@ export type PluginSourceShape =
 /**
  * Resolve the trust tier for a plugin source. Rules (mirror Hermes
  * `_resolve_trust_level`, skills_hub.py:1050-1061):
- *   - `official` source kind      ⇒ `builtin`  (AgentNexus owns none today;
+ *   - `official` source kind      ⇒ `builtin`  (Harness Nexus owns none today;
  *                                            no `official` kind is accepted
  *                                            in our plugin source union, so
  *                                            this branch is currently unused)

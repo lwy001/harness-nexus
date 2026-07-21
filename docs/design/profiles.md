@@ -19,7 +19,7 @@ listing and installing.
 
 ## Install flow (intended)
 
-1. `anx install --profile frontend-daily --target zcode`
+1. `hnx install --profile frontend-daily --target zcode`
 2. CLI resolves the profile → its entries (resources) and imports.
 3. For each resource: fetch the artifact (git/tarball/local), verify checksum,
    then write to the target tool's directory using a target-specific writer
@@ -27,7 +27,7 @@ listing and installing.
 4. For each import: run the matching adapter (ECC/Superpower) to place assets.
 
 The CLI can run standalone against a local manifest, or fetch profiles from a
-running AgentNexus server via the SDK.
+running Harness Nexus server via the SDK.
 
 ## Manifest schema
 
