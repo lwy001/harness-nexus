@@ -20,9 +20,20 @@ import type {
   SkillMeta,
   SkillBundle,
 } from '@agent-nexus/core';
-import type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource } from '@agent-nexus/shared';
-export { HOOK_EVENTS, HOOK_SUPPORT, type HookEvent } from '@agent-nexus/shared';
-export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource };
+import type {
+  MarketplaceCatalog,
+  MarketplacePlugin,
+  MarketplaceSource,
+  PluginResourceSource,
+} from '@agent-nexus/shared';
+export {
+  HOOK_EVENTS,
+  HOOK_SUPPORT,
+  resolveTrustTier,
+  marketplacePluginToResourceSource,
+  type HookEvent,
+} from '@agent-nexus/shared';
+export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource, PluginResourceSource };
 
 export interface SdkOptions {
   baseUrl: string;

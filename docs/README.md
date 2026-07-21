@@ -63,11 +63,12 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 
 - _stdio bridge, Channels, LLM-WIKI, memory/notes._
 
-### Phase 7 — Skill multi-source & plugin references 🚧 (7.1–7.2 done)
+### Phase 7 — Skill multi-source & plugin references 🚧 (7.1–7.3 done)
 
 - PRD: [`prd/phase-7-skills.md`](./prd/phase-7-skills.md) — covers all four sub-phases (7.1–7.4); carries the research corrections (10 Hermes adapters, 4 trust tiers internally / 3 surfaced, CC has 4 live source kinds and no npm, `category` is the filter axis).
 - Design 7.1: [`design/phase-7.1-plugin-source.md`](./design/phase-7.1-plugin-source.md) — `plugin` `ResourceSource` variant + trust/provenance labels + `SkillSource` port + validator/smoke flip. Zero outbound network.
 - Design 7.2: [`design/phase-7.2-marketplace-fetch.md`](./design/phase-7.2-marketplace-fetch.md) — the server's first outbound HTTP path: `SkillCatalogService` (lazy TTL cache + in-flight dedup), `MARKETPLACE_ALLOWLIST`, `/api/skills/marketplaces/:id/plugins`, fixture-injection test mode.
+- Design 7.3: [`design/phase-7.3-hub-ui.md`](./design/phase-7.3-hub-ui.md) — the `/skills/hub` browse page: category/free-text filters, client-side trust badge (neutral variants, not `--signal`), inline save-as-skill dialog with install-warning UX.
 - Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
 - 7.2–7.4 designs to be written before each ships.
 

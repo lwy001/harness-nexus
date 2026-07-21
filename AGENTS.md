@@ -333,6 +333,15 @@ catalog-service.ts`) owns a lazy-TTL cache (`Map<id, {catalog, expiresAt}>`,
 - **Config** (3 env keys): `MARKETPLACE_ALLOWLIST`, `MARKETPLACE_FETCH_TTL_MS`
   (1h), `MARKETPLACE_FETCH_TIMEOUT_MS` (10s); plus `MARKETPLACE_FIXTURE_PATH`
   for tests.
+- **Hub UI (Phase 7.3)** — the `/skills/hub` page (`apps/web/src/pages/
+SkillHub.tsx`) browses a marketplace, filters by `category` / free text, and
+  saves an entry as a `plugin`-source skill resource via the 7.1 variant. Trust
+  is computed **client-side** for display (`resolveTrustTier`, re-exported via
+  the SDK); the server recomputes authoritatively at save time. The trust badge
+  uses **neutral** Badge variants (`default` for trusted, `secondary` for
+  community) — `--signal` is reserved for liveness per the Signal system. A
+  `text-warn` callout appears when saving a community source with no pin. See
+  `docs/design/phase-7.3-hub-ui.md`.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -384,11 +393,12 @@ management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
 editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
 4.5), the skill editor with multi-file bundles (Phase 4.6 — Phase 4 complete),
 the `plugin` skill source variant + trust/provenance labels + `SkillSource`
-port (Phase 7.1), and the marketplace allowlist fetch + `SkillCatalogService`
-cache + `/api/skills/marketplaces` browse API (Phase 7.2). See
-`docs/roadmap.md` for what remains. Still NOT done: Phase 7.3–7.4 (hub search
-UI, Hermes-style multi-source adapters), the stdio bridge entry, CLI install
-writers, ECC/Superpower adapters, the ACP bridge, Channels, LLM-WIKI,
-memory/notes. **Phase 2.3 (callable-function scripts) is on hold** — not
-currently planned. When you add the first real logic for a pillar, also add
-tests (vitest, not yet wired) and update the relevant `docs/` file.
+port (Phase 7.1), the marketplace allowlist fetch + `SkillCatalogService`
+cache + `/api/skills/marketplaces` browse API (Phase 7.2), and the `/skills/hub`
+browse + save-as-skill UI (Phase 7.3). See `docs/roadmap.md` for what remains.
+Still NOT done: Phase 7.4 (Hermes-style multi-source adapters), the stdio
+bridge entry, CLI install writers, ECC/Superpower adapters, the ACP bridge,
+Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is
+on hold** — not currently planned. When you add the first real logic for a
+pillar, also add tests (vitest, not yet wired) and update the relevant `docs/`
+file.

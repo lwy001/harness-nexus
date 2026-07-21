@@ -108,3 +108,74 @@ export interface MarketplaceCatalog {
   owner?: z.infer<typeof marketplaceOwnerSchema> | undefined;
   plugins: MarketplacePlugin[];
 }
+
+/**
+ * The `ResourceSource.plugin` shape, mirrored locally (shared does not depend
+ * on core — same layering pattern as `TrustTier`/`AgentTarget`). Keep in sync
+ * with `core/src/domain/resource.ts` `ResourceSource.plugin`. Callers that
+ * need the domain type cast at the boundary (`as Resource['source']`).
+ */
+export interface PluginResourceSource {
+  type: 'plugin';
+  source:
+    | { source: 'github'; repo: string; ref?: string; sha?: string; path?: string }
+    | { source: 'url'; url: string; ref?: string; sha?: string; path?: string }
+    | { source: 'git-subdir'; url: string; path: string; ref?: string; sha?: string }
+    | { source: 'npm'; package: string; version: string; registry?: string };
+  plugin: string;
+  version?: string;
+}
+
+/**
+ * Convert a marketplace plugin entry into a `plugin`-source `ResourceSource`
+ * for `POST /api/resources`. The marketplace `source` kinds map 1:1 onto the
+ * plugin-source `source` union, with one wrinkle: the marketplace `github`
+ * kind carries `commit` AND `sha` (aliases per the research doc); the storage
+ * shape only has `sha`, so `commit` folds into `sha` when `sha` is absent.
+ *
+ * The marketplace catalog has no `npm` source kind (dropped in 7.2's
+ * schema); this helper therefore never produces a `npm` arm from a real
+ * catalog entry. The `npm` arm exists on `PluginResourceSource` for parity
+ * with the storage type and for future direct-input paths.
+ *
+ * `pluginName` is the namespace half of the `plugin:skill` handle — usually
+ * the marketplace entry's `name`.
+ */
+export function marketplacePluginToResourceSource(
+  plugin: MarketplacePlugin,
+  pluginName: string = plugin.name,
+): PluginResourceSource {
+  const s = plugin.source;
+  let source: PluginResourceSource['source'];
+  if (s.source === 'github') {
+    source = {
+      source: 'github',
+      repo: s.repo,
+      ...(s.sha ? { sha: s.sha } : s.commit ? { sha: s.commit } : {}),
+      ...(s.path ? { path: s.path } : {}),
+    };
+  } else if (s.source === 'url') {
+    source = {
+      source: 'url',
+      url: s.url,
+      ...(s.sha ? { sha: s.sha } : {}),
+      ...(s.ref ? { ref: s.ref } : {}),
+      ...(s.path ? { path: s.path } : {}),
+    };
+  } else {
+    // git-subdir
+    source = {
+      source: 'git-subdir',
+      url: s.url,
+      path: s.path,
+      ...(s.sha ? { sha: s.sha } : {}),
+      ...(s.ref ? { ref: s.ref } : {}),
+    };
+  }
+  return {
+    type: 'plugin',
+    source,
+    plugin: pluginName,
+    ...(plugin.version ? { version: plugin.version } : {}),
+  };
+}

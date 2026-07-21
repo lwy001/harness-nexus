@@ -1,6 +1,6 @@
 # PRD: Phase 7 — Skill multi-source & plugin references
 
-> Status: 7.1–7.2 implemented (✅); 7.3–7.4 ⏳. This PRD covers all four sub-phases.
+> Status: 7.1–7.3 implemented (✅); 7.4 ⏳. This PRD covers all four sub-phases.
 > Research: `docs/research/phase-4.4-skills.md` (read it first). Technical
 > design: `docs/design/phase-7.1-plugin-source.md` (7.1); 7.2–7.4 designs are
 > written before each ships.
@@ -119,7 +119,7 @@ Plus two structural facts from the research that stay authoritative:
 | ------- | --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------- |
 | **7.1** | plugin source + trust model | 🚧     | `ResourceSource` `plugin` variant; trust tiers + provenance pin; `SkillSource` port (one no-op impl); flip `validateSkillResource` + smoke                          | Phase 4.6  | **none**  |
 | **7.2** | marketplace allowlist fetch | ✅     | `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout); `MARKETPLACE_ALLOWLIST` config; server-side trust; "save marketplace entry as skill resource" | 7.1        | **yes**   |
-| **7.3** | hub search UI               | ⏳     | web marketplace browser (category filter + search + trust badge) → "save as skill resource"; install-warning UX                                                     | 7.2        | no        |
+| **7.3** | hub search UI               | ✅     | web marketplace browser (category filter + search + trust badge) → "save as skill resource"; install-warning UX                                                     | 7.2        | no        |
 | **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); custom-tap UI; **content scan deferred**         | 7.1, 7.3   | **yes**   |
 
 Dependencies: 7.1 is the foundation (no outbound — safe to land first). 7.2
@@ -278,14 +278,18 @@ parser + fetcher factory) performs the fetch with Node ≥20's built-in
 return the cached, parsed, filtered catalog. Full design:
 `docs/design/phase-7.2-marketplace-fetch.md`.
 
-### Hub search UI (lands in 7.3)
+### Hub search UI (implemented in 7.3)
 
 New nav item **"Skill hub"** (`/skills/hub`). Filters: `category` Select (the
-verified filter axis), free-text search over name/description, optional trust
-filter. Each entry shows a trust badge (signal accent for `trusted`, neutral for
-`community`). "Save as skill resource" creates a `plugin`-source skill via the
-existing `/api/resources` endpoint. If the entry lacks a `sha`/`version` pin
-and is `community` trust, a warning callout appears.
+verified filter axis) + free-text search over name/description. Each entry
+shows a trust badge — **neutral** Badge variants (`default` for `trusted`,
+`secondary` for `community`); `--signal` is deliberately NOT used (reserved for
+liveness per the Signal design system). Trust is computed client-side for
+display via `resolveTrustTier`; the server recomputes authoritatively at save
+time. "Save as skill resource" opens a lightweight inline dialog (key/scope/
+targets) and creates a `plugin`-source skill via the existing `/api/resources`
+endpoint. If the entry lacks a `sha`/`version` pin and is `community` trust, a
+`text-warn` callout appears. Full design: `docs/design/phase-7.3-hub-ui.md`.
 
 ### Multi-source adapters (lands in 7.4)
 

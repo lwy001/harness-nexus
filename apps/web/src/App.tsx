@@ -13,6 +13,7 @@ import { TokensPage } from '@/pages/Tokens';
 import { McpManagementPage } from '@/pages/McpManagement';
 import { ProfilesPage } from '@/pages/Profiles';
 import { ResourcesPage } from '@/pages/Resources';
+import { SkillHubPage } from '@/pages/SkillHub';
 
 export function App() {
   return (
@@ -67,6 +68,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <ResourcesPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/skills/hub"
+              element={
+                <RequireAuth>
+                  <SkillHubPage />
                 </RequireAuth>
               }
             />
