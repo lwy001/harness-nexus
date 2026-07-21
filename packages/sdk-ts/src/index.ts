@@ -31,6 +31,7 @@ export {
   HOOK_SUPPORT,
   resolveTrustTier,
   marketplacePluginToResourceSource,
+  skillMetaToResourceSource,
   type HookEvent,
 } from '@agent-nexus/shared';
 export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource, PluginResourceSource };
@@ -363,6 +364,21 @@ export class AgentNexusClient {
     if (filter?.q) params.set('q', filter.q);
     const qs = params.toString();
     return this.request('GET', `/api/skills/marketplaces/${id}/plugins${qs ? `?${qs}` : ''}`);
+  }
+
+  /**
+   * Multi-source skill search (Phase 7.4). Dispatches to all configured
+   * SkillSources in parallel, merges, dedupes by identifier, ranks by trust.
+   * Returns the `timedOut` / `errored` source ids so the UI can surface a
+   * partial-results notice.
+   */
+  async searchSkills(
+    q: string,
+    limit?: number,
+  ): Promise<{ results: SkillMeta[]; timedOut: string[]; errored: string[] }> {
+    const params = new URLSearchParams({ q });
+    if (limit !== undefined) params.set('limit', String(limit));
+    return this.request('GET', `/api/skills/search?${params.toString()}`);
   }
 
   // ---- core request helper ----

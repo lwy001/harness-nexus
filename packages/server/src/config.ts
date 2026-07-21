@@ -33,6 +33,23 @@ export interface ServerConfig {
    * of making HTTP requests (test/fixture mode; production leaves it unset).
    */
   marketplaceFixturePath?: string;
+  /**
+   * Phase 7.4 — optional GitHub PAT for `GitHubSource` (5000 req/hr
+   * authenticated vs 60/hr anonymous). Unset ⇒ anonymous.
+   */
+  skillGithubToken?: string;
+  /**
+   * Phase 7.4 — comma-separated `owner/repo` taps for `GitHubSource`. Defaults
+   * to the 4 `TRUSTED_REPOS`.
+   */
+  skillGithubTaps: string;
+  /** Phase 7.4 — overall multi-source search timeout in ms. */
+  skillSearchTimeoutMs: number;
+  /**
+   * Phase 7.4 — comma-separated source ids to disable (test mode: e.g.
+   * `github,well-known,url` to search marketplace-only against a fixture).
+   */
+  skillDisabledSources?: string;
 }
 
 export class ConfigError extends Error {
@@ -69,5 +86,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     ...(env.MARKETPLACE_FIXTURE_PATH
       ? { marketplaceFixturePath: env.MARKETPLACE_FIXTURE_PATH }
       : {}),
+    ...(env.GITHUB_TOKEN ? { skillGithubToken: env.GITHUB_TOKEN } : {}),
+    skillGithubTaps:
+      env.SKILL_GITHUB_TAPS ?? 'openai/skills,anthropics/skills,huggingface/skills,NVIDIA/skills',
+    skillSearchTimeoutMs: Number(env.SKILL_SEARCH_TIMEOUT_MS ?? '30000'),
+    ...(env.SKILL_DISABLED_SOURCES ? { skillDisabledSources: env.SKILL_DISABLED_SOURCES } : {}),
   };
 }

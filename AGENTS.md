@@ -343,6 +343,38 @@ SkillHub.tsx`) browses a marketplace, filters by `category` / free text, and
   `text-warn` callout appears when saving a community source with no pin. See
   `docs/design/phase-7.3-hub-ui.md`.
 
+## Multi-source skill search (Phase 7.4)
+
+Full design in `docs/design/phase-7.4-multi-source.md`. Summary for daily work:
+
+- **`SkillSearchRouter`** (`packages/server/src/infra/source-fetchers/
+search-router.ts`) dispatches a query to all registered `SkillSource`
+  adapters in parallel, with a **per-source timeout** (`Promise.race`, default
+  30s — a slow source can't block the response). Results merge with **dedupe
+  by `identifier`** (not name — cross-source collisions keep the higher-trust
+  copy). Partial-results-first: a slow/erroring/rate-limited source contributes
+  nothing and surfaces in `timedOut` / `errored`; the search never throws.
+- **4 adapters** (`infra/source-fetchers/{github,well-known,url,marketplace}-source.ts`):
+  `GitHubSource` (recursive-tree API per tap, 1h tree cache, optional
+  `GITHUB_TOKEN`, 403/429 → empty), `WellKnownSource` (`/.well-known/skills/
+index.json`, URL-query only), `UrlSource` (fetch-only, `search` no-op),
+  `MarketplaceSource` (wraps 7.2's `SkillCatalogService`, reuses its cache).
+  Each adapter precomputes `extra.pluginSource` so the hub saves without
+  reverse-engineering the identifier. **skills.sh / browse.sh deferred**;
+  **clawhub / lobehub / hermes-index skipped** (verified: distrusted or wrong
+  artifact class).
+- **`GET /api/skills/search?q=&limit=`** (`modules/skills.ts`) returns
+  `{results: SkillMeta[], timedOut: string[], errored: string[]}`. `q` required
+  (400 if absent). Browse-without-query stays on 7.2's
+  `/api/skills/marketplaces/:id/plugins`.
+- **Hub dual-mode** (`apps/web/src/pages/SkillHub.tsx`): empty search box →
+  7.2/7.3 marketplace browse; non-empty → `/api/skills/search`. Results carry a
+  per-row source badge. A `text-muted-foreground` notice appears if any source
+  timed out.
+- **Config** (4 env keys): `GITHUB_TOKEN`, `SKILL_GITHUB_TAPS` (default the 4
+  `TRUSTED_REPOS`), `SKILL_SEARCH_TIMEOUT_MS` (30s), `SKILL_DISABLED_SOURCES`
+  (test mode).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -394,11 +426,13 @@ editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
 4.5), the skill editor with multi-file bundles (Phase 4.6 — Phase 4 complete),
 the `plugin` skill source variant + trust/provenance labels + `SkillSource`
 port (Phase 7.1), the marketplace allowlist fetch + `SkillCatalogService`
-cache + `/api/skills/marketplaces` browse API (Phase 7.2), and the `/skills/hub`
-browse + save-as-skill UI (Phase 7.3). See `docs/roadmap.md` for what remains.
-Still NOT done: Phase 7.4 (Hermes-style multi-source adapters), the stdio
-bridge entry, CLI install writers, ECC/Superpower adapters, the ACP bridge,
-Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is
-on hold** — not currently planned. When you add the first real logic for a
-pillar, also add tests (vitest, not yet wired) and update the relevant `docs/`
-file.
+cache + `/api/skills/marketplaces` browse API (Phase 7.2), the `/skills/hub`
+browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
+
+- 4 adapters (github/well-known/url/marketplace) + `/api/skills/search`
+  (Phase 7.4 — **Phase 7 complete**). See `docs/roadmap.md` for what remains.
+  Still NOT done: the stdio bridge entry, CLI install writers, ECC/Superpower
+  adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3
+  (callable-function scripts) is on hold** — not currently planned. When you add
+  the first real logic for a pillar, also add tests (vitest, not yet wired) and
+  update the relevant `docs/` file.

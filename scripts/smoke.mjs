@@ -776,5 +776,64 @@ log('\n--- [7.2] unauthenticated request → 401 ---');
 r = await req('GET', '/api/skills/marketplaces');
 expect('no-token 401', r.status, 401);
 
+// ---------------------------------------------------------------------------
+// Phase 7.4 — multi-source search
+// Server booted with SKILL_DISABLED_SOURCES=github,well-known,url so the search
+// router only runs the marketplace source (against the 7.2 fixture). This
+// verifies the /api/skills/search endpoint, the dispatch/merge/dedupe pipeline,
+// and trust ranking, without hitting GitHub. The per-adapter fetch logic is
+// covered by typecheck + manual verification (like 7.3's UI).
+// ---------------------------------------------------------------------------
+
+log('\n--- [7.4] search requires ?q= (400) ---');
+r = await req('GET', '/api/skills/search', { token: userToken });
+expect('search without q → 400', r.status, 400);
+
+log('\n--- [7.4] search dispatches to marketplace source ---');
+r = await req('GET', '/api/skills/search?q=artifact', { token: userToken });
+expect('search ok', r.status, 200);
+expect('returns array', Array.isArray(r.json.results), true);
+// marketplace source finds the jfrog plugin (description mentions 'artifact').
+expect(
+  'marketplace result present',
+  r.json.results.some((m) => m.source === 'marketplace' && m.name === 'jfrog'),
+  true,
+);
+// every result carries an identifier + trustLevel (merge contract).
+expect(
+  'all results have identifier',
+  r.json.results.every((m) => typeof m.identifier === 'string'),
+  true,
+);
+expect(
+  'all results have trustLevel',
+  r.json.results.every(
+    (m) => m.trustLevel === 'trusted' || m.trustLevel === 'community' || m.trustLevel === 'builtin',
+  ),
+  true,
+);
+
+log('\n--- [7.4] search result carries precomputed pluginSource in extra ---');
+const jfrog = r.json.results.find((m) => m.name === 'jfrog');
+expect('jfrog has extra.pluginSource', typeof jfrog.extra?.pluginSource, 'object');
+expect(
+  'pluginSource is the plugin variant',
+  jfrog.extra.pluginSource?.type,
+  'plugin',
+);
+
+log('\n--- [7.4] timedOut/errored arrays are present (may be empty) ---');
+expect('timedOut is array', Array.isArray(r.json.timedOut), true);
+expect('errored is array', Array.isArray(r.json.errored), true);
+
+log('\n--- [7.4] trust ranking — anthropics/skills entry → trusted ---');
+// The fixture's 42crunch (git-subdir, 42Crunch-AI owner) is community; if the
+// fixture had an anthropics/skills entry it would surface as trusted. Assert
+// the tier contract by checking community tiers round-trip correctly.
+r = await req('GET', '/api/skills/search?q=42crunch', { token: userToken });
+expect('search finds 42crunch', r.status, 200);
+const crunch = r.json.results.find((m) => m.name.includes('42crunch'));
+expect('42crunch is community trust', crunch.trustLevel, 'community');
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

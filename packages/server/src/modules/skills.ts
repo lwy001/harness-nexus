@@ -15,6 +15,25 @@ import { resolveAllowlistId } from '../infra/source-fetchers/allowlist.js';
 export async function skillsRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };
 
+  // ---- GET /api/skills/search ----
+  // Multi-source search across all configured SkillSources (Phase 7.4). The
+  // query is required (browse-without-query is the /marketplaces/:id/plugins
+  // path). Returns merged/deduped results + the source ids that timed out or
+  // errored (partial-results-first — the UI shows a notice).
+  app.get<{ Querystring: { q?: string; limit?: string } }>(
+    '/api/skills/search',
+    guard,
+    async (req) => {
+      const q = req.query.q?.trim();
+      if (!q) {
+        throw new AppError('A search query (?q=) is required', 400, 'VALIDATION_ERROR');
+      }
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const result = await app.skillSearch.search(q, limit);
+      return result;
+    },
+  );
+
   // ---- GET /api/skills/marketplaces ----
   // List the configured allowlist (no fetch — cheap).
   app.get('/api/skills/marketplaces', guard, async () => {

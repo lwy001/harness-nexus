@@ -127,6 +127,21 @@ export interface PluginResourceSource {
 }
 
 /**
+ * Extract the `plugin`-source shape from a search result's `extra.pluginSource`
+ * (Phase 7.4). Every SkillSource adapter precomputes and attaches the
+ * `PluginResourceSource` it would save as, so the hub's "save as skill" path
+ * doesn't need to reverse-engineer it from the identifier. Returns `null` for
+ * results that didn't carry one (e.g. a future adapter that doesn't map to a
+ * plugin source).
+ */
+export function skillMetaToResourceSource(meta: {
+  extra?: { pluginSource?: unknown } | undefined;
+}): PluginResourceSource | null {
+  const ps = meta.extra?.pluginSource;
+  return ps ? (ps as PluginResourceSource) : null;
+}
+
+/**
  * Convert a marketplace plugin entry into a `plugin`-source `ResourceSource`
  * for `POST /api/resources`. The marketplace `source` kinds map 1:1 onto the
  * plugin-source `source` union, with one wrinkle: the marketplace `github`

@@ -1,6 +1,6 @@
 # PRD: Phase 7 — Skill multi-source & plugin references
 
-> Status: 7.1–7.3 implemented (✅); 7.4 ⏳. This PRD covers all four sub-phases.
+> Status: 7.1–7.4 implemented (✅) — Phase 7 complete. This PRD covers all four sub-phases.
 > Research: `docs/research/phase-4.4-skills.md` (read it first). Technical
 > design: `docs/design/phase-7.1-plugin-source.md` (7.1); 7.2–7.4 designs are
 > written before each ships.
@@ -115,12 +115,12 @@ Plus two structural facts from the research that stay authoritative:
 
 ## Sub-phase breakdown
 
-| #       | Sub-phase                   | Status | Carries                                                                                                                                                             | Depends on | Outbound? |
-| ------- | --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------- |
-| **7.1** | plugin source + trust model | 🚧     | `ResourceSource` `plugin` variant; trust tiers + provenance pin; `SkillSource` port (one no-op impl); flip `validateSkillResource` + smoke                          | Phase 4.6  | **none**  |
-| **7.2** | marketplace allowlist fetch | ✅     | `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout); `MARKETPLACE_ALLOWLIST` config; server-side trust; "save marketplace entry as skill resource" | 7.1        | **yes**   |
-| **7.3** | hub search UI               | ✅     | web marketplace browser (category filter + search + trust badge) → "save as skill resource"; install-warning UX                                                     | 7.2        | no        |
-| **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); custom-tap UI; **content scan deferred**         | 7.1, 7.3   | **yes**   |
+| #       | Sub-phase                   | Status | Carries                                                                                                                                                                                                                            | Depends on | Outbound? |
+| ------- | --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------- |
+| **7.1** | plugin source + trust model | 🚧     | `ResourceSource` `plugin` variant; trust tiers + provenance pin; `SkillSource` port (one no-op impl); flip `validateSkillResource` + smoke                                                                                         | Phase 4.6  | **none**  |
+| **7.2** | marketplace allowlist fetch | ✅     | `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout); `MARKETPLACE_ALLOWLIST` config; server-side trust; "save marketplace entry as skill resource"                                                                | 7.1        | **yes**   |
+| **7.3** | hub search UI               | ✅     | web marketplace browser (category filter + search + trust badge) → "save as skill resource"; install-warning UX                                                                                                                    | 7.2        | no        |
+| **7.4** | Hermes-style multi-source   | ✅     | 4 adapters (github/well-known/url/marketplace); `SkillSearchRouter` (per-source timeout + identifier dedupe + trust-rank); `/api/skills/search`; hub dual-mode. skills.sh/browse.sh deferred; clawhub/lobehub/hermes-index skipped | 7.1, 7.3   | **yes**   |
 
 Dependencies: 7.1 is the foundation (no outbound — safe to land first). 7.2
 builds the single outbound path on top of 7.1's `plugin` storage. 7.3 is the
@@ -291,17 +291,23 @@ targets) and creates a `plugin`-source skill via the existing `/api/resources`
 endpoint. If the entry lacks a `sha`/`version` pin and is `community` trust, a
 `text-warn` callout appears. Full design: `docs/design/phase-7.3-hub-ui.md`.
 
-### Multi-source adapters (lands in 7.4)
+### Multi-source adapters (implemented in 7.4)
 
-Each `SkillSource` adapter is implemented in
-`packages/server/src/infra/source-fetchers/` (one file per source). Parallel
-search uses `Promise.all` with a per-source timeout (Hermes uses a thread pool
-
-- 30 s overall; Node's `Promise.allSettled` + `AbortController` is the
-  equivalent). Merge/dedupe: key = `identifier`, keep highest trust rank, then
-  preserve insertion order (the source priority order — stable within a tier).
-  Content scanning is **deferred** (AgentNexus stores references, the target tool
-  executes).
+Four adapters ship (`packages/server/src/infra/source-fetchers/`): `GitHubSource`
+(recursive-tree API per tap, 1h tree cache, optional `GITHUB_TOKEN`, rate-limit
+→ empty), `WellKnownSource` (`/.well-known/skills/index.json`, URL-query only),
+`UrlSource` (fetch-only, `search` no-op), and `MarketplaceSource` (wraps 7.2's
+`SkillCatalogService`, reusing its cache). Parallel dispatch via
+`SkillSearchRouter` with a **per-source timeout** (`Promise.race`, 30s default)
+— a slow source can't block the response (partial-results-first). Merge/dedupe:
+key = `identifier`, keep highest trust rank, then preserve insertion order.
+`GET /api/skills/search?q=` exposes it; the hub page runs in dual-mode
+(marketplace browse when the search box is empty, multi-source search when it
+has text). **Verified scope**: skills.sh / browse.sh **deferred** (7.5+);
+clawhub / lobehub / hermes-index **skipped** (distrusted post-ClawHavoc, wrong
+artifact class, or Hermes-specific). Content scanning is **deferred**
+(AgentNexus stores references; the target tool executes). Full design:
+`docs/design/phase-7.4-multi-source.md`.
 
 ## Cross-phase dependencies
 

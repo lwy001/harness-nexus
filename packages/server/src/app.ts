@@ -22,6 +22,11 @@ import { mountMcpProxy } from './mcp/proxy.js';
 import { SkillCatalogService } from './infra/source-fetchers/catalog-service.js';
 import { parseAllowlist, type MarketplaceEntry } from './infra/source-fetchers/allowlist.js';
 import { createMarketplaceFetcher } from './infra/source-fetchers/factory.js';
+import { GitHubSource } from './infra/source-fetchers/github-source.js';
+import { WellKnownSource } from './infra/source-fetchers/well-known-source.js';
+import { UrlSource } from './infra/source-fetchers/url-source.js';
+import { MarketplaceSource } from './infra/source-fetchers/marketplace-source.js';
+import { SkillSearchRouter } from './infra/source-fetchers/search-router.js';
 
 /**
  * Build the Fastify instance. Wiring order matters:
@@ -75,6 +80,44 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   const marketplaceAllowlist: MarketplaceEntry[] = parseAllowlist(config.marketplaceAllowlist);
   app.decorate('skillCatalog', skillCatalog);
   app.decorate('marketplaceAllowlist', marketplaceAllowlist);
+
+  // Phase 7.4 — multi-source skill search. The same fetcher backs every
+  // outbound source (fixture reader in test mode, globalThis.fetch in prod).
+  const disabled = new Set(
+    (config.skillDisabledSources ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const sharedFetcher = createMarketplaceFetcher(config.marketplaceFixturePath);
+  const githubTaps = config.skillGithubTaps
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((repo) => ({ repo }));
+  const searchSources = [
+    !disabled.has('marketplace')
+      ? new MarketplaceSource({ catalog: skillCatalog, allowlist: marketplaceAllowlist })
+      : null,
+    !disabled.has('github')
+      ? new GitHubSource({
+          fetcher: sharedFetcher,
+          token: config.skillGithubToken,
+          taps: githubTaps,
+          logger: app.log,
+        })
+      : null,
+    !disabled.has('well-known')
+      ? new WellKnownSource({ fetcher: sharedFetcher, logger: app.log })
+      : null,
+    !disabled.has('url') ? new UrlSource({ fetcher: sharedFetcher, logger: app.log }) : null,
+  ].filter((s): s is NonNullable<typeof s> => s !== null);
+  const skillSearch = new SkillSearchRouter({
+    sources: searchSources,
+    timeoutMs: config.skillSearchTimeoutMs,
+    logger: app.log,
+  });
+  app.decorate('skillSearch', skillSearch);
 
   // Auth hook must be registered on the root instance (not inside a child
   // plugin context) so it applies to all routes. See plugins/auth.ts.

@@ -101,17 +101,18 @@ last". 7.1 is the zero-outbound foundation; 7.2 opens the first server-side
 outbound path (isolated in its own PR); 7.3 closes the UX loop; 7.4 is the
 large, least-certain multi-source block (can stop partway).
 
-| #       | Sub-phase                   | Status | Carries                                                                                                                                                                                                                                      | Depends on | Outbound?                        |
-| ------- | --------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------- |
-| **7.1** | plugin source + trust model | ✅     | `ResourceSource` `plugin` variant (CC marketplace 4 source kinds); trust tiers (`builtin`/`trusted`/`community`) + provenance pin (`content_hash`); `SkillSource` port (abstract, one no-op `inspect`); flip `validateSkillResource` + smoke | Phase 4.6  | **none** (store spec only)       |
-| **7.2** | marketplace allowlist fetch | ✅     | server's first outbound path: `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout `marketplace.json`); `MARKETPLACE_ALLOWLIST` config; trust by repo owner; "save marketplace entry as skill resource"                       | 7.1        | **yes** (allowlisted GitHub raw) |
-| **7.3** | hub search UI               | ✅     | web marketplace browser (category filter + search + trust badge) → "save as skill resource" → reuses 7.1 `plugin` source storage; install-warning UX (trust tier + missing-pin warning)                                                      | 7.2        | no (calls 7.2 endpoint)          |
-| **7.4** | Hermes-style multi-source   | ⏳     | remaining `SkillSource` adapters (`skills-sh`/`well-known`/`url`/`github`/`claude-marketplace`, value-ranked); parallel search + merge dedupe (identifier key, trust-rank sort); `taps.json`-style custom-tap UI; **content scan deferred**  | 7.1, 7.3   | **yes** (each adapter fetches)   |
+| #       | Sub-phase                   | Status | Carries                                                                                                                                                                                                                                                                                | Depends on | Outbound?                         |
+| ------- | --------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------------------- |
+| **7.1** | plugin source + trust model | ✅     | `ResourceSource` `plugin` variant (CC marketplace 4 source kinds); trust tiers (`builtin`/`trusted`/`community`) + provenance pin (`content_hash`); `SkillSource` port (abstract, one no-op `inspect`); flip `validateSkillResource` + smoke                                           | Phase 4.6  | **none** (store spec only)        |
+| **7.2** | marketplace allowlist fetch | ✅     | server's first outbound path: `GET /api/skills/marketplaces/:id/plugins` (fetch + cache + timeout `marketplace.json`); `MARKETPLACE_ALLOWLIST` config; trust by repo owner; "save marketplace entry as skill resource"                                                                 | 7.1        | **yes** (allowlisted GitHub raw)  |
+| **7.3** | hub search UI               | ✅     | web marketplace browser (category filter + search + trust badge) → "save as skill resource" → reuses 7.1 `plugin` source storage; install-warning UX (trust tier + missing-pin warning)                                                                                                | 7.2        | no (calls 7.2 endpoint)           |
+| **7.4** | Hermes-style multi-source   | ✅     | 4 `SkillSource` adapters (github/well-known/url/marketplace-wrapper); parallel search + per-source timeout + merge dedupe (identifier key, trust-rank); `/api/skills/search`; hub page dual-mode (browse + search); skills-sh/browse-sh deferred, clawhub/lobehub/hermes-index skipped | 7.1, 7.3   | **yes** (github/well-known fetch) |
 
 - PRD: `docs/prd/phase-7-skills.md` · Design 7.1: `docs/design/phase-7.1-plugin-source.md`
   · Design 7.2: `docs/design/phase-7.2-marketplace-fetch.md`
   · Design 7.3: `docs/design/phase-7.3-hub-ui.md`
-  (7.4 design to be written before it ships) · Research:
+  · Design 7.4: `docs/design/phase-7.4-multi-source.md`
+  · Research:
   `docs/research/phase-4.4-skills.md`
 - **Research corrections carried into the PRD** (ground-truth verified):
   Hermes has **10** adapters (not 9 — `OptionalSkillSource` is the `official`
