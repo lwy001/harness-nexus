@@ -71,7 +71,7 @@ Either form works.
 ```bash
 pnpm install                 # first-time setup
 task dev          | pnpm dev               # all packages, watch mode (parallel)
-task dev:server   | pnpm --filter @harness-nexus/server run dev   # API on :7477
+task dev:server   | pnpm --filter @harness-nexus/server run dev   # API on :8080
 task dev:web      | pnpm --filter @harness-nexus/web run dev      # UI on :5173
 task build        | pnpm -r run build
 task test         | pnpm -r run test

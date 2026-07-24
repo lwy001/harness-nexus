@@ -1,0 +1,42 @@
+# Harness Nexus — full stack (API server + web SPA) in two containers.
+#
+# The `web` service (nginx) is the only externally reachable entry point: it
+# serves the SPA and reverse-proxies /api and /mcp to `server`. The backend
+# stays on the internal compose network only.
+#
+# Usage:
+#   1. cp .env.example .env   then fill in JWT_SECRET (required) and others.
+#   2. docker compose up --build -d
+#   3. Open http://<host>:15921
+
+services:
+  # --- API + MCP server ------------------------------------------------------
+  # Same image built by the root Dockerfile (multi-stage, pnpm deploy).
+  # NOT published — only reachable from `web` via the compose network.
+  server:
+    build: .
+    # image: ghcr.io/sinrimin/harness-nexus:latest   # swap in once published
+    container_name: harness-nexus-server
+    expose:
+      - "8080"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # --- web SPA (nginx) + reverse proxy ---------------------------------------
+  # Build context is the repo root so pnpm can resolve the workspace; the
+  # Dockerfile lives under apps/web/Dockerfile.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    # image: ghcr.io/sinrimin/harness-nexus-web:latest   # swap in once published
+    container_name: harness-nexus-web
+    ports:
+      - "15921:80" # host 15921 → nginx 80. The only externally reachable port.
+    depends_on:
+      server:
+        condition: service_healthy # wait for backend HEALTHCHECK to pass
+    restart: unless-stopped

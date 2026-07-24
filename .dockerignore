@@ -1,0 +1,54 @@
+# Keep the build context lean and avoid leaking local state / secrets.
+# Docker sends everything not ignored here to the daemon on every build.
+
+# Dependencies & build artifacts (regenerated inside the image)
+**/node_modules
+**/.pnpm-store
+**/dist
+**/build
+**/out
+**/*.tsbuildinfo
+
+# Bundler / tool caches
+**/.turbo
+**/.vite
+
+# Runtime data (SQLite, uploads, cache) — never bake local DBs into the image
+**/data
+**/*.sqlite
+**/*.sqlite-journal
+**/*.db
+**/uploads
+**/cache
+
+# Test / coverage
+**/coverage
+**/.nyc_output
+
+# VCS & editor state
+.git
+.github
+.zcode
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local env / secrets — the image must never contain these.
+# .env.example is the only env file allowed into the context.
+.env
+.env.*
+!.env.example
+
+# Locally-installed CLI profiles (user machines only)
+.installed-profiles
+
+# Docker's own files (not needed inside the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml

@@ -197,7 +197,7 @@ Boot test (fixture, no network):
 JWT_SECRET=... STORAGE_DRIVER=memory \
   MARKETPLACE_FIXTURE_PATH=$PWD/scripts/fixtures/marketplace.json \
   pnpm dev:server
-BASE_URL=http://127.0.0.1:7477 node scripts/smoke.mjs
+BASE_URL=http://127.0.0.1:8080 node scripts/smoke.mjs
 ```
 
 Add a second marketplace:

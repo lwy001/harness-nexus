@@ -14,8 +14,8 @@ export default defineConfig({
     port: 5173,
     // Proxy API + MCP endpoints to the Fastify server during development.
     proxy: {
-      '/api': 'http://127.0.0.1:7477',
-      '/mcp': 'http://127.0.0.1:7477',
+      '/api': 'http://127.0.0.1:8080',
+      '/mcp': 'http://127.0.0.1:8080',
     },
   },
 });

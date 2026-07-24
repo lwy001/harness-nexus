@@ -69,7 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
 
   return {
-    port: Number(env.PORT ?? '7477'),
+    port: Number(env.PORT ?? '8080'),
     host: env.HOST ?? '0.0.0.0',
     storageDriver: (env.STORAGE_DRIVER as ServerConfig['storageDriver']) ?? 'sqlite',
     sqlitePath: env.SQLITE_PATH ?? './data/harnessnexus.sqlite',

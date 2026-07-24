@@ -55,7 +55,7 @@ export STORAGE_DRIVER=memory
 
 task dev                # start everything in watch mode (needs task: https://taskfile.dev)
 # or, without task:
-pnpm dev:server         # API on :7477
+pnpm dev:server         # API on :8080
 pnpm dev:web            # web UI on :5173
 ```
 
@@ -65,3 +65,43 @@ switch from the web UI (`/admin/users`, `/admin/settings`).
 **Phase 1** (users, two roles, JWT + PAT auth, registration switch, permission
 interceptors, SQLite driver, web auth UI) is implemented. See
 [`docs/auth.md`](docs/auth.md) and [`docs/roadmap.md`](docs/roadmap.md).
+
+## Docker
+
+`docker compose up --build` starts the whole stack as two containers:
+
+- **`server`** — the Fastify API + MCP proxy (multi-stage image built from the
+  root `Dockerfile`). SQLite is the default storage driver, persisted to a
+  `/data` volume. Not published — only reachable from `web`.
+- **`web`** — nginx serving the built SPA (`apps/web/Dockerfile`) and
+  reverse-proxying `/api` + `/mcp` to `server`. This is the **only** exposed
+  port.
+
+The SPA calls same-origin (`apps/web/src/api.ts` defaults to `""`), so the
+browser hits nginx and it forwards API/MCP traffic to the backend. No
+`VITE_API_BASE_URL` needed.
+
+```bash
+# 1. Configure (copy + fill in the required JWT_SECRET)
+cp .env.example .env
+# edit .env: JWT_SECRET="$(openssl rand -base64 48)"
+
+# 2. Build & run both containers
+docker compose up --build -d          # web on http://<host>:15921, data in ./data/
+
+# 3. Open the UI
+open http://localhost:15921
+```
+
+The host port (default `15921`) is the left side of `ports: ["15921:80"]` in
+`docker-compose.yml` — change it if 15921 is taken. The `web` service waits for
+`server`'s `HEALTHCHECK` before starting, so there's no cold-start 502.
+
+The MCP SSE transport (`/mcp/sse`) passes through nginx unbuffered with a 1h
+read timeout (see `apps/web/nginx.conf`) — long-lived streams aren't cut.
+
+Both images are **built entirely from CN mirrors** (TUNA for apt, npmmirror
+for npm/pnpm) so builds need no proxy — convenient in CN networks. To use the
+official registries instead, drop the two mirror `RUN`/`ENV` lines in each
+Dockerfile's build stage. `JWT_SECRET` (≥16 chars) is required at runtime and
+is never baked into either image.
