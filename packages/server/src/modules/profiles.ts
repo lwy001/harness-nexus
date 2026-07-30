@@ -36,6 +36,7 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
       name: input.name,
       ...(input.description ? { description: input.description } : {}),
       version: '1.0.0',
+      target: input.target,
       scope: input.scope,
       ownerId: input.scope === 'global' ? null : req.user!.id,
       entries,
@@ -67,6 +68,12 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
   // ---- PATCH /api/profiles/:id ----
   app.patch<{ Params: { id: string } }>('/api/profiles/:id', guard, async (req) => {
     const input = updateProfileSchema.parse(req.body) as UpdateProfileInput;
+    // `target` is immutable post-create (Phase 3.2). updateProfileSchema omits
+    // it, so zod strips it from `input`; inspect the raw body to give the
+    // explicit 409 TARGET_IMMUTABLE code instead of silently ignoring the key.
+    if (req.body && typeof req.body === 'object' && 'target' in req.body) {
+      throw new AppError('Profile target is immutable', 409, 'TARGET_IMMUTABLE');
+    }
     const existing = await app.uow.profiles.findById(req.params.id);
     if (!existing || !ownsOrAdmin(existing, req.user!.id, req.user!.role)) {
       throw new AppError('Profile not found', 404, 'PROFILE_NOT_FOUND');

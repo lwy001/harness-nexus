@@ -73,6 +73,7 @@ interface ProfileRow {
   name: string;
   description: string | null;
   version: string;
+  target: string;
   scope: string;
   owner_id: string | null;
   entries: string;
@@ -146,6 +147,7 @@ const mapProfile = (r: ProfileRow): Profile => {
     id: r.id,
     name: r.name,
     version: r.version,
+    target: r.target as Profile['target'],
     scope: r.scope as Profile['scope'],
     ownerId: r.owner_id,
     entries: JSON.parse(r.entries) as ProfileEntry[],
@@ -476,8 +478,8 @@ export function sqliteProfileRepository(db: Database): ProfileRepository {
     },
     async save(profile) {
       db.prepare(
-        `INSERT INTO profiles (id, name, description, version, scope, owner_id, entries, imports, created_at, updated_at)
-         VALUES (@id, @name, @description, @version, @scope, @owner_id, @entries, @imports, @created_at, @updated_at)
+        `INSERT INTO profiles (id, name, description, version, target, scope, owner_id, entries, imports, created_at, updated_at)
+         VALUES (@id, @name, @description, @version, @target, @scope, @owner_id, @entries, @imports, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            name        = excluded.name,
            description = excluded.description,
@@ -492,6 +494,7 @@ export function sqliteProfileRepository(db: Database): ProfileRepository {
         name: profile.name,
         description: profile.description ?? null,
         version: profile.version,
+        target: profile.target,
         scope: profile.scope,
         owner_id: profile.ownerId,
         entries: JSON.stringify(profile.entries),

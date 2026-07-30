@@ -299,6 +299,8 @@ export class HarnessNexusClient {
   async createProfile(input: {
     name: string;
     description?: string;
+    /** Single immutable target this profile is shaped for (Phase 3.2). */
+    target: AgentTarget;
     scope: 'global' | 'personal';
     entries?: ProfileEntryInput[];
   }): Promise<{ profile: Profile }> {

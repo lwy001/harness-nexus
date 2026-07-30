@@ -1,4 +1,4 @@
-import type { ResourceKind } from './resource.js';
+import type { AgentTarget, ResourceKind } from './resource.js';
 
 /**
  * A Profile is a named, versioned bundle combining resources (MCP servers,
@@ -13,6 +13,14 @@ export interface Profile {
   description?: string;
   /** Semver of the profile manifest itself. */
   version: string;
+  /**
+   * Single Agent tool this profile is shaped for (Phase 3.2). Immutable
+   * post-create — the install pipeline (3.3) reads it to pick the target
+   * writer, and the creation form narrows offered resources/hook events by it.
+   * Migrating to a different tool is by cross-target import (3.4), not by
+   * mutating this field (PATCH target → 409 TARGET_IMMUTABLE).
+   */
+  target: AgentTarget;
   scope: 'global' | 'personal';
   ownerId: string | null;
   entries: ProfileEntry[];

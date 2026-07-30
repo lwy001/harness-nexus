@@ -125,6 +125,13 @@ CREATE INDEX IF NOT EXISTS idx_resources_scope ON resources(scope);
 CREATE INDEX IF NOT EXISTS idx_resources_kind  ON resources(kind);
     `,
   },
+  {
+    version: 5,
+    description: 'phase 3.2 — profiles.target (immutable install target)',
+    sql: `
+ALTER TABLE profiles ADD COLUMN target TEXT NOT NULL DEFAULT 'generic';
+    `,
+  },
 ] as const;
 
 /**

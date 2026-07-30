@@ -31,9 +31,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon } from 'lucide-react';
-import { HarnessNexusError, type Profile, type McpServer } from '@harness-nexus/sdk';
+import { HarnessNexusError, type Profile, type McpServer, type AgentTarget } from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
+
+/** The four Agent targets a profile can be shaped for (Phase 3.2). */
+const TARGETS: AgentTarget[] = ['claude-code', 'zcode', 'hermes', 'generic'];
 
 export function ProfilesPage() {
   const { logout, user } = useAuth();
@@ -89,6 +92,7 @@ export function ProfilesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">Name</TableHead>
+                <TableHead>Target</TableHead>
                 <TableHead>Servers</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead className="pr-6 text-right">Actions</TableHead>
@@ -97,13 +101,13 @@ export function ProfilesPage() {
             <TableBody>
               {items === null ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground py-8 text-center">
+                  <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground py-8 text-center">
+                  <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
                     No profiles yet.
                   </TableCell>
                 </TableRow>
@@ -115,6 +119,13 @@ export function ProfilesPage() {
                       {p.description && (
                         <div className="text-muted-foreground mt-0.5 text-xs">{p.description}</div>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      {/* Neutral Badge: target encodes intent, not connection state
+                          (Signal system reserves --signal for liveness). */}
+                      <Badge variant="secondary" className="font-mono text-[11px]">
+                        {p.target}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
                       {p.entries.length}
@@ -170,6 +181,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scope, setScope] = useState<Scope>('personal');
+  const [target, setTarget] = useState<AgentTarget>('generic');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [servers, setServers] = useState<McpServer[] | null>(null);
@@ -200,6 +212,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
         () =>
           api.createProfile({
             name,
+            target,
             ...(description ? { description } : {}),
             scope,
             entries,
@@ -209,6 +222,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       toast.success('Profile created');
       setName('');
       setDescription('');
+      setTarget('generic');
       setSelected(new Set());
       onCreated();
     } catch (e) {
@@ -231,7 +245,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="prof-name">Name</Label>
               <Input
@@ -243,6 +257,24 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
                 spellCheck={false}
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="prof-target">Target</Label>
+              <Select
+                value={target}
+                onValueChange={(v) => setTarget(v as AgentTarget)}
+              >
+                <SelectTrigger id="prof-target">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TARGETS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="prof-desc">Description</Label>

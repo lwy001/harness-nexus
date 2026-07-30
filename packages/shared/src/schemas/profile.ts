@@ -9,6 +9,11 @@ import { z } from 'zod';
  */
 
 export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 'mcp', 'command']);
+// AgentTarget mirrors `AgentTarget` in @harness-nexus/core (`domain/resource.ts`).
+// `shared` deliberately does NOT depend on `core` (see shared/src/trust.ts);
+// the two definitions are kept in sync manually. Phase 3.2 records this as an
+// accepted duplication rather than collapsing them (which would violate the
+// layering rule). Update both together when a target is added.
 export const agentTargetSchema = z.enum(['claude-code', 'zcode', 'hermes', 'generic']);
 export type AgentTarget = z.infer<typeof agentTargetSchema>;
 
@@ -29,6 +34,8 @@ export const profileManifestSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   version: z.string().min(1),
+  /** Single target this profile is shaped for (Phase 3.2); required in a manifest. */
+  target: agentTargetSchema,
   entries: z.array(profileEntrySchema),
   imports: z.array(profileImportSchema).optional(),
 });
@@ -52,10 +59,17 @@ export const profileEntryInputSchema = z.object({
 export const createProfileSchema = z.object({
   name: z.string().min(1).max(64),
   description: z.string().max(512).optional(),
+  /** Single, immutable target this profile is shaped for (Phase 3.2). */
+  target: agentTargetSchema,
   scope: scopeSchema,
   entries: z.array(profileEntryInputSchema).default([]),
 });
 
+// `target` is deliberately OMITTED from updates: it is immutable post-create
+// (changing it would silently invalidate stored resources' target assumptions).
+// zod objects strip unknown keys by default, so a PATCH body carrying `target`
+// won't appear in the parsed result — the route handler inspects the RAW
+// `req.body` with hasOwnProperty to detect it and reject with 409 TARGET_IMMUTABLE.
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   description: z.string().max(512).optional(),

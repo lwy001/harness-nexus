@@ -246,32 +246,34 @@ r = await req('POST', '/api/profiles', {
   body: {
     name: 'daily',
     description: 'my daily bundle',
+    target: 'claude-code',
     scope: 'personal',
     entries: [{ mcpServerId: demoServerId }],
   },
 });
 expect('profile created', r.status, 201);
 expect('profile has 1 entry', r.json.profile.entries.length, 1);
+expect('profile target stored', r.json.profile.target, 'claude-code');
 const profileId = r.json.profile.id;
 
 log('\n--- [2.2] create profile referencing a non-existent server (409) ---');
 r = await req('POST', '/api/profiles', {
   token: userToken,
-  body: { name: 'bad', scope: 'personal', entries: [{ mcpServerId: 'mcp_no_such' }] },
+  body: { name: 'bad', target: 'claude-code', scope: 'personal', entries: [{ mcpServerId: 'mcp_no_such' }] },
 });
 expect('profile with bad entry rejected', r.status, 409);
 
 log('\n--- [2.2] non-admin cannot create global profile (403) ---');
 r = await req('POST', '/api/profiles', {
   token: userToken,
-  body: { name: 'g', scope: 'global', entries: [] },
+  body: { name: 'g', target: 'claude-code', scope: 'global', entries: [] },
 });
 expect('non-admin global profile rejected', r.status, 403);
 
 log('\n--- [2.2] admin creates a global profile (201) ---');
 r = await req('POST', '/api/profiles', {
   token: adminToken,
-  body: { name: 'shared', scope: 'global', entries: [] },
+  body: { name: 'shared', target: 'zcode', scope: 'global', entries: [] },
 });
 expect('admin global profile created', r.status, 201);
 
@@ -283,6 +285,40 @@ log('\n--- [2.2] get profile detail (200) ---');
 r = await req('GET', `/api/profiles/${profileId}`, { token: userToken });
 expect('profile detail status', r.status, 200);
 expect('profile detail name', r.json.profile.name, 'daily');
+
+// ============================ Phase 3.2: Profile.target ============================
+
+log('\n--- [3.2] create profile WITHOUT target → 400 (required) ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'no-target', scope: 'personal', entries: [] },
+});
+expect('profile without target rejected', r.status, 400);
+
+log('\n--- [3.2] create profile WITH target hermes → 201, target stored ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'hermes-bundle', target: 'hermes', scope: 'personal', entries: [] },
+});
+expect('hermes profile created', r.status, 201);
+expect('hermes profile target', r.json.profile.target, 'hermes');
+
+log('\n--- [3.2] PATCH profile target → 409 TARGET_IMMUTABLE ---');
+r = await req('PATCH', `/api/profiles/${profileId}`, {
+  token: userToken,
+  body: { target: 'zcode' },
+});
+expect('target change rejected as immutable', r.status, 409);
+expect('immutable error code', r.json.error, 'TARGET_IMMUTABLE');
+
+log('\n--- [3.2] PATCH profile name WITHOUT target still works (200) ---');
+r = await req('PATCH', `/api/profiles/${profileId}`, {
+  token: userToken,
+  body: { name: 'daily-renamed' },
+});
+expect('non-target PATCH succeeds', r.status, 200);
+expect('patched name applied', r.json.profile.name, 'daily-renamed');
+expect('target unchanged after patch', r.json.profile.target, 'claude-code');
 
 log('\n--- [2.2] mcp-servers status endpoint (200) ---');
 r = await req('GET', '/api/mcp-servers/status', { token: userToken });
