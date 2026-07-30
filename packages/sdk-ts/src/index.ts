@@ -25,6 +25,7 @@ import type {
   MarketplacePlugin,
   MarketplaceSource,
   PluginResourceSource,
+  McpToolInfo,
 } from '@harness-nexus/shared';
 export {
   HOOK_EVENTS,
@@ -34,7 +35,13 @@ export {
   skillMetaToResourceSource,
   type HookEvent,
 } from '@harness-nexus/shared';
-export type { MarketplaceCatalog, MarketplacePlugin, MarketplaceSource, PluginResourceSource };
+export type {
+  MarketplaceCatalog,
+  MarketplacePlugin,
+  MarketplaceSource,
+  PluginResourceSource,
+  McpToolInfo,
+};
 
 export interface SdkOptions {
   baseUrl: string;
@@ -73,6 +80,8 @@ export interface McpServerStatus {
   name: string;
   status: 'connecting' | 'connected' | 'error' | 'disconnected';
   detail?: string;
+  /** Cached tool count for this connection (Phase 2.4; absent on older servers). */
+  toolCount?: number;
 }
 
 /** Input shape for a profile entry (references an McpServer by id). */
@@ -260,6 +269,30 @@ export class HarnessNexusClient {
   async listMcpServerStatuses(): Promise<McpServerStatus[]> {
     const res = await this.request('GET', '/api/mcp-servers/status');
     return res.statuses;
+  }
+
+  // ---- mcp server connect/disconnect + tool inspection (Phase 2.4) ----
+  // Operator control surface on the proxy registry pool. proxy-only servers.
+  async connectMcpServer(id: string): Promise<McpServerStatus> {
+    const res = await this.request('POST', `/api/mcp-servers/${id}/connect`);
+    return res.status;
+  }
+
+  async disconnectMcpServer(id: string): Promise<McpServerStatus> {
+    const res = await this.request('POST', `/api/mcp-servers/${id}/disconnect`);
+    return res.status;
+  }
+
+  /** Cached tool list (original names). Empty when not connected. */
+  async listMcpServerTools(id: string): Promise<McpToolInfo[]> {
+    const res = await this.request('GET', `/api/mcp-servers/${id}/tools`);
+    return res.tools;
+  }
+
+  /** Re-pull the tool list from the upstream. Requires an active connection. */
+  async refreshMcpServerTools(id: string): Promise<McpToolInfo[]> {
+    const res = await this.request('POST', `/api/mcp-servers/${id}/tools/refresh`);
+    return res.tools;
   }
 
   // ---- profiles ----

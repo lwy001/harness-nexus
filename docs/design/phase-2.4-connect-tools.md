@@ -215,12 +215,12 @@ not the pool entry — so a not-found or not-owned server returns `404
 MCP_SERVER_NOT_FOUND` before touching the registry (leak prevention, identical to
 PATCH/DELETE).
 
-| Method | Path | Body | Returns | Errors |
-|--------|------|------|---------|--------|
-| POST | `/api/mcp-servers/:id/connect` | — | `{ status: McpServerStatus }` | 404 not-found/not-owned; 409 `NOT_PROXY_MODE` |
-| POST | `/api/mcp-servers/:id/disconnect` | — | `{ status: McpServerStatus }` | 404; (not-in-pool → treat as 404, no separate code) |
-| GET | `/api/mcp-servers/:id/tools` | — | `{ tools: McpToolInfo[] }` | 404; (not connected → `[]`, not an error) |
-| POST | `/api/mcp-servers/:id/tools/refresh` | — | `{ tools: McpToolInfo[] }` | 404; 409 `NOT_CONNECTED` |
+| Method | Path                                 | Body | Returns                       | Errors                                              |
+| ------ | ------------------------------------ | ---- | ----------------------------- | --------------------------------------------------- |
+| POST   | `/api/mcp-servers/:id/connect`       | —    | `{ status: McpServerStatus }` | 404 not-found/not-owned; 409 `NOT_PROXY_MODE`       |
+| POST   | `/api/mcp-servers/:id/disconnect`    | —    | `{ status: McpServerStatus }` | 404; (not-in-pool → treat as 404, no separate code) |
+| GET    | `/api/mcp-servers/:id/tools`         | —    | `{ tools: McpToolInfo[] }`    | 404; (not connected → `[]`, not an error)           |
+| POST   | `/api/mcp-servers/:id/tools/refresh` | —    | `{ tools: McpToolInfo[] }`    | 404; 409 `NOT_CONNECTED`                            |
 
 ```ts
 // connect route — shape of all four (owner check first, then registry, map errors)
@@ -301,7 +301,8 @@ useEffect(() => {
   })();
   // poll loop — statuses only (servers change via refresh())
   const timer = setInterval(() => {
-    api.listMcpServerStatuses()
+    api
+      .listMcpServerStatuses()
       .then((r) => setStatuses(new Map(r.statuses.map((s) => [s.id, s]))))
       .catch(() => {}); // swallow poll errors; next tick retries
   }, STATUS_POLL_MS);
@@ -318,12 +319,12 @@ interval on unmount.
 Color **encodes connection state only** (AGENTS.md "Signal"). `--signal` (cyan)
 is reserved for liveness/links and is NOT used here. Map to the semantic palette:
 
-| status | color token | meaning |
-|--------|-------------|---------|
-| `connected` | `--ok` (green) | live |
-| `error` | `--danger` (red) | failed |
-| `connecting` | `--warn` (amber) | transient |
-| `disconnected` | muted (neutral) | idle |
+| status         | color token      | meaning   |
+| -------------- | ---------------- | --------- |
+| `connected`    | `--ok` (green)   | live      |
+| `error`        | `--danger` (red) | failed    |
+| `connecting`   | `--warn` (amber) | transient |
+| `disconnected` | muted (neutral)  | idle      |
 
 Rendered as a `<Dot>` + label. The `Dot` uses the token class (`bg-ok` /
 `bg-danger` / `bg-warn` / `bg-muted-foreground`), matching the Dashboard

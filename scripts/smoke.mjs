@@ -306,6 +306,64 @@ log('\n--- [2.2] delete profile (200) ---');
 r = await req('DELETE', `/api/profiles/${profileId}`, { token: userToken });
 expect('delete profile', r.status, 200);
 
+// ============================ Phase 2.4: connect/disconnect + tools ============================
+// demoServerId is the 'demo-upstream' proxy server created in the 2.2 block
+// above. Its URL (https://mcp.example.com/mcp) is unreachable, so connect
+// resolves with status='error' + detail — this is the primary use case for the
+// explicit Connect button (re-dial after fixing a broken upstream). The tools
+// endpoint returns [] when not connected; refresh is refused (409 NOT_CONNECTED)
+// on a down server.
+
+log('\n--- [2.4] status entries carry toolCount (Phase 2.4 extension) ---');
+r = await req('GET', '/api/mcp-servers/status', { token: userToken });
+expect('status ok', r.status, 200);
+const demoStatus = r.json.statuses.find((s) => s.id === demoServerId);
+expect('demo status present', typeof demoStatus, 'object');
+expect('status has toolCount field', typeof demoStatus.toolCount, 'number');
+
+log('\n--- [2.4] connect forces a (re)dial; unreachable → status error ---');
+r = await req('POST', `/api/mcp-servers/${demoServerId}/connect`, { token: userToken });
+expect('connect returns 200', r.status, 200);
+expect('connect returns a status object', typeof r.json.status, 'object');
+expect(
+  'connect result is connected or error (best-effort)',
+  r.json.status.status === 'connected' || r.json.status.status === 'error',
+  true,
+);
+expect('status has toolCount', typeof r.json.status.toolCount, 'number');
+
+log('\n--- [2.4] tools list on a not-connected server → empty array (not error) ---');
+r = await req('GET', `/api/mcp-servers/${demoServerId}/tools`, { token: userToken });
+expect('tools endpoint ok', r.status, 200);
+expect('tools is an array', Array.isArray(r.json.tools), true);
+
+log('\n--- [2.4] refresh on a not-connected server → 409 NOT_CONNECTED ---');
+r = await req('POST', `/api/mcp-servers/${demoServerId}/tools/refresh`, { token: userToken });
+// only assert the contract when the server is actually down (error/disconnected);
+// if the unreachable upstream happened to connect, refresh is valid.
+if (demoStatus.status !== 'connected') {
+  expect('refresh on down server → 409', r.status, 409);
+  expect('error code NOT_CONNECTED', r.json.error, 'NOT_CONNECTED');
+}
+
+log('\n--- [2.4] connect on a direct server → 409 NOT_PROXY_MODE ---');
+// 'local-fs' is the stdio+direct server created in the 3.1 block.
+r = await req('GET', '/api/mcp-servers', { token: userToken });
+const directServer = r.json.mcpServers.find((s) => s.mode === 'direct');
+r = await req('POST', `/api/mcp-servers/${directServer.id}/connect`, { token: userToken });
+expect('connect on direct → 409', r.status, 409);
+expect('error code NOT_PROXY_MODE', r.json.error, 'NOT_PROXY_MODE');
+
+log('\n--- [2.4] connect on unknown id → 404 (leak prevention) ---');
+r = await req('POST', '/api/mcp-servers/mcp_no_such/connect', { token: userToken });
+expect('connect unknown → 404', r.status, 404);
+expect('error code MCP_SERVER_NOT_FOUND', r.json.error, 'MCP_SERVER_NOT_FOUND');
+
+log('\n--- [2.4] disconnect on a pooled server (idempotent) ---');
+r = await req('POST', `/api/mcp-servers/${demoServerId}/disconnect`, { token: userToken });
+expect('disconnect returns 200', r.status, 200);
+expect('disconnect status is disconnected', r.json.status.status, 'disconnected');
+
 // ============================ Phase 4.2: resources ============================
 
 log('\n--- [4.2] user creates a personal sub_agent resource (201) ---');
@@ -640,11 +698,7 @@ expect('plugin source round-trips', r.json.resource.source.type, 'plugin');
 expect('plugin inner source kind', r.json.resource.source.source.source, 'github');
 expect('trust label = trusted', r.json.resource.labels?.trust, 'trusted');
 expect('pin label = sha', r.json.resource.labels?.pin, 'abc123def456');
-expect(
-  'provenance label set',
-  typeof r.json.resource.labels?.provenance,
-  'string',
-);
+expect('provenance label set', typeof r.json.resource.labels?.provenance, 'string');
 
 log('\n--- [7.1] community plugin, no pin (floating ref) ---');
 r = await req('POST', '/api/resources', {
@@ -738,7 +792,11 @@ r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins',
 expect('catalog fetch ok', r.status, 200);
 expect('4 plugins after filtering 2 relative-path', r.json.plugins.length, 4);
 const sourceKinds = r.json.plugins.map((p) => p.source.source).sort();
-expect('source kinds are object kinds only', JSON.stringify(sourceKinds), JSON.stringify(['git-subdir', 'github', 'url', 'url']));
+expect(
+  'source kinds are object kinds only',
+  JSON.stringify(sourceKinds),
+  JSON.stringify(['git-subdir', 'github', 'url', 'url']),
+);
 
 log('\n--- [7.2] filter by category=security ---');
 r = await req('GET', '/api/skills/marketplaces/claude-plugins-official/plugins?category=security', {
@@ -816,11 +874,7 @@ expect(
 log('\n--- [7.4] search result carries precomputed pluginSource in extra ---');
 const jfrog = r.json.results.find((m) => m.name === 'jfrog');
 expect('jfrog has extra.pluginSource', typeof jfrog.extra?.pluginSource, 'object');
-expect(
-  'pluginSource is the plugin variant',
-  jfrog.extra.pluginSource?.type,
-  'plugin',
-);
+expect('pluginSource is the plugin variant', jfrog.extra.pluginSource?.type, 'plugin');
 
 log('\n--- [7.4] timedOut/errored arrays are present (may be empty) ---');
 expect('timedOut is array', Array.isArray(r.json.timedOut), true);

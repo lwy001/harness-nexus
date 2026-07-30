@@ -7,8 +7,10 @@ import {
   updateMcpServerSchema,
   type CreateMcpServerInput,
   type UpdateMcpServerInput,
+  type McpToolInfo,
 } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
+import { RegistryError } from '../mcp/registry.js';
 
 /**
  * MCP management — records of MCP servers, each with a `mode` (Phase 3.1):
@@ -65,9 +67,61 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- GET /api/mcp-servers/status ----
-  // Live connection states from the registry. Drives the Dashboard mesh dots.
+  // Live connection states from the registry. Drives the Dashboard mesh dots
+  // and the per-row status/tool-count badges (Phase 2.4).
   app.get('/api/mcp-servers/status', guard, async () => {
     return { statuses: app.mcpRegistry?.getStatuses() ?? [] };
+  });
+
+  // ---- Phase 2.4: per-server connect/disconnect + tool inspection ----
+  // Operator control surface on top of the registry pool. proxy-only — a direct
+  // server is never dialed by Harness Nexus, so these endpoints reject it with
+  // 409 NOT_PROXY_MODE. Owner-or-admin check (404 on miss, leak prevention)
+  // mirrors PATCH/DELETE.
+
+  // POST /api/mcp-servers/:id/connect — force (re)connect one proxy upstream.
+  app.post<{ Params: { id: string } }>('/api/mcp-servers/:id/connect', guard, async (req) => {
+    await assertProxyOwned(req.params.id, req.user!.id, req.user!.role, app);
+    try {
+      const status = await app.mcpRegistry!.connectServer(req.params.id);
+      return { status };
+    } catch (e) {
+      throw mapRegistryError(e);
+    }
+  });
+
+  // POST /api/mcp-servers/:id/disconnect — drop a live connection on demand.
+  app.post<{ Params: { id: string } }>('/api/mcp-servers/:id/disconnect', guard, async (req) => {
+    await assertProxyOwned(req.params.id, req.user!.id, req.user!.role, app);
+    try {
+      const status = await app.mcpRegistry!.disconnectServer(req.params.id);
+      return { status };
+    } catch (e) {
+      throw mapRegistryError(e);
+    }
+  });
+
+  // GET /api/mcp-servers/:id/tools — cached tool list (original names).
+  // Not connected → [] (not an error); the UI gates the panel on status.
+  app.get<{ Params: { id: string } }>('/api/mcp-servers/:id/tools', guard, async (req) => {
+    await assertProxyOwned(req.params.id, req.user!.id, req.user!.role, app);
+    try {
+      const tools = app.mcpRegistry!.listServerTools(req.params.id);
+      return { tools };
+    } catch (e) {
+      throw mapRegistryError(e);
+    }
+  });
+
+  // POST /api/mcp-servers/:id/tools/refresh — re-pull tools from the upstream.
+  app.post<{ Params: { id: string } }>('/api/mcp-servers/:id/tools/refresh', guard, async (req) => {
+    await assertProxyOwned(req.params.id, req.user!.id, req.user!.role, app);
+    try {
+      const tools: McpToolInfo[] = await app.mcpRegistry!.refreshServerTools(req.params.id);
+      return { tools };
+    } catch (e) {
+      throw mapRegistryError(e);
+    }
   });
 
   // ---- PATCH /api/mcp-servers/:id ----
@@ -124,4 +178,49 @@ function assertDirectForTransport(transport: McpTransport, mode: McpMode): void 
 /** A record is actionable by the caller iff they own it (personal) or are admin. */
 function ownsOrAdmin(s: McpServer, userId: string, role: 'admin' | 'user'): boolean {
   return role === 'admin' || s.ownerId === userId;
+}
+
+/**
+ * Phase 2.4 — guard for the connect/disconnect/tools routes. Reads the stored
+ * record (NOT the pool entry) and applies owner-or-admin + proxy-mode checks
+ * BEFORE touching the registry: a not-found/not-owned server returns 404
+ * MCP_SERVER_NOT_FOUND (leak prevention, identical to PATCH/DELETE), and a
+ * direct server returns 409 NOT_PROXY_MODE (Harness Nexus never dials it).
+ */
+async function assertProxyOwned(
+  id: string,
+  userId: string,
+  role: 'admin' | 'user',
+  app: FastifyInstance,
+): Promise<void> {
+  const existing = await app.uow.mcpServers.findById(id);
+  if (!existing || !ownsOrAdmin(existing, userId, role)) {
+    throw new AppError('MCP server not found', 404, 'MCP_SERVER_NOT_FOUND');
+  }
+  if (existing.mode !== 'proxy') {
+    throw new AppError(
+      `MCP server "${existing.name}" is not in proxy mode (Harness Nexus does not dial direct servers)`,
+      409,
+      'NOT_PROXY_MODE',
+    );
+  }
+}
+
+/**
+ * Map a registry `RegistryError` to an `AppError` with the right status code.
+ * Rethrows non-registry errors untouched. Keeps the HTTP layer in the route and
+ * the registry free of HTTP concerns (AGENTS.md architecture rule #4).
+ */
+function mapRegistryError(err: unknown): never {
+  if (err instanceof RegistryError) {
+    const status = err.kind === 'not_proxy' ? 409 : err.kind === 'not_connected' ? 409 : 404;
+    const code =
+      err.kind === 'not_proxy'
+        ? 'NOT_PROXY_MODE'
+        : err.kind === 'not_connected'
+          ? 'NOT_CONNECTED'
+          : 'MCP_SERVER_NOT_FOUND';
+    throw new AppError(err.message, status, code);
+  }
+  throw err;
 }

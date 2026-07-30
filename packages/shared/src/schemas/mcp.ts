@@ -87,3 +87,17 @@ export type CreateCredentialInput = z.infer<typeof createCredentialSchema>;
 export type UpdateCredentialInput = z.infer<typeof updateCredentialSchema>;
 export type CreateMcpServerInput = z.infer<typeof createMcpServerSchema>;
 export type UpdateMcpServerInput = z.infer<typeof updateMcpServerSchema>;
+
+// ---- tool inspection (Phase 2.4) ----
+// The externally-exposed shape of a single upstream's tool, read out of the
+// McpRegistry pool (NOT persisted — transient, cached in-memory per connection).
+// Distinct from the registry's internal AggregatedTool: this is the
+// UN-namespaced per-server form surfaced to the UI (`GET /api/mcp-servers/:id/tools`).
+// Defined in shared so server, SDK, and web all share one shape.
+export const mcpToolInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  inputSchema: z.record(z.string(), z.unknown()),
+});
+
+export type McpToolInfo = z.infer<typeof mcpToolInfoSchema>;

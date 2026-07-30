@@ -20,7 +20,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { FastifyBaseLogger } from 'fastify';
 import type { McpServer, McpTransport, Profile, UnitOfWork } from '@harness-nexus/core';
-import { resolvePlaceholders } from '@harness-nexus/shared';
+import { resolvePlaceholders, type McpToolInfo } from '@harness-nexus/shared';
 import { decryptSecret } from '../infra/crypto.js';
 
 /** Separator between server-name and tool-name in the aggregated namespace. */
@@ -34,6 +34,8 @@ export interface McpServerStatus {
   status: ConnectionStatus;
   /** Human-readable detail for the `error` state; empty otherwise. */
   detail?: string;
+  /** Cached tool count for this connection (0 when not connected). Phase 2.4. */
+  toolCount: number;
 }
 
 /** Minimal tool shape we surface to the proxy (a subset of the SDK's Tool). */
@@ -41,6 +43,23 @@ export interface AggregatedTool {
   name: string;
   description?: string;
   inputSchema: Record<string, unknown>;
+}
+
+/**
+ * Registry-local error kinds, mapped to HTTP by the route layer. Kept free of
+ * `AppError`/HTTP concerns so the registry stays decoupled from transport
+ * (AGENTS.md architecture rule #4). Phase 2.4.
+ */
+export type RegistryErrorKind = 'not_found' | 'not_proxy' | 'not_connected';
+
+export class RegistryError extends Error {
+  constructor(
+    message: string,
+    readonly kind: RegistryErrorKind,
+  ) {
+    super(message);
+    this.name = 'RegistryError';
+  }
 }
 
 interface LiveConnection {
@@ -270,8 +289,115 @@ export class McpRegistry {
       id: c.server.id,
       name: c.server.name,
       status: c.status,
+      toolCount: c.tools.size,
       ...(c.detail ? { detail: c.detail } : {}),
     }));
+  }
+
+  // ---- per-server operator control (Phase 2.4) ----
+  // These add an explicit connect/disconnect + tool-inspection surface on top
+  // of the existing pool. They do NOT replace startup auto-pooling (doReload)
+  // and do NOT change /mcp aggregation. See docs/design/phase-2.4-connect-tools.md.
+
+  /**
+   * Force (re)connect of one proxy upstream. The primary use case is re-dialing
+   * a server stuck at `error` after the operator fixed its config/credential —
+   * since startup `reload()` is fire-and-forget, there is otherwise no way to
+   * trigger a single reconnect. Reads the LATEST config from the store so an
+   * edit since startup is honored, and so a deleted/direct-switched server
+   * throws the right config-level error. Best-effort: resolves with the
+   * resulting status (possibly `error` + `detail`) rather than throwing on
+   * upstream failure. Phase 2.4.
+   */
+  async connectServer(id: string): Promise<McpServerStatus> {
+    // Re-fetch config: connectOne takes a McpServer object, and the pool may
+    // hold a stale snapshot. A missing record → not_found; non-proxy → not_proxy.
+    const server = await this.uow.mcpServers.findById(id);
+    if (!server) {
+      throw new RegistryError(`MCP server not pooled: ${id}`, 'not_found');
+    }
+    if (server.mode !== 'proxy') {
+      throw new RegistryError(
+        `MCP server "${server.name}" is not in proxy mode (Harness Nexus does not dial it)`,
+        'not_proxy',
+      );
+    }
+    // Close any existing pool entry first to avoid leaking a Client. connectOne
+    // will re-insert a fresh entry.
+    const existing = this.pool.get(id);
+    if (existing) {
+      await this.closeConnection(existing);
+      this.pool.delete(id);
+    }
+    await this.connectOne(server);
+    return this.statusOf(id);
+  }
+
+  /**
+   * Drop a live connection on demand WITHOUT removing it from the pool — the
+   * entry stays with `status: 'disconnected'` so it remains visible in
+   * `getStatuses()` and is NOT silently reconnected by the next unrelated
+   * `reload()` (doReload only reconnects entries it doesn't see vs. configured).
+   * Phase 2.4.
+   */
+  async disconnectServer(id: string): Promise<McpServerStatus> {
+    const conn = this.pool.get(id);
+    if (!conn) {
+      throw new RegistryError(`MCP server not pooled: ${id}`, 'not_found');
+    }
+    await this.closeConnection(conn);
+    return this.statusOf(id);
+  }
+
+  /**
+   * Read-only snapshot of one server's cached tools in their ORIGINAL
+   * (un-namespaced) form — the UI shows a single server, where the `<server>__`
+   * prefix is noise. Distinct from `listTools()`, which returns the namespaced
+   * aggregated form for the proxy. Not connected → `[]` (NOT an error; the UI
+   * gates the panel on status==='connected'). Phase 2.4.
+   */
+  listServerTools(id: string): McpToolInfo[] {
+    const conn = this.pool.get(id);
+    if (!conn) {
+      throw new RegistryError(`MCP server not pooled: ${id}`, 'not_found');
+    }
+    if (conn.status !== 'connected') return [];
+    return [...conn.tools.values()].map((t) => ({
+      name: t.name,
+      ...(t.description ? { description: t.description } : {}),
+      inputSchema: t.inputSchema,
+    }));
+  }
+
+  /**
+   * Re-fetch the upstream's tool list into the cache and return it. Powers the
+   * Refresh button in the UI. Requires an active connection (`not_connected`
+   * otherwise — refresh makes no sense on a down server). Best-effort upstream
+   * fetch: if listTools fails, `refreshTools` flips the connection to `error`
+   * and this returns `[]`. Phase 2.4.
+   */
+  async refreshServerTools(id: string): Promise<McpToolInfo[]> {
+    const conn = this.pool.get(id);
+    if (!conn) {
+      throw new RegistryError(`MCP server not pooled: ${id}`, 'not_found');
+    }
+    if (conn.status !== 'connected') {
+      throw new RegistryError(`MCP server not connected: ${id}`, 'not_connected');
+    }
+    await this.refreshTools(conn);
+    return this.listServerTools(id);
+  }
+
+  /** Build one status entry for a pooled server by id (assumes present). */
+  private statusOf(id: string): McpServerStatus {
+    const conn = this.pool.get(id)!;
+    return {
+      id: conn.server.id,
+      name: conn.server.name,
+      status: conn.status,
+      toolCount: conn.tools.size,
+      ...(conn.detail ? { detail: conn.detail } : {}),
+    };
   }
 
   private findByServerName(name: string): LiveConnection | undefined {
