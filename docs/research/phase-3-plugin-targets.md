@@ -1,10 +1,25 @@
 # Phase 3 research: Profile → target-tool plugin installation
 
-> Status: research complete. Compares how Claude Code, ZCode, and Hermes package
-> and install extensions (skills/hooks/sub-agents/MCP/commands), and maps our
-> `Profile` concept onto each as an installable plugin. The install-pipeline
-> design doc + PRD follow once the target-writer architecture below is
-> confirmed.
+> Status: research complete (original scope). **See the newer
+> `docs/research/phase-3-ecc-install-patterns.md` for the install-pipeline
+> architecture** (adapter factory + plan/apply + install-state) and Codex's
+> ground-truth format, which this earlier doc does not cover.
+>
+> **Priority revisions since this doc was written:**
+> - **ZCode is out of install scope.** The ZCode findings here relied on a single
+>   on-disk inspection that is no longer reproducible, and ECC (the new
+>   reference) has zero ZCode support. `zcode` stays in the enum but has no
+>   adapter (`409 TARGET_UNSUPPORTED`). The "CC+ZCode share a writer" thesis is
+>   **superseded** — each target now gets its own adapter.
+> - **Codex is in** (JSON manifest + TOML config + stdio-only MCP) — see the ECC
+>   research doc, which has ground-truth files.
+> - **Hermes is priority 1** (was last). Its format details below remain
+>   medium-confidence pending `hermes_cli/` verification.
+>
+> Compares how Claude Code, ZCode, and Hermes package and install extensions
+> (skills/hooks/sub-agents/MCP/commands), and maps our `Profile` concept onto
+> each as an installable plugin. Retained for the per-target format detail;
+> superseded on architecture by the ECC research doc.
 
 ## Goal
 

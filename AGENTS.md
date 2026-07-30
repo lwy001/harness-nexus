@@ -470,9 +470,15 @@ cache + `/api/skills/marketplaces` browse API (Phase 7.2), the `/skills/hub`
 browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
 
 - 4 adapters (github/well-known/url/marketplace) + `/api/skills/search`
-  (Phase 7.4 — **Phase 7 complete**). See `docs/roadmap.md` for what remains.
-  Still NOT done: the stdio bridge entry, CLI install writers, ECC/Superpower
-  adapters, the ACP bridge, Channels, LLM-WIKI, memory/notes. **Phase 2.3
-  (callable-function scripts) is on hold** — not currently planned. When you add
-  the first real logic for a pillar, also add tests (vitest, not yet wired) and
-  update the relevant `docs/` file.
+  (Phase 7.4 — **Phase 7 complete**). **Phase 3** is partly done: 3.1
+  (`McpServer.mode` + stdio-in-direct) and 3.2 (`Profile.target`, immutable) are
+  shipped; the install pipeline (3.3+) is restructured around the ECC
+  adapter-factory pattern (target adapter per tool + plan/apply + install-state
+  ledger), with priority **Hermes → Claude Code → Codex**. `zcode` is in the
+  `AgentTarget` enum but has no install adapter (no reproducible reference).
+  See `docs/roadmap.md` for what remains. Still NOT done: the install pipeline,
+  the stdio bridge entry, ECC/Superpower **import** adapters, the ACP bridge,
+  Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is
+  on hold** — not currently planned. When you add the first real logic for a
+  pillar, also add tests (vitest, not yet wired) and update the relevant `docs/`
+  file.

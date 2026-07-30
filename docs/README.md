@@ -47,11 +47,12 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - PRD: [`prd/phase-2.4-connect-tools.md`](./prd/phase-2.4-connect-tools.md)
 - Design: [`design/phase-2.4-connect-tools.md`](./design/phase-2.4-connect-tools.md)
 
-### Phase 3 — Install pipeline ⏳
+### Phase 3 — Install pipeline 🚧 (3.1, 3.2 done)
 
-- Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — how Claude Code, ZCode, and Hermes package extensions, and how a `Profile` maps onto each as a plugin.
+- Research: [`research/phase-3-ecc-install-patterns.md`](./research/phase-3-ecc-install-patterns.md) — the install-pipeline architecture extracted from ECC (adapter factory + plan/apply + install-state ledger; Codex ground-truth format).
+- Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — per-target plugin formats (Claude Code / Hermes; ZCode superseded). Superseded on architecture by the ECC doc above.
 - PRD: [`prd/phase-3-install.md`](./prd/phase-3-install.md)
-- Design: [`design/phase-3-install.md`](./design/phase-3-install.md)
+- Design: [`design/phase-3-install.md`](./design/phase-3-install.md) — target adapter factory (one adapter per target: Hermes → Claude Code → Codex), plan/apply, install-state ledger. ZCode out of install scope.
 
 ### Phase 4 — Resource management & PAT UI ✅ (4.1–4.6 done)
 

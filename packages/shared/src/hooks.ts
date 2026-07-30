@@ -44,6 +44,9 @@ export type HookEvent = (typeof HOOK_EVENTS)[number];
  */
 export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> | null>> = {
   'claude-code': new Set<HookEvent>(HOOK_EVENTS),
+  // zcode has no install adapter (no reference material; Phase 3 out of scope).
+  // The 7-event set is retained from prior research but is moot until an adapter
+  // ships. See docs/research/phase-3-ecc-install-patterns.md.
   zcode: new Set<HookEvent>([
     'SessionStart',
     'UserPromptSubmit',
@@ -54,6 +57,9 @@ export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> |
     'Stop',
   ]),
   hermes: null,
+  // Codex uses a config/prompts-based hook model (TOML config + generated
+  // prompts), not declarative hooks.json — null, like Hermes.
+  codex: null,
   // 'generic' assumes the full set — a permissive default for unknown targets.
   generic: new Set<HookEvent>(HOOK_EVENTS),
 };

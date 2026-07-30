@@ -12,8 +12,15 @@
 /** The kinds of managed assets an Agent tool can consume. */
 export type ResourceKind = 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'command';
 
-/** Tools a resource/profile can be installed into. */
-export type AgentTarget = 'claude-code' | 'zcode' | 'hermes' | 'generic';
+/**
+ * Tools a resource/profile can be installed into. Phase 3 priority order is
+ * hermes → claude-code → codex; `generic` is a placeholder. `zcode` stays in the
+ * union (non-breaking) but has NO install adapter — `hnx install --target zcode`
+ * is rejected (409 TARGET_UNSUPPORTED) until a reference surface revives it.
+ * Mirrored in `@harness-nexus/shared` (`schemas/profile.ts`); update both
+ * together. See `docs/research/phase-3-ecc-install-patterns.md`.
+ */
+export type AgentTarget = 'claude-code' | 'zcode' | 'hermes' | 'codex' | 'generic';
 
 /** Visibility/scope. `global` is admin-managed; `personal` is per-user. */
 export type ResourceScope = 'global' | 'personal';

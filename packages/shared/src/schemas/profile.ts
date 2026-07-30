@@ -14,7 +14,12 @@ export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 
 // the two definitions are kept in sync manually. Phase 3.2 records this as an
 // accepted duplication rather than collapsing them (which would violate the
 // layering rule). Update both together when a target is added.
-export const agentTargetSchema = z.enum(['claude-code', 'zcode', 'hermes', 'generic']);
+//
+// Priority order (Phase 3): hermes → claude-code → codex. `zcode` has NO install
+// adapter (no reference material) but stays in the union to avoid a breaking
+// enum change — install rejects it with 409 TARGET_UNSUPPORTED. See
+// `docs/research/phase-3-ecc-install-patterns.md`.
+export const agentTargetSchema = z.enum(['claude-code', 'zcode', 'hermes', 'codex', 'generic']);
 export type AgentTarget = z.infer<typeof agentTargetSchema>;
 
 export const profileImportSchema = z.object({

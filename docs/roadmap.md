@@ -62,14 +62,20 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 3 — Install pipeline (Pillars #2 & #3)
 
+> **Restructured** around the ECC adapter-factory pattern + plan/apply.
+> Priority: **Hermes → Claude Code → Codex**. ZCode is out of install scope
+> (no reproducible reference; retained in the enum but unsupported).
+
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
-- ⏳ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + hook compatibility matrix
-- ⏳ 3.3 — Claude-Code writer (+ zcode narrowing) + `hnx install` (local manifest + SDK) + proxy/direct MCP emission
-- ⏳ 3.4 — Cross-target profile import with compatibility report
-- ⏳ 3.5 — Hermes writer
-- ⏳ 3.6 — ECC + Superpower import adapters
+- ✅ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + `TARGET_IMMUTABLE`; `codex` added to the enum, `zcode` retained-but-unsupported
+- ⏳ 3.3 — Install pipeline skeleton: target adapter factory + registry + plan/apply separation + install-state ledger + `hnx install` CLI (dry-run default). No real target adapter yet.
+- ⏳ 3.4 — **Hermes adapter** (priority 1; verify `hermes_cli/` schema first). YAML `plugin.yaml` + `config.yaml` `mcp_servers:`.
+- ⏳ 3.5 — **Claude Code adapter** (priority 2). JSON `.claude-plugin/plugin.json` + `.mcp.json`; rules-as-skill.
+- ⏳ 3.6 — **Codex adapter** (priority 3). JSON `.codex-plugin/plugin.json` (+`interface`) + TOML `config.toml`; stdio-only MCP.
+- ⏳ 3.7 — Cross-target profile import with compatibility report + per-artifact compat matrix
+- ⏳ 3.8 — Other well-known agents (optional) + ECC/Superpower import adapters
 - PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md`
-- Research: `docs/research/phase-3-plugin-targets.md` (CC/ZCode share a plugin spec; Hermes is the Python outlier)
+- Research: `docs/research/phase-3-ecc-install-patterns.md` (adapter factory + plan/apply + install-state; Codex ground-truth) · `docs/research/phase-3-plugin-targets.md` (per-target formats; CC/Hermes detail, ZCode superseded)
 
 ## Phase 4 — Resource management & PAT UI
 
