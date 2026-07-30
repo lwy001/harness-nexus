@@ -42,6 +42,11 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Design: _to be written before implementation_
 - > Not currently planned for development.
 
+### Phase 2.4 — proxy MCP connect & tool inspection ✅
+
+- PRD: [`prd/phase-2.4-connect-tools.md`](./prd/phase-2.4-connect-tools.md)
+- Design: [`design/phase-2.4-connect-tools.md`](./design/phase-2.4-connect-tools.md)
+
 ### Phase 3 — Install pipeline ⏳
 
 - Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — how Claude Code, ZCode, and Hermes package extensions, and how a `Profile` maps onto each as a plugin.

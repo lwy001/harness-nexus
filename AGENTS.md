@@ -240,12 +240,51 @@ Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
   `McpServer.id` in 2.2). A profile entry the caller can't see →
   `403 PROFILE_ENTRY_NOT_ACCESSIBLE`.
 - **Status endpoint** `GET /api/mcp-servers/status` returns live
-  `{ id, status }[]` (`connecting | connected | error | disconnected`) from the
-  registry; it drives the Dashboard mesh dots (`online` → `bg-ok`).
+  `{ id, status, toolCount }[]` (`connecting | connected | error | disconnected`)
+  from the registry; it drives the Dashboard mesh dots (`online` → `bg-ok`) and
+  the MCP Management row status/tool-count badges (2.4).
 - **Name clash:** the SDK's `McpServer` class is imported as `SdkMcpServer` in
   `proxy.ts` to avoid colliding with the domain `McpServer` interface.
 - **Not yet built (2.3+):** callable-function scripts, the stdio bridge entry,
   per-PAT profile binding, tool-level authorization.
+
+## proxy MCP connect & tool inspection (Phase 2.4)
+
+Full design in `docs/design/phase-2.4-connect-tools.md`. Summary for daily work:
+
+- **Incremental connect semantics.** Phase 2.2's startup auto-pooling is
+  unchanged and `/mcp` aggregation is untouched. 2.4 adds an operator control
+  surface on top of the existing pool — it does NOT make connect lazy.
+- **4 public registry methods** (`McpRegistry`): `connectServer(id)` (force a
+  re-dial — the main use is reconnecting a server stuck at `error` after a
+  credential/config fix, since `reload()` is fire-and-forget),
+  `disconnectServer(id)` (drops a live connection but KEEPS the pool entry as
+  `disconnected` so the next unrelated `reload()` doesn't silently re-add it),
+  `listServerTools(id)` (cached tool list in ORIGINAL, un-namespaced names —
+  distinct from the namespaced `listTools()` the proxy uses),
+  `refreshServerTools(id)` (re-pull). `connectServer` re-reads the latest config
+  from the store so edits since startup are honored.
+- **`McpServerStatus` gained `toolCount`** (additive; the Dashboard ignores it,
+  the management row badge reads it). `McpServerStatus` is defined in BOTH the
+  registry and the SDK (`packages/sdk-ts`) — keep them in sync.
+- **4 routes** (`modules/mcp-servers.ts`): `POST :id/connect`, `:id/disconnect`,
+  `GET :id/tools`, `POST :id/tools/refresh`. proxy-only (direct →
+  `409 NOT_PROXY_MODE`); reuse `requireAuth` + `ownsOrAdmin` 404-leak-prevention.
+  Registry errors are `RegistryError` (registry-local, `kind: not_found |
+not_proxy | not_connected`) mapped to HTTP by `mapRegistryError` in the route —
+  the registry stays free of HTTP concerns (architecture rule #4).
+- **`McpToolInfo`** lives in `packages/shared` (NOT `core` — tool inspection is a
+  runtime/transient shape read from the pool, not a persisted domain entity).
+- **Connect is best-effort.** `connectServer` resolves with the resulting status
+  (possibly `error` + `detail`) rather than throwing on upstream failure; only
+  config-level problems (deleted / switched to direct) throw.
+- **Web** (`apps/web/src/pages/McpManagement.tsx`): statuses polled on a 5s
+  `setInterval` (cleared on unmount); row status badge uses state-encoded colors
+  per the Signal system (`connected`→`bg-ok`, `error`→`bg-danger`, `connecting`→
+  `bg-warn`, `disconnected`→muted — `--signal` is NOT used); connected rows show
+  a tool-count badge + expand into a `Collapsible` tool panel (per-tool
+  `inputSchema` params + Refresh). Direct rows show a neutral hint, no controls.
+  Sub-components live at module scope (React perf rule).
 
 ## Resource management (Phase 4.2–4.3)
 
@@ -420,7 +459,8 @@ Phase 1 (auth), Phase 2.1 (MCP connection config + credentials), and Phase 2.2
 auth, the registration switch, front- and back-end interceptors, the SQLite
 driver (with migrations), the web UI, the encrypted credential store, MCP client
 connection CRUD, the live `McpRegistry` aggregation, the `/mcp` (Streamable
-HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the PAT
+HTTP) + `/mcp/sse` proxy with PAT + profile routing, Profile CRUD, the proxy
+MCP connect/disconnect + tool-inspection control surface (Phase 2.4), the PAT
 management UI (Phase 4.1), the shared Resource backend + sub-agent/rule/command
 editors (Phase 4.2–4.4), the hook editor + event/target support matrix (Phase
 4.5), the skill editor with multi-file bundles (Phase 4.6 — Phase 4 complete),

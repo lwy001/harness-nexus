@@ -48,6 +48,18 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 - ⏸️ Profile entries for callable-functions; management UI
 - PRD: `docs/prd/phase-2.3-callable-functions.md` · Research: `docs/research/phase-2.3-sandbox.md`
 
+## Phase 2.4 — proxy MCP connect & tool inspection
+
+- ✅ Per-row live connection status + tool-count badge on the MCP Management page
+  (state-encoded colors per the Signal system; status polled on an interval)
+- ✅ Explicit Connect/Disconnect buttons for proxy servers (incremental — startup
+  auto-pooling from 2.2 is unchanged; Connect is for forcing a reconnect after a
+  fix, Disconnect drops a live connection on demand)
+- ✅ Expandable tool-inspection panel: lists the upstream's tools (original names)
+  with description + `inputSchema` parameters, plus a Refresh button
+- ✅ Direct rows show a neutral "dialed by the tool" hint, no connect controls
+- PRD: `docs/prd/phase-2.4-connect-tools.md` · Design: `docs/design/phase-2.4-connect-tools.md`
+
 ## Phase 3 — Install pipeline (Pillars #2 & #3)
 
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
