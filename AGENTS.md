@@ -36,7 +36,7 @@ packages/
   shared/      zod schemas + utils — single source of truth for manifest shapes
   server/      Fastify API + MCP proxy + storage DRIVERS (sqlite/memory)
   sdk-ts/      HTTP client SDK
-  cli/         `hnx` one-click install tool (must run WITHOUT the server)
+  cli/         `hnx` one-click install tool (fetches profiles from a server via the SDK)
   acp-bridge/  local ACP <-> Harness Nexus daemon (roadmap)
 apps/web/      React + TS + Vite admin UI
 docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
@@ -59,9 +59,13 @@ docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
    and streamable-http. Do not push MCP logic into route handlers.
 5. **Manifest schemas live in `packages/shared`.** Server, web, and CLI must all
    validate via those zod schemas — keep them in sync with `core` domain types.
-6. **The CLI must run standalone.** `packages/cli` can talk to a server via the
-   SDK, but the common `install` path must work from a local manifest with no
-   server running. Don't couple it to server availability.
+6. **The CLI fetches profiles from a server.** `packages/cli` resolves a profile
+   via `@harness-nexus/sdk` against a running Harness Nexus server and installs
+   it into a target Agent tool. It does **not** read local manifests — a profile
+   is a reference bundle (its `entries` point at server-side resources by id),
+   so the resource bodies and the aggregated `/mcp` endpoint both require the
+   server. This replaces an earlier "must run standalone" rule that was written
+   before the reference-style profile model landed.
 
 ## Common commands
 

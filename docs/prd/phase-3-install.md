@@ -126,23 +126,23 @@ dropped.
 20. As a user, I want direct-mode MCP entries to be written verbatim into the
     plugin's MCP block (with stdio preserved), so that the tool dials them
     locally.
-21. As a user, I want the CLI to run standalone from a local manifest, so that
-    it works without a running server (per AGENTS.md's CLI rule).
-22. As a user, I want the CLI to fetch profiles from a running server via the
-    SDK, so that I do not hand-carry a manifest.
-23. As a user, I want `hnx install` to dry-run by default (show me the plan
+21. As a user, I want the CLI to fetch a profile from a running server by id,
+    so that I install without hand-carrying a manifest. (A profile is a reference
+    bundle — its entries point at server-side resources, and proxy-mode MCP needs
+    the `/mcp` endpoint — so the server is required, not optional.)
+22. As a user, I want `hnx install` to dry-run by default (show me the plan
     before writing anything), so that I can review what will change before
     committing to it.
-24. As a developer, I want one adapter per target (Hermes / Claude Code / Codex
+23. As a developer, I want one adapter per target (Hermes / Claude Code / Codex
     each own their manifest + config format), so that the high-confidence path
     is not tangled with format-specific conditionals.
 
 ### Security
 
-23. As an operator, I want direct-mode plugin bundles that carry decrypted
+24. As an operator, I want direct-mode plugin bundles that carry decrypted
     upstream credentials to be treated as sensitive, so that secrets do not leak
     through a generated artifact.
-24. As a user, I want proxy mode to avoid shipping any upstream secret, so that
+25. As a user, I want proxy mode to avoid shipping any upstream secret, so that
     the bundle only carries a PAT (revocable, scoped).
 
 ## Implementation Decisions

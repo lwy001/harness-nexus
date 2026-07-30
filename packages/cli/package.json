@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@harness-nexus/core": "workspace:*",
+    "@harness-nexus/sdk": "workspace:*",
     "@harness-nexus/shared": "workspace:*"
   },
   "devDependencies": {

@@ -29,7 +29,9 @@ packages/acp─┘        (domain + ports)            implements ports
 - **`packages/server`** — Fastify HTTP API + MCP transport. Owns the concrete
   storage implementations (`infra/storage/sqlite`, `infra/storage/memory`).
 - **`packages/sdk-ts`** — HTTP client used by the web UI and external scripts.
-- **`packages/cli`** — standalone install tool. Must work without the server.
+- **`packages/cli`** — install tool. Fetches profiles from a server via the SDK
+  (a profile is a reference bundle; resource bodies and the aggregated `/mcp`
+  endpoint both require the server).
 - **`packages/acp-bridge`** — local daemon (roadmap).
 - **`apps/web`** — React + TS + Vite SPA.
 

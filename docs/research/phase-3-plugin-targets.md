@@ -15,6 +15,11 @@
 >   research doc, which has ground-truth files.
 > - **Hermes is priority 1** (was last). Its format details below remain
 >   medium-confidence pending `hermes_cli/` verification.
+> - **The "CLI must run standalone" rule is rescinded.** References below to a
+>   local-manifest install path are obsolete — the CLI now fetches profiles from
+>   a server via the SDK (a profile is a reference bundle; resource bodies and
+>   the aggregated `/mcp` endpoint both require the server). See AGENTS.md
+>   architecture rule #6 (rewritten).
 >
 > Compares how Claude Code, ZCode, and Hermes package and install extensions
 > (skills/hooks/sub-agents/MCP/commands), and maps our `Profile` concept onto

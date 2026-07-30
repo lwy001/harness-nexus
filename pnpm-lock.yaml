@@ -109,6 +109,9 @@ importers:
       '@harness-nexus/core':
         specifier: workspace:*
         version: link:../core
+      '@harness-nexus/sdk':
+        specifier: workspace:*
+        version: link:../sdk-ts
       '@harness-nexus/shared':
         specifier: workspace:*
         version: link:../shared

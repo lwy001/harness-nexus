@@ -26,8 +26,10 @@ listing and installing.
    (e.g. `~/.claude/skills`, ZCode workspace config, …).
 4. For each import: run the matching adapter (ECC/Superpower) to place assets.
 
-The CLI can run standalone against a local manifest, or fetch profiles from a
-running Harness Nexus server via the SDK.
+The CLI fetches profiles from a running Harness Nexus server via the SDK. A
+profile is a reference bundle (its entries point at server-side resources by
+id), so the resource bodies and the aggregated `/mcp` endpoint both require
+the server — the CLI does not read local manifests.
 
 ## Manifest schema
 

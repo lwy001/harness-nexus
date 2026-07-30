@@ -91,13 +91,13 @@ This part adopts the ECC pattern wholesale. Read
 ### Architecture
 
 ```
-hnx install --profile <id> [--target <t>] [--apply] [--out <dir>]
+hnx install --profile <id> --server <url> --token <pat> [--target <t>] [--apply] [--out <dir>]
    │
    ▼
-ProfileResolver  ── (SDK fetch OR local manifest) ──▶ ResolvedProfile
-   │                                                   (Profile + fetched artifacts:
-   │                                                    skill bodies, hook configs,
-   │                                                    McpServer rows for MCP entries)
+ProfileResolver  ── (SDK fetch from server) ──▶ ResolvedProfile
+   │                                             (Profile + fetched artifacts:
+   │                                              skill bodies, hook configs,
+   │                                              McpServer rows for MCP entries)
    ▼
 TargetAdapter (registry lookup by target)  ──▶ planOperations()
    │                                            returns InstallPlan — NO writes
@@ -209,11 +209,12 @@ own adapter rather than a shared "JSON-family" writer.
 ### CLI entry
 
 ```bash
-hnx install --profile <id> [--target <t>] [--apply] [--out <dir>]
+hnx install --profile <id> --server <url> --token <pat> [--target <t>] [--apply] [--out <dir>]
 ```
 
-- `--profile` resolves via the SDK (running server) or a local manifest
-  (standalone, per AGENTS.md's CLI rule).
+- `--profile` resolves via the SDK against `--server` (a profile is a reference
+  bundle — its entries point at server-side resources, and proxy-mode MCP needs
+  the `/mcp` endpoint, so the server is required). No local-manifest path.
 - `--target` overrides the profile's own `target` only for `generic` profiles;
   for a target-bound profile it must match (else `409 TARGET_MISMATCH`).
   `zcode` → `409 TARGET_UNSUPPORTED` (no adapter).
