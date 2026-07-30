@@ -1,14 +1,17 @@
 # Install pipeline & target-tool profiles (Phase 3)
 
-> Status: not started. Drives the implementation of Phase 3. PRD:
-> `docs/prd/phase-3-install.md`. Research:
+> Status: **3.1 shipped** (McpServer.mode + stdio-in-direct + rename + migration
+> v2); **3.2–3.6 not started.** PRD: `docs/prd/phase-3-install.md`. Research:
 > `docs/research/phase-3-plugin-targets.md`. Read both before changing code.
+> This revision corrects several points where the original draft described a
+> shape that has since moved (the `proxied` field, the hook-matrix location,
+> migration numbering) — see the inline `> note` callouts.
 
 ## What Phase 3 adds
 
 Three coupled changes, summarized then detailed below:
 
-1. **MCP Management** — the `McpServer` entity gains a `mode` (`proxy` |
+1. **MCP Management** — the `McpServer` entity carries a `mode` (`proxy` |
    `direct`). stdio is re-enabled, gated to `direct`. "MCP Connections" is
    renamed "MCP Management".
 2. **Target-bound profiles** — `Profile` gains a required, immutable `target`.
@@ -17,17 +20,26 @@ Three coupled changes, summarized then detailed below:
    emits a plugin directory in the target's native format, and an installer
    places it. CC + ZCode share a writer; Hermes has its own.
 
+> **Status as of this revision.** 3.1 (`mode` + stdio-in-direct + rename) is
+> shipped. 3.2 (`Profile.target`) → 3.6 are not started. The notes below flag
+> where the original draft described a shape that has since moved on, so the
+> remaining sub-phases build on the _current_ code, not the draft.
+
 The dependency boundary is `core` (domain) → `shared` (zod + the hook
 compatibility matrix) → `server` (storage migration + REST + import) →
 `sdk-ts` (client methods) → `cli` (writers + installer) → `apps/web` (renamed
 page, target picker, import UI). Build each before the next.
 
-## Part 1 — McpServer.mode & the stdio re-enable
+## Part 1 — McpServer.mode & the stdio re-enable ✅ shipped (3.1)
+
+> This part is implemented. The interface below is the _current_ shape, with the
+> stale `proxied` field removed (2.4 deleted it — mode alone drives pooling).
 
 ### Domain change (`packages/core/src/domain/user.ts`)
 
-The `McpServer` interface (currently at `user.ts:43`) gains `mode`. The
-`McpTransport` union already includes the `stdio` variant — unchanged.
+The `McpServer` interface (`user.ts:56`) carries `mode`. The `McpTransport`
+union (`user.ts:73`) includes the `stdio` variant. `McpMode = 'proxy' |
+'direct'` (`user.ts:53`).
 
 ```ts
 export interface McpServer {
@@ -42,13 +54,17 @@ export interface McpServer {
    *          it never opens the connection. stdio forces direct.
    */
   mode: 'proxy' | 'direct';
-  proxied: boolean; // still drives registry pooling (proxy mode only)
   scope: 'global' | 'personal';
   ownerId: string | null;
   createdAt: string;
   updatedAt: string;
 }
 ```
+
+> **No `proxied` field.** The original draft modeled a `proxied: boolean`
+> alongside `mode`; 2.4 collapsed that into a single source of truth — mode is
+> the only pooling signal. The registry now filters `list({ mode: 'proxy' })`
+> directly (`server/src/mcp/registry.ts:111`). Do not re-introduce `proxied`.
 
 ### mode × transport matrix
 
@@ -64,56 +80,56 @@ boundary: Harness Nexus still never spawns a stdio subprocess.
 
 ### Schema change (`packages/shared/src/schemas/mcp.ts`)
 
-Lift the Phase 2.1 stdio exclusion **for direct mode only**, and add `mode`:
+Lift the Phase 2.1 stdio exclusion **for direct mode only**, and add `mode`.
+This is implemented; the current schema does **not** use a zod `.refine()` for
+the stdio+proxy rejection — instead a `requiresDirect()` helper
+(`mcp.ts:65`) drives a route-layer `409 STDIO_REQUIRES_DIRECT` so the error
+carries the right code rather than a generic 400 validation failure:
 
 ```ts
 const mcpModeSchema = z.enum(['proxy', 'direct']);
 
 export const mcpTransportSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('stdio'),
-    command: z.string().min(1),
-    args: z.array(z.string()).optional(),
-    env: z.record(z.string(), z.string()).optional(),
-  }),
-  z.object({ type: z.literal('sse'), url: z.string().url(), ...headerBindingsBase }),
-  z.object({ type: z.literal('streamable-http'), url: z.string().url(), ...headerBindingsBase }),
+  stdioTransportSchema, // { type:'stdio', command, args?, env? }
+  z.object({ type: z.literal('sse'), url: z.string().url(), ...headersBase }),
+  z.object({ type: z.literal('streamable-http'), url: z.string().url(), ...headersBase }),
 ]);
 
-export const createMcpServerSchema = z
-  .object({
-    name: z.string().min(1).max(64),
-    transport: mcpTransportSchema,
-    mode: mcpModeSchema.default('proxy'),
-    proxied: z.boolean().default(false),
-    scope: scopeSchema,
-  })
-  .refine((v) => !(v.transport.type === 'stdio' && v.mode === 'proxy'), {
-    message: 'stdio transport requires direct mode',
-  });
+export const createMcpServerSchema = z.object({
+  name: z.string().min(1).max(64),
+  transport: mcpTransportSchema,
+  mode: mcpModeSchema.default('proxy'),
+  scope: scopeSchema,
+});
+
+export function requiresDirect(transport): boolean { return transport.type === 'stdio'; }
 ```
 
-The handler maps the refine failure to `409 STDIO_REQUIRES_DIRECT` (same shape
-as the existing `AppError` pattern — `code` + `statusCode`).
+The route handler (`modules/mcp-servers.ts`) calls `assertDirectForTransport()`
+→ `AppError(..., 409, 'STDIO_REQUIRES_DIRECT')` when `requiresDirect(transport)
+&& mode !== 'direct'`.
 
 ### Registry impact
 
-`McpRegistry.reload()` (`server/src/mcp/registry.ts`) gains a one-line guard:
-skip any row where `mode !== 'proxy'`. No other registry change — direct rows
-are simply not in its world. The `/api/mcp-servers/status` endpoint continues
-to report only pooled (proxy) servers; direct rows are listed in MCP Management
-without a live status (or with a `direct` sentinel — UI decision, see Part 5).
+`McpRegistry.doReload()` (`server/src/mcp/registry.ts:111`) fetches only proxy
+rows directly — `await this.uow.mcpServers.list({ mode: 'proxy' })`. No other
+registry change — direct rows are simply not in its world. The
+`/api/mcp-servers/status` endpoint continues to report only pooled (proxy)
+servers; direct rows are listed in MCP Management without a live status.
 
 ### Migration
 
-No separate migration: `mcp_servers.mode` is added **inline** to the existing
-`mcp_servers` CREATE TABLE (the `mode TEXT NOT NULL DEFAULT 'proxy'` column in
-migration v2). This project has not shipped a release, so there is no legacy
-data to back-fill or upgrade path to preserve — old migration rows are edited
-in place rather than appended as ALTERs.
+`mcp_servers.mode` was added **inline** to the existing `mcp_servers` CREATE
+TABLE (the `mode TEXT NOT NULL DEFAULT 'proxy'` column in migration v2,
+`migrations.ts:74`). This project has not shipped a release, so there is no
+legacy data to back-fill or upgrade path to preserve — early migration rows
+were edited in place rather than appended as ALTERs. **Done.**
 
-(The `profiles.target` column for Part 2 lands when 3.2 starts; it will be
-added inline to the `profiles` CREATE TABLE the same way.)
+Current migration versions: v1 (auth) · v2 (credentials + mcp_servers, with
+`mode`) · v3 (profiles) · v4 (resources). The next free version is **v5**.
+When 3.2 starts, `profiles.target` lands there as `target TEXT NOT NULL
+DEFAULT 'generic'` (the back-fill default for pre-target rows), again edited
+inline into the `profiles` CREATE TABLE.
 
 ## Part 2 — Profile.target
 
@@ -136,11 +152,33 @@ export interface Profile {
 }
 ```
 
+> **`AgentTarget` is currently defined twice** and must be unified as part of
+> 3.2: once in `core/src/domain/resource.ts:16` (plain type) and once in
+> `shared/src/schemas/profile.ts:12` (zod enum + inferred type). Per the
+> layering rule, `shared` is the schema source of truth and `core` mirrors it —
+> but `core` may not depend on `shared`. Resolution for 3.2: keep the canonical
+> literal union in `core` (`resource.ts` already has it), have `shared`'s zod
+> enum infer to that same type, and re-export one `AgentTarget` from `shared`
+> for consumers that don't depend on `core`. Decide the exact wiring when 3.2
+> starts; the point now is _don't proceed assuming a single source exists_.
+
 `ProfileEntry` is unchanged from Phase 2.2 — `resourceId`, `kind`,
 `pinnedVersion?`, `installOptions?`. Crucially, an MCP entry still references a
 `McpServer.id`; **mode lives on the McpServer, not on the entry**, so a profile
 simply selects MCP servers and inherits each one's mode (Part 4 explains how
 the writer branches on it).
+
+> **Reality check on the entry shape.** The _domain_ `ProfileEntry`
+> (`core/domain/profile.ts:26`) is generic `{ resourceId, kind, … }`, but the
+> current **REST request schema is narrower**: `profileEntryInputSchema`
+> (`shared/schemas/profile.ts:46`) takes `{ mcpServerId }` only — 2.2 maps that
+> to `McpServer.id` and synthesizes a `kind: 'mcp'` entry internally. So the
+> "resource picker narrowed by target" UI described below presumes the broader
+> multi-kind entry shape, which does **not** exist in the API yet. 3.2 should
+> either widen `profileEntryInputSchema` to the generic `{ resourceId, kind }`
+> form (and update the 2.2 route's MCP synthesis) or stage the multi-kind
+> picker until the entry schema is widened. This is a 3.2 design decision, not
+> a drop-in.
 
 ### Schema change (`packages/shared/src/schemas/profile.ts`)
 
@@ -166,52 +204,47 @@ Target is chosen **first**, before any resource entry:
 
 ## Part 3 — Hook support matrix
 
-`packages/shared` owns a single declarative table of canonical hook events and
-which targets support each. The profile creation form and the import path both
-consult it; the writers consult it to skip unsupported events defensively.
+> **Already built — do not recreate.** Phase 4.5 landed this matrix in
+> `packages/shared/src/hooks.ts` (NOT a new `target-compat.ts` as this doc's
+> original draft proposed). `HOOK_EVENTS`, `HOOK_SUPPORT`, and
+> `DECLARATIVE_HOOK_TARGETS` all live there and are the single source of truth
+> for the hook-event side. 3.2/3.4/3.3 consume them as-is.
+
+`packages/shared/src/hooks.ts` owns the declarative table of canonical hook
+events and which targets support each. The profile creation form and the import
+path consult it; the writers consult it to skip unsupported events defensively.
+Current shape (`hooks.ts:18–67`):
 
 ```ts
-// packages/shared/src/target-compat.ts
-export const HOOK_EVENTS = [
-  'SessionStart',
-  'UserPromptSubmit',
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-  'PermissionRequest',
-  'Stop',
-  // Claude-Code-only (ZCode supports the 7 above; Hermes differs):
-  'PreCompact',
-  'PostCompact',
-  'SubagentStart',
-  'SubagentStop',
-  'Notification',
-  'SessionEnd' /* …the rest of the CC set */,
-] as const;
+export const HOOK_EVENTS = [ /* 16 canonical events (CC union) */ ] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-export const HOOK_SUPPORT: Record<AgentTarget, ReadonlySet<HookEvent>> = {
-  'claude-code': new Set(HOOK_EVENTS), // full ~30
-  zcode: new Set([
-    // the 7 ZCode supports
-    'SessionStart',
-    'UserPromptSubmit',
-    'PreToolUse',
-    'PostToolUse',
-    'PostToolUseFailure',
-    'PermissionRequest',
-    'Stop',
-  ]),
-  hermes: new Set([/* verified against the Hermes repo before shipping */]),
-  generic: new Set(HOOK_EVENTS),
+// null = the target uses a different hook model (Hermes → Python plugins),
+// so a declarative hooks.json resource cannot target it at all.
+export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> | null>> = {
+  'claude-code': new Set<HookEvent>(HOOK_EVENTS), // full set
+  zcode: new Set<HookEvent>([ /* the 7 ZCode supports */ ]),
+  hermes: null,        // not a declarative-hooks target
+  generic: new Set<HookEvent>(HOOK_EVENTS),
 };
+export const DECLARATIVE_HOOK_TARGETS: ReadonlySet<AgentTarget> = /* keys where value !== null */;
 ```
 
-> The Hermes set must be filled in from `hermes_cli/` before the Hermes writer
-> ships. Until then `hermes` hooks are treated as unsupported (creation hides
-> them), so we never emit a hook Hermes can't run.
+> **Correction vs. the original draft:** Hermes is modeled as `null`
+> (structurally different hook model — Python plugins, not `hooks.json`), and
+> the route layer rejects a hook targeting Hermes outright (`409
+> TARGET_NO_DECLARATIVE_HOOKS` via `DECLARATIVE_HOOK_TARGETS`). The draft's
+> "fill the Hermes set from `hermes_cli/` later" is therefore moot for the
+> declarative path — Hermes hooks are not unsupported-event, they are
+> wrong-model, and go through a different writer path in 3.5.
 
-A full **per-artifact compatibility matrix** lives alongside it and drives the
+A full **per-artifact compatibility matrix** — `(resourceKind, fromTarget,
+toTarget) → portable | convertible | unsupported(reason)` — is genuinely
+net-new and lands with 3.4. It is _not_ the same as the hook-event matrix
+(which is `(event, target) → bool`). It will most naturally live alongside
+`hooks.ts` in a new `packages/shared/src/target-compat.ts`, since it concerns
+all resource kinds, not just hooks. The draft's reference to `target-compat.ts`
+is accurate for **3.4**, not the hook matrix.
 import report (Part 5): for each `(resourceKind, fromTarget, toTarget)` it says
 `portable` | `convertible` | `unsupported(reason)`.
 
@@ -227,6 +260,10 @@ hnx install --profile <id> [--target <t>] [--mode auto|proxy|direct] [--out <dir
   (standalone, per AGENTS.md's CLI rule).
 - `--target` overrides the profile's own `target` only for `generic` profiles;
   for a target-bound profile it must match (else `409 TARGET_MISMATCH`).
+  > **`generic` install semantics are deferred** (decided when 3.3 starts):
+  > either `generic` is a placeholder that **requires** `--target` to install,
+  > or it installs a minimal portable-only bundle (skill/command). Until then,
+  > neither behavior is committed.
 - Output defaults to `./<profile-name>-bundle/`.
 
 ### Resolution
@@ -276,8 +313,9 @@ Emits the layout from the research doc. The MCP block branches on each entry's
 └── rules/<name>.SKILL.md             # kind=rule wrapped as a skill (no CLAUDE.md auto-load)
 ```
 
-**MCP emission** — the core decision. For each `kind === 'mcp'` entry, branch
-on the referenced `McpServer.mode`:
+**MCP emission** — the core decision. **Confirmed: proxy is the default; direct
+is the escape hatch for offline / no-server installs.** For each `kind === 'mcp'`
+entry, branch on the referenced `McpServer.mode`:
 
 ```jsonc
 // .mcp.json — mixed example
@@ -437,14 +475,21 @@ Follows the Signal design system (AGENTS.md "Web UI design system").
 
 ## Suggested sub-phasing
 
-- **3.1** — `mode` on McpServer + stdio-in-direct + rename + migration v4 +
-  server/SDK plumbing + MCP Management UI (mode badge, form). No profiles
-  change yet. Smoke-test stdio create (success) and stdio+proxy (409).
-- **3.2** — `target` on Profile + create form narrowing + hook matrix in
-  `shared` + `TARGET_IMMUTABLE`. No install yet.
+- **3.1 ✅ done** — `mode` on McpServer + stdio-in-direct + rename + migration
+  v2 (mode column) + server/SDK plumbing + MCP Management UI (mode badge,
+  form). Smoke-test stdio create (success) and stdio+proxy (409). No profiles
+  change.
+- **3.2** — `target` on Profile + create form narrowing + unify the duplicate
+  `AgentTarget` type + migration **v5** (profiles.target) + `TARGET_IMMUTABLE`.
+  Reuse the existing `hooks.ts` matrix (do NOT create target-compat.ts here).
+  Open decision: whether to widen `profileEntryInputSchema` from `{ mcpServerId
+  }` to the generic `{ resourceId, kind }` now, so the narrowed resource picker
+  has something to bind to. No install yet.
 - **3.3** — Claude-Code writer (CC + ZCode narrowing) + `hnx install` +
-  resolver + proxy/direct MCP emission. Verify the emitted plugin loads in
-  both tools.
-- **3.4** — Import flow (report + apply) + UI.
+  resolver + proxy/default + direct/escape-hatch MCP emission. Decide
+  `generic` install semantics. Verify the emitted plugin loads in both tools.
+- **3.4** — Import flow (report + apply) + UI. **This is where the
+  per-artifact compatibility matrix** (`target-compat.ts`) is genuinely
+  net-new.
 - **3.5** — Hermes writer (after repo schema verification).
 - **3.6** — ECC + Superpower adapters.
