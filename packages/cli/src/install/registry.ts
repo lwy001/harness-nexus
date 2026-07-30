@@ -11,8 +11,9 @@ import type { AgentTarget } from '@harness-nexus/core';
 import { InstallError } from '../errors.js';
 import type { TargetAdapter } from './types.js';
 import { stubAdapter } from './adapters/stub.js';
+import { hermesAdapter } from './adapters/hermes.js';
 
-const ADAPTERS: readonly TargetAdapter[] = Object.freeze([stubAdapter]);
+const ADAPTERS: readonly TargetAdapter[] = Object.freeze([stubAdapter, hermesAdapter]);
 
 /** List every registered adapter (for `--help` / discovery). */
 export function listAdapters(): readonly TargetAdapter[] {

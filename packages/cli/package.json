@@ -20,9 +20,11 @@
   "dependencies": {
     "@harness-nexus/core": "workspace:*",
     "@harness-nexus/sdk": "workspace:*",
-    "@harness-nexus/shared": "workspace:*"
+    "@harness-nexus/shared": "workspace:*",
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.8.6",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

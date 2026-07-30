@@ -22,6 +22,8 @@ import { applyInstall } from './install/installer.js';
 import { planInstall } from './install/planner.js';
 import { resolveProfile } from './install/resolver.js';
 import { supportedTargets } from './install/registry.js';
+import { getHermesPlanWarnings } from './install/adapters/hermes.js';
+import type { InstallPlan } from './install/types.js';
 import type { AgentTarget } from '@harness-nexus/core';
 
 const HELP = `harness-nexus (hnx) — install profiles into Agent tools
@@ -98,6 +100,28 @@ function parseArgs(argv: string[]): InstallArgs {
   return args;
 }
 
+/** Print Hermes-specific post-install hints the adapter cannot perform itself. */
+function printHermesHints(_plan: InstallPlan): void {
+  const w = getHermesPlanWarnings();
+  const lines = ['\nHermes post-install steps:'];
+  if (w.needsPluginEnable) {
+    lines.push(
+      `  • Enable the plugin: add '${w.pluginSlug}' to the 'plugins.enabled' list in config.yaml`,
+    );
+  }
+  if (w.patEnvKey) {
+    lines.push(
+      `  • Set the proxy MCP token: add '${w.patEnvKey}=<your-hn-pat>' to ~/.hermes/.env`,
+    );
+  }
+  if (w.skipped.length > 0) {
+    lines.push(`  • Skipped (Hermes model incompatibility):`);
+    for (const s of w.skipped) lines.push(`      - ${s}`);
+  }
+  // eslint-disable-next-line no-console
+  console.log(lines.join('\n'));
+}
+
 /** Render a plan for the dry-run preview. */
 function formatPlan(plan: import('./install/types.js').InstallPlan): string {
   const lines = [
@@ -135,6 +159,11 @@ async function runInstall(args: InstallArgs): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(formatPlan(plan));
+
+  // Target-specific install hints (Hermes needs manual steps the adapter can't do).
+  if (plan.adapter.target === 'hermes') {
+    printHermesHints(plan);
+  }
 
   if (!args.apply) {
     // eslint-disable-next-line no-console
