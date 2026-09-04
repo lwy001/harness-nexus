@@ -84,11 +84,20 @@ export interface McpServerStatus {
   toolCount?: number;
 }
 
-/** Input shape for a profile entry (references an McpServer by id). */
-export interface ProfileEntryInput {
-  mcpServerId: string;
-  pinnedVersion?: string;
-}
+/**
+ * Input shape for a profile entry — two arms (Phase 3.5):
+ *  - `{ mcpServerId }` (2.2) — kind is implicitly 'mcp'.
+ *  - `{ resourceId, kind }` — a Resource reference ('mcp' excluded: MCP
+ *    servers are managed via /api/mcp-servers and enter via the other arm).
+ */
+export type ProfileEntryInput =
+  | { mcpServerId: string; pinnedVersion?: string }
+  | {
+      resourceId: string;
+      kind: Exclude<ResourceKind, 'mcp'>;
+      pinnedVersion?: string;
+      installOptions?: Record<string, unknown>;
+    };
 
 interface ApiErrorBody {
   error: string;

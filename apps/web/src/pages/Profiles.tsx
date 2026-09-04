@@ -35,13 +35,24 @@ import {
   HarnessNexusError,
   type Profile,
   type McpServer,
+  type Resource,
+  type ResourceKind,
   type AgentTarget,
 } from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
-/** The four Agent targets a profile can be shaped for (Phase 3.2). */
-const TARGETS: AgentTarget[] = ['claude-code', 'zcode', 'hermes', 'generic'];
+/** The Agent targets a profile can be shaped for (Phase 3.2 + codex). */
+const TARGETS: AgentTarget[] = ['claude-code', 'hermes', 'codex', 'zcode', 'generic'];
+
+/** Non-mcp resource kinds a profile entry can reference (Phase 3.5). */
+const RESOURCE_KINDS: ResourceKind[] = ['skill', 'rule', 'command', 'sub_agent', 'hook'];
+/**
+ * The kind domain a `{resourceId, kind}` entry accepts — 'mcp' is excluded
+ * (MCP servers enter via the mcpServerId arm). Safe to assert: kind:'mcp'
+ * resources cannot exist (`AVAILABLE_KINDS` gate on the server).
+ */
+type NonMcpKind = Exclude<ResourceKind, 'mcp'>;
 
 export function ProfilesPage() {
   const { logout, user } = useAuth();
@@ -124,7 +135,7 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
               <TableRow>
                 <TableHead className="pl-6">Name</TableHead>
                 <TableHead>Target</TableHead>
-                <TableHead>Servers</TableHead>
+                <TableHead>Entries</TableHead>
                 <TableHead>Scope</TableHead>
                 <TableHead className="pr-6 text-right">Actions</TableHead>
               </TableRow>
@@ -213,20 +224,28 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
   const [description, setDescription] = useState('');
   const [scope, setScope] = useState<Scope>('personal');
   const [target, setTarget] = useState<AgentTarget>('generic');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedServers, setSelectedServers] = useState<Set<string>>(new Set());
+  const [selectedResources, setSelectedResources] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [servers, setServers] = useState<McpServer[] | null>(null);
+  const [resources, setResources] = useState<Resource[] | null>(null);
 
-  // Fetch the MCP servers the caller can see, to populate the entry checkboxes.
+  // Fetch the MCP servers + resources the caller can see, to populate the
+  // entry checkboxes (independent lists → Promise.all).
   useEffect(() => {
-    api
-      .listMcpServers()
-      .then(setServers)
-      .catch(() => setServers([]));
+    Promise.all([api.listMcpServers(), api.listResources()])
+      .then(([s, r]) => {
+        setServers(s);
+        setResources(r);
+      })
+      .catch(() => {
+        setServers([]);
+        setResources([]);
+      });
   }, []);
 
-  function toggle(id: string) {
-    setSelected((prev) => {
+  function toggle(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
+    setter((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -238,7 +257,15 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const entries = [...selected].map((mcpServerId) => ({ mcpServerId }));
+      // Mixed entry arms (Phase 3.5): mcpServerId for MCP, {resourceId, kind}
+      // for everything else — exactly the two REST shapes.
+      const entries = [
+        ...[...selectedServers].map((mcpServerId) => ({ mcpServerId })),
+        ...[...selectedResources].map((resourceId) => ({
+          resourceId,
+          kind: (resources ?? []).find((r) => r.id === resourceId)!.kind as NonMcpKind,
+        })),
+      ];
       await withAuthGuard(
         () =>
           api.createProfile({
@@ -254,7 +281,8 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       setName('');
       setDescription('');
       setTarget('generic');
-      setSelected(new Set());
+      setSelectedServers(new Set());
+      setSelectedResources(new Set());
       onCreated();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
@@ -347,8 +375,8 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
                   >
                     <input
                       type="checkbox"
-                      checked={selected.has(s.id)}
-                      onChange={() => toggle(s.id)}
+                      checked={selectedServers.has(s.id)}
+                      onChange={() => toggle(setSelectedServers, s.id)}
                       className="size-4"
                     />
                     <span className="min-w-0 flex-1 truncate">{s.name}</span>
@@ -361,8 +389,50 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             )}
           </fieldset>
 
+          {RESOURCE_KINDS.map((kind) => {
+            const of = (resources ?? []).filter((r) => r.kind === kind);
+            return (
+              <fieldset key={kind} className="grid gap-2">
+                <legend className="text-sm font-medium">
+                  {kind === 'sub_agent' ? 'sub-agents' : `${kind}s`}
+                  <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                    ({of.length} visible)
+                  </span>
+                </legend>
+                {resources === null ? (
+                  <p className="text-muted-foreground text-sm">Loading…</p>
+                ) : of.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">None — manage them in Resources.</p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {of.map((r) => (
+                      <label
+                        key={r.id}
+                        className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedResources.has(r.id)}
+                          onChange={() => toggle(setSelectedResources, r.id)}
+                          className="size-4"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                        <span className="text-muted-foreground font-mono text-[10px]">
+                          {r.key}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            );
+          })}
+
           <div>
-            <Button type="submit" disabled={busy || selected.size === 0}>
+            <Button
+              type="submit"
+              disabled={busy || (selectedServers.size === 0 && selectedResources.size === 0)}
+            >
               {busy ? 'Creating…' : 'Create profile'}
             </Button>
           </div>
