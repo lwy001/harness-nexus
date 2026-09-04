@@ -23,6 +23,7 @@ import { planInstall } from './install/planner.js';
 import { resolveProfile } from './install/resolver.js';
 import { supportedTargets } from './install/registry.js';
 import { getHermesPlanWarnings } from './install/adapters/hermes.js';
+import { applyUninstall, planUninstall } from './install/uninstaller.js';
 import type { InstallPlan } from './install/types.js';
 import type { AgentTarget } from '@harness-nexus/core';
 
@@ -30,15 +31,24 @@ const HELP = `harness-nexus (hnx) — install profiles into Agent tools
 
 Usage:
   hnx install --profile <id> --server <url> --token <pat> [options]
+  hnx uninstall --target <t> [--out <dir>] [--apply]
 
-Options:
+Install options:
   --profile <id>     Profile to install (required)
   --server <url>     Harness Nexus server base URL (required)
   --token <pat>      PAT or JWT for authentication (required)
   --target <t>       Override target (default: the profile's own target)
   --apply            Write files (default: dry-run, prints the plan only)
   --out <dir>        Override the install root (default: the target's native home)
-  -h, --help         Show this help
+
+Uninstall options:
+  --target <t>       Target whose ledger to reverse (required)
+  --out <dir>        Same install-root override used at install time
+  --apply            Actually remove/restore (default: dry-run, prints steps)
+                      Files you edited after install are kept as *.hnx.bak
+
+To upgrade an install, run the same 'hnx install --apply' again — the plan
+rewrites its own entries (idempotent) and the ledger is refreshed.
 
 Supported targets: ${supportedTargets().join(', ')}
 (zcode is in the enum but has no install adapter.)
@@ -55,8 +65,9 @@ interface InstallArgs {
   out?: string;
 }
 
-/** Minimal hand-written argv parser (zero runtime deps). */
-function parseArgs(argv: string[]): InstallArgs {
+/** Minimal hand-written argv parser (zero runtime deps). `loose` skips the
+ * install-only required-arg checks (uninstall needs just --target). */
+function parseArgs(argv: string[], loose = false): InstallArgs {
   const args: InstallArgs = { profile: '', server: '', token: '', apply: false };
 
   for (let i = 0; i < argv.length; i++) {
@@ -89,6 +100,8 @@ function parseArgs(argv: string[]): InstallArgs {
         throw new InstallError(`Unknown argument: ${a}`, 'VALIDATION_FAILED');
     }
   }
+
+  if (loose) return args;
 
   for (const [k, v] of [
     ['--profile', args.profile],
@@ -185,6 +198,52 @@ async function runInstall(args: InstallArgs): Promise<void> {
   }
 }
 
+/** Render an uninstall plan for the dry-run preview. */
+function formatUninstallPlan(plan: import('./install/uninstaller.js').UninstallPlan): string {
+  const lines = [
+    `target:     ${plan.profile.name} (installed ${plan.installedAt})`,
+    `root:       ${plan.targetRoot}`,
+    `steps:      ${plan.steps.length}`,
+    '',
+  ];
+  for (const [i, s] of plan.steps.entries()) {
+    const flag = s.conflicts ? ' [modified since install → .hnx.bak]' : s.exists ? '' : ' [already gone]';
+    lines.push(`  [${i + 1}] ${s.action.padEnd(7)} ${s.destinationPath}${flag}`);
+  }
+  return lines.join('\n');
+}
+
+function runUninstall(args: { target?: string; apply: boolean; out?: string }): number {
+  if (!args.target) {
+    throw new InstallError('Missing required argument --target', 'VALIDATION_FAILED');
+  }
+  const plan = planUninstall({
+    target: args.target as AgentTarget,
+    input: args.out ? { outDir: args.out } : {},
+  });
+  if (!plan) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `hnx: no install-state ledger found for target '${args.target}' — nothing installed (or already uninstalled).`,
+    );
+    return 1;
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(formatUninstallPlan(plan));
+  if (!args.apply) {
+    // eslint-disable-next-line no-console
+    console.log('\n(dry-run — nothing removed. Add --apply to uninstall.)');
+    return 0;
+  }
+  const touched = applyUninstall(plan);
+  // eslint-disable-next-line no-console
+  console.log(`\nUninstalled: ${touched} file(s) restored or removed.`);
+  // eslint-disable-next-line no-console
+  console.log('Reminder: manual steps from install (e.g. plugins.enabled, env vars) are yours to undo.');
+  return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
   const [, , subcommand, ...rest] = argv;
 
@@ -194,16 +253,19 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  if (subcommand === 'install') {
+  if (subcommand === 'install' || subcommand === 'uninstall') {
     if (rest.includes('-h') || rest.includes('--help')) {
       // eslint-disable-next-line no-console
       console.log(HELP);
       return 0;
     }
     try {
-      const args = parseArgs(rest);
-      await runInstall(args);
-      return 0;
+      if (subcommand === 'install') {
+        const args = parseArgs(rest);
+        await runInstall(args);
+        return 0;
+      }
+      return runUninstall(parseArgs(rest, /* loose */ true));
     } catch (e) {
       if (e instanceof InstallError) {
         // eslint-disable-next-line no-console

@@ -13,23 +13,33 @@ import type { InstallPlan } from './types.js';
 
 export const INSTALL_STATE_SCHEMA_VERSION = 'harness-nexus.install.v1';
 
+/**
+ * One ledger operation: the plan op plus the pre-install snapshot of the
+ * destination file (`null` = the file did not exist). Snapshots live ONLY in
+ * the ledger — plans stay pure — and are what `hnx uninstall` restores.
+ */
+export type LedgerOperation = InstallPlan['operations'][number] & {
+  previousContent?: string | null;
+};
+
 export interface InstallState {
   schemaVersion: typeof INSTALL_STATE_SCHEMA_VERSION;
   installedAt: string;
   target: { id: string; target: string; kind: string; root: string };
   profile: { id: string; name: string; version: string };
-  operations: InstallPlan['operations'];
+  operations: LedgerOperation[];
 }
 
 /** Write the ledger to its path inside the target root. */
 export function writeInstallState(
   plan: InstallPlan,
   state: Omit<InstallState, 'schemaVersion' | 'operations'>,
+  operations: LedgerOperation[] = plan.operations,
 ): void {
   const full: InstallState = {
     schemaVersion: INSTALL_STATE_SCHEMA_VERSION,
     ...state,
-    operations: plan.operations,
+    operations,
   };
   fs.mkdirSync(path.dirname(plan.installStatePath), { recursive: true });
   fs.writeFileSync(plan.installStatePath, `${JSON.stringify(full, null, 2)}\n`, 'utf8');

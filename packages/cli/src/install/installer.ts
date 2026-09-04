@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { InstallError } from '../errors.js';
-import { writeInstallState } from './install-state.js';
+import { writeInstallState, type LedgerOperation } from './install-state.js';
 import type { InstallPlan, Operation } from './types.js';
 
 /** True for plain objects (not arrays/null) — used by deepMergeJson. */
@@ -31,6 +31,14 @@ export function deepMergeJson(base: unknown, patch: unknown): unknown {
         : structuredClone(v);
   }
   return merged;
+}
+
+/** Capture the destination's pre-install content for the ledger (null = absent). */
+function snapshot(op: Operation): LedgerOperation {
+  const previousContent = fs.existsSync(op.destinationPath)
+    ? fs.readFileSync(op.destinationPath, 'utf8')
+    : null;
+  return { ...op, previousContent };
 }
 
 function applyOperation(op: Operation): void {
@@ -56,15 +64,21 @@ function applyOperation(op: Operation): void {
 
 /**
  * Materialize a plan to disk. Creates parent dirs, writes every operation, then
- * records the install-state ledger. If the plan is sensitive, the target root
- * gets restrictive permissions (0700).
+ * records the install-state ledger — each ledger op carrying the pre-install
+ * snapshot of its destination (`null` if absent), which is what
+ * `hnx uninstall` restores. If the plan is sensitive, the target root gets
+ * restrictive permissions (0700).
  */
 export function applyInstall(
   plan: InstallPlan,
   meta: { profileId: string; profileName: string; profileVersion: string },
 ): void {
+  const ledgerOps: LedgerOperation[] = [];
   try {
-    for (const op of plan.operations) applyOperation(op);
+    for (const op of plan.operations) {
+      ledgerOps.push(snapshot(op));
+      applyOperation(op);
+    }
   } catch (e) {
     throw new InstallError(
       `Failed to write ${plan.operations.length} operations: ${(e as Error).message}`,
@@ -73,16 +87,20 @@ export function applyInstall(
     );
   }
 
-  writeInstallState(plan, {
-    installedAt: new Date().toISOString(),
-    target: {
-      id: plan.adapter.id,
-      target: plan.adapter.target,
-      kind: plan.adapter.kind,
-      root: plan.targetRoot,
+  writeInstallState(
+    plan,
+    {
+      installedAt: new Date().toISOString(),
+      target: {
+        id: plan.adapter.id,
+        target: plan.adapter.target,
+        kind: plan.adapter.kind,
+        root: plan.targetRoot,
+      },
+      profile: { id: meta.profileId, name: meta.profileName, version: meta.profileVersion },
     },
-    profile: { id: meta.profileId, name: meta.profileName, version: meta.profileVersion },
-  });
+    ledgerOps,
+  );
 
   if (plan.sensitive) {
     try {
