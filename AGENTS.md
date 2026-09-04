@@ -290,6 +290,53 @@ not_proxy | not_connected`) mapped to HTTP by `mapRegistryError` in the route �
   `inputSchema` params + Refresh). Direct rows show a neutral hint, no controls.
   Sub-components live at module scope (React perf rule).
 
+## Marketplace emitter for Claude Code (Phase 3.5)
+
+Full design in `docs/design/phase-3.5-marketplace-emitter.md`; empirical
+ground truth in `docs/research/phase-3.5-marketplace-emitter-spike.md`.
+Summary for daily work:
+
+- **The preferred install path for claude-code targets.** The server EMITS a
+  CC-native plugin marketplace; Claude Code owns install/update/uninstall via
+  `archive` (zip) plugin sources — no client-side writes, no install-state
+  ledger on this path (contrast the 3.3/3.4 adapter pipeline for Hermes etc.).
+  User flow: `claude plugin marketplace add
+<PUBLIC_BASE_URL>/api/marketplace/<PAT>/marketplace.json` →
+  `claude plugin install <profile>@harness-nexus-<username>`.
+- **Auth is PAT-in-path, not headers.** Claude's plugin flow can't reliably
+  send Authorization headers (spike-verified: `extraKnownMarketplaces`
+  headers only apply on some internal refresh paths), so both routes resolve
+  the token from the URL. Unknown/revoked token → `404 MARKETPLACE_NOT_FOUND`
+  (no existence leak). The routes sit OUTSIDE `requireAuth` and set `req.user`
+  themselves (`modules/marketplace.ts`).
+- **Two routes**: `GET /api/marketplace/:token/marketplace.json` (one
+  marketplace per user, name `harness-nexus-<username>` — CC rejects
+  name/URL remixing, so uniqueness matters) and `GET
+/api/marketplace/:token/archives/:profileId.zip` (built on the fly by
+  `MarketplaceEmitter`, `server/src/marketplace/emitter.ts`, decorated as
+  `app.marketplaceEmitter`). Only `target === 'claude-code'` + visible
+  profiles appear.
+- **Zip layout is claude-native**: `.claude-plugin/plugin.json` (warnings
+  ride the description — the only post-install channel), `.mcp.json` (proxy
+  entries collapse into the aggregated `/mcp?profile=<id>` endpoint with a
+  `${HN_PAT_<SLUG>}` env placeholder; direct entries verbatim with
+  `${cred:NAME}` unresolved), `skills/` (skills + rules wrapped as skills —
+  CC plugins have no always-on rules), `commands/`, `agents/`,
+  `hooks/hooks.json` (filtered by `HOOK_SUPPORT['claude-code']`).
+- **Profile entries gained a second REST arm** (3.5): `{ resourceId, kind }`
+  for every non-mcp resource kind, alongside 2.2's `{ mcpServerId }`.
+  `resolveEntries` validates visibility for both; violation → `409
+ENTRY_TARGET_NOT_ACCESSIBLE`. The web profile editor still only edits MCP
+  entries (resource-entry editing is follow-up UI work).
+- **Config**: `PUBLIC_BASE_URL` (default `http://localhost:8080`) — MUST be
+  the public HTTPS origin in production: Claude Code enforces `https://` +
+  non-loopback on archive URLs, and requires CLI ≥2.1.224 for `archive`
+  sources. Dev workaround: LAN IP + self-signed CA + `NODE_EXTRA_CA_CERTS`.
+- **`archive` source kind added to `marketplaceSourceSchema`** (shared) —
+  emit and parse share one schema; `marketplacePluginToResourceSource`
+  returns `null` for archive entries (no faithful plugin-source mapping), and
+  the hub UI hides "Save as skill" for those rows.
+
 ## Resource management (Phase 4.2–4.3)
 
 Full design in `docs/design/phase-4-web-ui.md`. Summary for daily work:
@@ -475,14 +522,16 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
 
 - 4 adapters (github/well-known/url/marketplace) + `/api/skills/search`
   (Phase 7.4 — **Phase 7 complete**). **Phase 3** is partly done: 3.1
-  (`McpServer.mode` + stdio-in-direct) and 3.2 (`Profile.target`, immutable) are
-  shipped; the install pipeline (3.3+) is restructured around the ECC
-  adapter-factory pattern (target adapter per tool + plan/apply + install-state
-  ledger), with priority **Hermes → Claude Code → Codex**. `zcode` is in the
-  `AgentTarget` enum but has no install adapter (no reproducible reference).
-  See `docs/roadmap.md` for what remains. Still NOT done: the install pipeline,
-  the stdio bridge entry, ECC/Superpower **import** adapters, the ACP bridge,
-  Channels, LLM-WIKI, memory/notes. **Phase 2.3 (callable-function scripts) is
-  on hold** — not currently planned. When you add the first real logic for a
-  pillar, also add tests (vitest, not yet wired) and update the relevant `docs/`
-  file.
+  (`McpServer.mode` + stdio-in-direct), 3.2 (`Profile.target`, immutable), 3.3
+  (install pipeline skeleton: adapter factory + plan/apply + install-state
+  ledger + `hnx install` CLI), 3.4 (Hermes adapter), and 3.5 (the Claude Code
+  **marketplace emitter** — profiles served as a native CC plugin marketplace
+  over HTTP, plus the `{resourceId, kind}` profile-entry arm) are shipped.
+  Remaining: 3.6 Codex adapter, 3.7 cross-target import, 3.8 other agents +
+  ECC/Superpower import adapters, the local-write CC fallback adapter, the
+  stdio bridge entry, the ACP bridge, Channels, LLM-WIKI, memory/notes.
+  `zcode` is in the `AgentTarget` enum but has no install adapter (no
+  reproducible reference). See `docs/roadmap.md` for what remains. **Phase 2.3
+  (callable-function scripts) is on hold** — not currently planned. When you
+  add the first real logic for a pillar, also add tests (vitest, not yet
+  wired) and update the relevant `docs/` file.

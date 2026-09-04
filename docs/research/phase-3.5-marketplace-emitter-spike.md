@@ -3,7 +3,7 @@
 > Status: **spike complete** (2026-09-04). All findings below are empirical,
 > verified against a live `claude plugin marketplace add` / `install` /
 > `update` / `uninstall` cycle on this machine — not read from docs alone.
-> Test rig: zero-dep Node `http`/`https` servers (this is *not* the production
+> Test rig: zero-dep Node `http`/`https` servers (this is _not_ the production
 > emitter), claude **2.1.205** (system) and **2.1.260** (sandboxed npm copy),
 > `CLAUDE_CONFIG_DIR` sandbox so the real `~/.claude` was never touched.
 
@@ -31,20 +31,20 @@ natively by the Claude CLI. Details and sharp edges below.
 - `… add http://…/weird/marketplace.json` served as `text/plain` → ✔
   (Content-Type is **not** validated; only the body is parsed)
 
-So the *catalog* fetch is maximally permissive. The restrictions all live on
+So the _catalog_ fetch is maximally permissive. The restrictions all live on
 the **archive** (plugin payload) side.
 
 ### 2. `archive` plugin source: needs claude ≥ 2.1.224, HTTPS, and a non-loopback host
 
-On **2.1.205**: install fails with *"This plugin uses a source type your
-Claude Code version does not support. Update Claude Code and try again."*
+On **2.1.205**: install fails with _"This plugin uses a source type your
+Claude Code version does not support. Update Claude Code and try again."_
 (notably: it downloads the zip first, then rejects at validation — the version
 gate is client-side post-download).
 
 On **2.1.260**: install succeeds, with a hard SSRF guard on the archive URL:
 
 > `source.url: Archive URLs must use https:// and must not point at a loopback,
-> link-local, or cloud-metadata host`
+link-local, or cloud-metadata host`
 
 Consequences for us:
 
@@ -75,19 +75,20 @@ archive downloads. **Empirically this is only partially true** (on 2.1.260):
   `settings.json` does **not** auto-register the marketplace.
 - CLI `claude plugin marketplace add <url>` fetches **without** the declared
   headers (our gated server saw an unauthenticated request → 403).
-- Some internal refresh path *did* send the header (one authenticated request
+- Some internal refresh path _did_ send the header (one authenticated request
   hit the server), but the install still failed — the mechanism is not
   reliable enough to build on from user-level settings. (Possibly it behaves
-  better from enterprise *managed* settings; untested.)
+  better from enterprise _managed_ settings; untested.)
 
 **The robust pattern is a capability URL**: embed a per-user secret token in
 the path and serve both endpoints under it —
 `/emit/<token>/marketplace.json` and `/emit/<token>/archives/<plugin>.zip`.
 Then plain `claude plugin marketplace add https://host/emit/<token>/marketplace.json`
-+ `plugin install` works with zero client-side configuration, on any
-archive-capable version, because every fetch (catalog and archive, same
-origin) authenticates by URL alone. Wrong token → 404 (indistinguishable
-from nonexistent, no existence leak — same posture as our API 404 policy).
+
+- `plugin install` works with zero client-side configuration, on any
+  archive-capable version, because every fetch (catalog and archive, same
+  origin) authenticates by URL alone. Wrong token → 404 (indistinguishable
+  from nonexistent, no existence leak — same posture as our API 404 policy).
 
 Security note: the token rides in URLs (stored in the user's claude settings
 and cache). That is the same trust level as a PAT used as a bearer token;
@@ -98,8 +99,8 @@ forces re-`add`).
 ### 5. Update & uninstall are native and clean
 
 - Bumping the plugin version inside the zip + `claude plugin marketplace
-  update <mp>` + `claude plugin update <plugin>` → *"updated from 0.1.0 to
-  0.2.0"*, re-downloads the archive. ✔
+update <mp>` + `claude plugin update <plugin>` → _"updated from 0.1.0 to
+  0.2.0"_, re-downloads the archive. ✔
 - `claude plugin uninstall <plugin>@<mp>` → clean removal. ✔
 
 This is the core appeal: **Harness Nexus emits; Claude Code owns the install
@@ -126,7 +127,7 @@ Hermes adapter, where our ledger is the only reliable uninstall record).
    (profile → plugin zip built on the fly). PAT-gated by token-in-path.
 2. **No auth headers, no settings provisioning** — the flow must stay
    `marketplace add <one URL>` on a stock CLI.
-3. **Zip assembly reuses the adapter vocabulary.** The zip *contents* are
+3. **Zip assembly reuses the adapter vocabulary.** The zip _contents_ are
    target-format files (`.claude-plugin/plugin.json`, `skills/…`); for
    claude-code the plugin layout is native; the same emitter can later serve
    other archive-capable consumers if they appear.
@@ -137,7 +138,7 @@ Hermes adapter, where our ledger is the only reliable uninstall record).
    ≥ 2.1.224; loopback-only deployments can't use this path (dev workaround:
    LAN IP + `NODE_EXTRA_CA_CERTS`).
 6. **Relationship to the adapter pipeline**: not a replacement. Marketplace
-   emission is the *preferred path for claude-code targets* (and any
+   emission is the _preferred path for claude-code targets_ (and any
    archive-capable CLI); the 3.3/3.4 adapter pipeline remains the path for
    Hermes (3.4, shipped) and future targets without a native marketplace
    (Codex etc.).

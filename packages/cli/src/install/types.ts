@@ -68,7 +68,11 @@ export interface ValidationIssue {
  */
 export type ResolvedArtifact =
   | { entryId: string; kind: 'mcp'; mcpServer: McpServer }
-  | { entryId: string; kind: Exclude<Profile['entries'][number]['kind'], 'mcp'>; resource: Resource };
+  | {
+      entryId: string;
+      kind: Exclude<Profile['entries'][number]['kind'], 'mcp'>;
+      resource: Resource;
+    };
 
 /** A profile plus every entry's artifact, fetched from the server. */
 export interface ResolvedProfile {

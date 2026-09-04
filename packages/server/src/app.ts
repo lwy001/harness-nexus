@@ -19,6 +19,8 @@ import { profilesRoutes } from './modules/profiles.js';
 import { resourcesRoutes } from './modules/resources.js';
 import { skillsRoutes } from './modules/skills.js';
 import { mountMcpProxy } from './mcp/proxy.js';
+import { marketplaceRoutes } from './modules/marketplace.js';
+import { MarketplaceEmitter } from './marketplace/emitter.js';
 import { SkillCatalogService } from './infra/source-fetchers/catalog-service.js';
 import { parseAllowlist, type MarketplaceEntry } from './infra/source-fetchers/allowlist.js';
 import { createMarketplaceFetcher } from './infra/source-fetchers/factory.js';
@@ -119,6 +121,15 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   });
   app.decorate('skillSearch', skillSearch);
 
+  // Phase 3.5 — marketplace emitter (read-only Claude Code plugin catalog +
+  // per-profile archive zips). PAT-in-path routes; see modules/marketplace.ts.
+  const marketplaceEmitter = new MarketplaceEmitter({
+    uow,
+    publicBaseUrl: config.publicBaseUrl,
+    logger: app.log,
+  });
+  app.decorate('marketplaceEmitter', marketplaceEmitter);
+
   // Auth hook must be registered on the root instance (not inside a child
   // plugin context) so it applies to all routes. See plugins/auth.ts.
   registerAuthHook(app);
@@ -152,6 +163,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await profilesRoutes(api);
     await resourcesRoutes(api);
     await skillsRoutes(api);
+    await marketplaceRoutes(api);
   });
 
   await mountMcpProxy(app);

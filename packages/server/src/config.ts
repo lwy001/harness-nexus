@@ -19,6 +19,15 @@ export interface ServerConfig {
   /** Key material for encrypting Credential secrets (AES-256-GCM). */
   credentialEncryptionKey: string;
   /**
+   * Phase 3.5 — the absolute origin this server is reachable at from Agent
+   * tools' perspective (e.g. the public Caddy HTTPS front door). Used to build
+   * the archive URLs inside the emitted marketplace.json and the `/mcp`
+   * endpoint inside plugin `.mcp.json` blocks. Claude Code enforces
+   * `https://` + non-loopback on archive URLs, so production MUST set this to
+   * the public HTTPS origin.
+   */
+  publicBaseUrl: string;
+  /**
    * Phase 7.2 — comma-separated marketplace allowlist (`name=owner/repo` or
    * `name=url`). The server's only outbound-fetch surface. See
    * `infra/source-fetchers/allowlist.ts`.
@@ -79,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jwtIssuer: env.JWT_ISSUER ?? 'harnessnexus',
     jwtAccessTtl: env.JWT_ACCESS_TTL ?? '7d',
     credentialEncryptionKey: env.CREDENTIAL_ENCRYPTION_KEY ?? jwtSecret,
+    publicBaseUrl: (env.PUBLIC_BASE_URL ?? 'http://localhost:8080').replace(/\/$/, ''),
     marketplaceAllowlist:
       env.MARKETPLACE_ALLOWLIST ?? 'claude-plugins-official=anthropics/claude-plugins-official',
     marketplaceFetchTtlMs: Number(env.MARKETPLACE_FETCH_TTL_MS ?? '3600000'),

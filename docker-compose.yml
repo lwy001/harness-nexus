@@ -18,7 +18,7 @@ services:
     # image: ghcr.io/sinrimin/harness-nexus:latest   # swap in once published
     container_name: harness-nexus-server
     expose:
-      - "8080"
+      - '8080'
     volumes:
       - ./data:/data
     env_file:
@@ -39,7 +39,7 @@ services:
       # Caddy (see /etc/caddy/Caddyfile), which listens on :15921 publicly and
       # reverse-proxies to this internal port. 127.0.0.1 keeps plain HTTP off
       # the public interface. (15922, NOT 15921 — Caddy owns public 15921.)
-      - "127.0.0.1:15922:80"
+      - '127.0.0.1:15922:80'
     depends_on:
       server:
         condition: service_healthy # wait for backend HEALTHCHECK to pass

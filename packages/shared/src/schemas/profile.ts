@@ -55,11 +55,27 @@ export type ProfileManifest = z.infer<typeof profileManifestSchema>;
 
 const scopeSchema = z.enum(['global', 'personal']);
 
-export const profileEntryInputSchema = z.object({
-  /** The McpServer.id this entry includes (2.2 maps resourceId → McpServer.id). */
-  mcpServerId: z.string().min(1),
-  pinnedVersion: z.string().optional(),
-});
+/**
+ * A profile entry as accepted by the REST endpoints. Two arms:
+ *  - `{ mcpServerId }` — the Phase 2.2 shape (kind is implicitly 'mcp'; the
+ *    id is the McpServer.id directly). Kept for back-compat.
+ *  - `{ resourceId, kind }` — Phase 3.5: a Resource reference for every other
+ *    kind (skill / rule / command / sub_agent / hook). 'mcp' is excluded here
+ *    because MCP servers are managed via /api/mcp-servers, not /api/resources
+ *    (AVAILABLE_KINDS parity) — the mcpServerId arm is THE way to add them.
+ */
+export const profileEntryInputSchema = z.union([
+  z.object({
+    mcpServerId: z.string().min(1),
+    pinnedVersion: z.string().optional(),
+  }),
+  z.object({
+    resourceId: z.string().min(1),
+    kind: resourceKindSchema.exclude(['mcp']),
+    pinnedVersion: z.string().optional(),
+    installOptions: z.record(z.string(), z.unknown()).optional(),
+  }),
+]);
 
 export const createProfileSchema = z.object({
   name: z.string().min(1).max(64),

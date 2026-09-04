@@ -66,7 +66,7 @@ const { createInstallTargetAdapter } = require('./helpers');
 module.exports = createInstallTargetAdapter({
   id: 'hermes-home',
   target: 'hermes',
-  kind: 'home',                              // 'home' (~/.xxx) | 'project' (./.xxx)
+  kind: 'home', // 'home' (~/.xxx) | 'project' (./.xxx)
   rootSegments: ['.hermes'],
   installStatePathSegments: ['ecc-install-state.json'],
   nativeRootRelativePath: '.hermes',
@@ -75,14 +75,14 @@ module.exports = createInstallTargetAdapter({
 
 The factory supplies default behavior, all overridable:
 
-| Method | Default | Purpose |
-| --- | --- | --- |
-| `supports(target)` | match by `target` or `id` | registry lookup |
-| `resolveRoot(input)` | `<homeDir\|projectRoot>/<rootSegments>` | where files land |
-| `getInstallStatePath(input)` | `<root>/<installStatePathSegments>` | ledger location |
-| `planOperations(input)` | **the contract** — turn modules+paths into file ops, dropping foreign-platform paths | the per-target customization point |
-| `validate(input)` | require homeDir / projectRoot | gate before planning |
-| `supportsModule(module)` | `true` | per-module target gate |
+| Method                       | Default                                                                              | Purpose                            |
+| ---------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- |
+| `supports(target)`           | match by `target` or `id`                                                            | registry lookup                    |
+| `resolveRoot(input)`         | `<homeDir\|projectRoot>/<rootSegments>`                                              | where files land                   |
+| `getInstallStatePath(input)` | `<root>/<installStatePathSegments>`                                                  | ledger location                    |
+| `planOperations(input)`      | **the contract** — turn modules+paths into file ops, dropping foreign-platform paths | the per-target customization point |
+| `validate(input)`            | require homeDir / projectRoot                                                        | gate before planning               |
+| `supportsModule(module)`     | `true`                                                                               | per-module target gate             |
 
 Adapters needing transformation override `planOperations` (Claude remaps
 `rules/**`→`rules/ecc/**`; Cursor flattens to `.mdc`; OpenCode requires a build
@@ -139,11 +139,11 @@ resolver:
 `applyInstallPlan` (`scripts/lib/install/apply.js:163`) loops operations of three
 kinds:
 
-| Operation | Action |
-| --- | --- |
-| `copy-file` / `copy-path` | `fs.copyFileSync` |
-| `merge-json` | deep-merge into existing config, `fs.writeFileSync` — used for `.mcp.json`/`mcp.json` |
-| markdown link rewrite | rewrite relative links under `rules/ecc` to installed location |
+| Operation                 | Action                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| `copy-file` / `copy-path` | `fs.copyFileSync`                                                                     |
+| `merge-json`              | deep-merge into existing config, `fs.writeFileSync` — used for `.mcp.json`/`mcp.json` |
+| markdown link rewrite     | rewrite relative links under `rules/ecc` to installed location                        |
 
 **Harness Nexus adoption:** `hnx install --profile <id>` defaults to **plan**
 (dry-run, prints what would happen); `--apply` materializes. The plan is the
@@ -167,7 +167,11 @@ one source-of-truth (`.mcp.json`):
 
 ```jsonc
 // ECC's single MCP source-of-truth: .mcp.json (abridged)
-{ "mcpServers": { "chrome-devtools": { "command": "npx", "args": ["-y","chrome-devtools-mcp@latest"] } } }
+{
+  "mcpServers": {
+    "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"] },
+  },
+}
 ```
 
 **Harness Nexus adoption:** our proxy-mode MCP emission (single aggregated
@@ -205,17 +209,17 @@ follow but the ledger is written from day one so the surface exists.
 This is the target with zero prior research in Harness Nexus; ECC fills the gap
 with ground-truth files:
 
-| Aspect | Codex value |
-| --- | --- |
-| Manifest path | `.codex-plugin/plugin.json` |
-| Manifest format | **JSON**, with a unique `interface` block (`displayName`, `brandColor`, `composerIcon`, `defaultPrompt`, `capabilities`, …) |
-| `skills` field | **string path** `"./skills/"` (CC uses an array) |
-| `mcpServers` field | **path reference** `"./.mcp.json"` (CC uses inline object) |
-| Config format | **TOML** `config.toml` (`#:schema .../codex/config-schema.json`) — NOT JSON |
-| MCP config | `[mcp_servers.*]` TOML sections; **stdio-only** (command/args; `url` refused) |
-| Memory/rules | `AGENTS.md` at project root (auto-injected); `persistent_instructions` appended to every prompt |
-| Prompts | `~/.codex/prompts/<name>.md` (generated from commands, YAML frontmatter stripped) |
-| Adapter | minimal (`rootSegments: ['.codex']`) — heavy lifting is separate TOML mergers |
+| Aspect             | Codex value                                                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Manifest path      | `.codex-plugin/plugin.json`                                                                                                 |
+| Manifest format    | **JSON**, with a unique `interface` block (`displayName`, `brandColor`, `composerIcon`, `defaultPrompt`, `capabilities`, …) |
+| `skills` field     | **string path** `"./skills/"` (CC uses an array)                                                                            |
+| `mcpServers` field | **path reference** `"./.mcp.json"` (CC uses inline object)                                                                  |
+| Config format      | **TOML** `config.toml` (`#:schema .../codex/config-schema.json`) — NOT JSON                                                 |
+| MCP config         | `[mcp_servers.*]` TOML sections; **stdio-only** (command/args; `url` refused)                                               |
+| Memory/rules       | `AGENTS.md` at project root (auto-injected); `persistent_instructions` appended to every prompt                             |
+| Prompts            | `~/.codex/prompts/<name>.md` (generated from commands, YAML frontmatter stripped)                                           |
+| Adapter            | minimal (`rootSegments: ['.codex']`) — heavy lifting is separate TOML mergers                                               |
 
 **The Codex dual-path lesson (improve, don't copy):** ECC installs Codex via
 **two parallel paths** — the Node `codex-home` adapter (skills/rules) AND a
@@ -231,30 +235,30 @@ Confidence: medium. ECC's `hermes-home` adapter is minimal (`rootSegments:
 but the full `plugin.yaml` schema still needs verification against
 `hermes_cli/plugins.py` before the Hermes adapter ships (Phase 3.4).
 
-| Aspect | Hermes value |
-| --- | --- |
-| Manifest path | `plugin.yaml` (Python plugin) **and** lighter "Skill Bundle" (MD-only, closer analog) |
-| Manifest format | **YAML** |
-| Config format | **YAML** `config.yaml` `mcp_servers:` block — **no `.mcp.json`** for its own servers |
-| MCP config | YAML map; HTTP (`url:`) or stdio (`command:`/`args:`) |
-| Memory/rules | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` — **all auto-injected** at project root |
-| Skills | `~/.hermes/skills/<name>/` (SKILL.md-compatible) |
-| Distribution | `hermes skills add <github-repo>`; Python entry-points; local folder drop-in |
-| Hook model | structurally different (Python plugins) — declarative `hooks.json` does NOT apply; `HOOK_SUPPORT.hermes = null` |
+| Aspect          | Hermes value                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------- |
+| Manifest path   | `plugin.yaml` (Python plugin) **and** lighter "Skill Bundle" (MD-only, closer analog)                           |
+| Manifest format | **YAML**                                                                                                        |
+| Config format   | **YAML** `config.yaml` `mcp_servers:` block — **no `.mcp.json`** for its own servers                            |
+| MCP config      | YAML map; HTTP (`url:`) or stdio (`command:`/`args:`)                                                           |
+| Memory/rules    | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` — **all auto-injected** at project root                                |
+| Skills          | `~/.hermes/skills/<name>/` (SKILL.md-compatible)                                                                |
+| Distribution    | `hermes skills add <github-repo>`; Python entry-points; local folder drop-in                                    |
+| Hook model      | structurally different (Python plugins) — declarative `hooks.json` does NOT apply; `HOOK_SUPPORT.hermes = null` |
 
 ## Claude Code — concrete format (reference target, high confidence)
 
 Unchanged from prior research; included for the comparison table:
 
-| Aspect | Claude Code value |
-| --- | --- |
-| Manifest path | `.claude-plugin/plugin.json` |
-| Manifest format | **JSON** |
-| MCP config | `.mcp.json` or manifest `mcpServers` (**JSON**); uses `${CLAUDE_PLUGIN_ROOT}`, `${user_config.*}` |
-| Memory/rules | **cannot** auto-load `CLAUDE.md` from a plugin — wrap rules as a skill |
-| Sub-agents | `agents/*.md` (frontmatter); `hooks`/`mcpServers`/`permissionMode` forbidden in plugin agents |
-| Hook events | ~30 (full declarative set) |
-| Install | `claude plugin install <name>@<marketplace>`; dev sideload `claude --plugin-dir` |
+| Aspect          | Claude Code value                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| Manifest path   | `.claude-plugin/plugin.json`                                                                      |
+| Manifest format | **JSON**                                                                                          |
+| MCP config      | `.mcp.json` or manifest `mcpServers` (**JSON**); uses `${CLAUDE_PLUGIN_ROOT}`, `${user_config.*}` |
+| Memory/rules    | **cannot** auto-load `CLAUDE.md` from a plugin — wrap rules as a skill                            |
+| Sub-agents      | `agents/*.md` (frontmatter); `hooks`/`mcpServers`/`permissionMode` forbidden in plugin agents     |
+| Hook events     | ~30 (full declarative set)                                                                        |
+| Install         | `claude plugin install <name>@<marketplace>`; dev sideload `claude --plugin-dir`                  |
 
 ## ZCode — no reference (explicitly out of scope)
 
@@ -267,16 +271,16 @@ revived if a reference surfaces.
 
 ## Target comparison matrix (the design input)
 
-| Aspect | Hermes | Claude Code | Codex |
-| --- | --- | --- | --- |
-| Priority | **1st** | 2nd | 3rd |
-| Confidence | Medium (verify `hermes_cli/`) | High | High (via ECC) |
-| Manifest | `plugin.yaml` **YAML** | `.claude-plugin/plugin.json` **JSON** | `.codex-plugin/plugin.json` **JSON** (+`interface`) |
-| Config | `config.yaml` **YAML** | `.mcp.json` **JSON** | `config.toml` **TOML** |
-| MCP block | `mcp_servers:` YAML | `mcpServers` JSON | `[mcp_servers.*]` TOML, **stdio-only** |
-| Memory | `AGENTS.md` auto-inject | wrap-as-skill (no auto-load) | `AGENTS.md` auto-inject |
-| Hooks | `null` (Python model) | ~30 events | via config/prompts |
-| MCP `url`? | ✅ | ✅ | ❌ (stdio-only) |
+| Aspect     | Hermes                        | Claude Code                           | Codex                                               |
+| ---------- | ----------------------------- | ------------------------------------- | --------------------------------------------------- |
+| Priority   | **1st**                       | 2nd                                   | 3rd                                                 |
+| Confidence | Medium (verify `hermes_cli/`) | High                                  | High (via ECC)                                      |
+| Manifest   | `plugin.yaml` **YAML**        | `.claude-plugin/plugin.json` **JSON** | `.codex-plugin/plugin.json` **JSON** (+`interface`) |
+| Config     | `config.yaml` **YAML**        | `.mcp.json` **JSON**                  | `config.toml` **TOML**                              |
+| MCP block  | `mcp_servers:` YAML           | `mcpServers` JSON                     | `[mcp_servers.*]` TOML, **stdio-only**              |
+| Memory     | `AGENTS.md` auto-inject       | wrap-as-skill (no auto-load)          | `AGENTS.md` auto-inject                             |
+| Hooks      | `null` (Python model)         | ~30 events                            | via config/prompts                                  |
+| MCP `url`? | ✅                            | ✅                                    | ❌ (stdio-only)                                     |
 
 The format divergence (YAML / JSON / TOML) is exactly why each target gets its
 **own adapter** rather than a shared "JSON-family" writer — Codex's TOML config
@@ -285,6 +289,7 @@ and unique manifest `interface` block make sharing with CC a conditional mess.
 ## What Harness Nexus takes, and what it leaves
 
 **Take:**
+
 - Target adapter factory (`createTargetAdapter(config)` + frozen adapter +
   overridable `planOperations`).
 - Foreign-platform path filtering (one source feeds N targets).
@@ -295,6 +300,7 @@ and unique manifest `interface` block make sharing with CC a conditional mess.
   config format).
 
 **Leave (ECC-specific, not our model):**
+
 - ECC's three-layer declaration (modules/profiles/components) — we use Profile +
   Resource.
 - ECC's 281 skills / 94 commands content.

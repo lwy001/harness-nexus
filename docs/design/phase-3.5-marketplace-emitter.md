@@ -6,7 +6,7 @@
 > `claude plugin add/install/update/uninstall` cycle.
 >
 > **This re-plans the old "3.5 Claude Code adapter".** Writing into `~/.claude`
-> ourselves is now the *fallback* (old CLI < 2.1.224, or airgapped hosts);
+> ourselves is now the _fallback_ (old CLI < 2.1.224, or airgapped hosts);
 > the preferred distribution path for claude-code targets is native
 > marketplace consumption. The adapter pipeline (3.3/3.4) is untouched and
 > remains the path for Hermes and future non-marketplace targets.
@@ -30,12 +30,12 @@ archives.
 
 1. **Token in URL = the user's PAT** (`hnpat_…`). No new entity, no new
    storage, no new UI. Trade-off: the add-URL is exactly as sensitive as a
-   CLI PAT (it *is* one) and rides in claude's `settings.json`; rotation =
+   CLI PAT (it _is_ one) and rides in claude's `settings.json`; rotation =
    new PAT + re-`add`. A dedicated, revocable emit token is future work
    (listed in roadmap) — the swap is contained in one resolver function.
 2. **One marketplace per user**, name `harness-nexus-<username>` (sanitized
    to claude's `[a-z0-9-]` expectations; unique per user — the spike showed
-   claude rejects re-adding a marketplace *name* from a different URL, so
+   claude rejects re-adding a marketplace _name_ from a different URL, so
    per-user uniqueness prevents collisions on shared machines).
 3. **One plugin per profile.** Plugin name = sanitized profile name;
    version = `profile.version` (editors bump it; `claude plugin update`
@@ -62,10 +62,10 @@ archives.
 Two GET routes under `packages/server/src/modules/marketplace.ts`, both
 bounded by a `marketplaceTokens` style preHandler that resolves the PAT:
 
-| Route | Returns |
-|---|---|
-| `GET /api/marketplace/:token/marketplace.json` | Catalog: every profile visible to the token's user; each entry's `source` = `{ source: 'archive', url: <PUBLIC_BASE_URL>/api/marketplace/<token>/archives/<profileId>.zip }` |
-| `GET /api/marketplace/:token/archives/:profileId.zip` | The profile assembled as a claude-code plugin zip |
+| Route                                                 | Returns                                                                                                                                                                      |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/marketplace/:token/marketplace.json`        | Catalog: every profile visible to the token's user; each entry's `source` = `{ source: 'archive', url: <PUBLIC_BASE_URL>/api/marketplace/<token>/archives/<profileId>.zip }` |
+| `GET /api/marketplace/:token/archives/:profileId.zip` | The profile assembled as a claude-code plugin zip                                                                                                                            |
 
 Visibility = the same scope filter as the profile list API (`global` +
 own `personal`; admin sees all). A profile the user can't see → `404`.
@@ -118,7 +118,7 @@ The install hint (plugin `description` suffix) tells the user to export
   builder. Depends on `UnitOfWork` (profiles + resources + mcp-servers), not
   on route handlers (mirrors how `mcp/registry.ts` stays transport-decoupled).
 - No `core` changes. No `shared` schema changes (the marketplace.json shape
-  we *emit* is a subset of `marketplaceCatalogSchema` minus the `archive`
+  we _emit_ is a subset of `marketplaceCatalogSchema` minus the `archive`
   source variant — extend `marketplaceSourceSchema` with the `archive` kind
   so emit and parse share one schema).
 - Web UI: deferred to a follow-up (the add-command string is trivially shown
@@ -136,12 +136,12 @@ The install hint (plugin `description` suffix) tells the user to export
 ## Out of scope (explicit)
 
 - Dedicated/rotatable emit tokens (PAT reuse only; swap point is one
-   function).
+  function).
 - Per-profile marketplaces, marketplace metadata editing, categories/tags
-   beyond what profiles already carry.
+  beyond what profiles already carry.
 - Local-write claude-code adapter (old-CLI fallback) — remains deferred,
-   re-numbered behind the emitter.
+  re-numbered behind the emitter.
 - ZCode marketplace consumption (its catalog format is the same shape per
-   our 7.2 schema, but ZCode stays out of install scope).
+  our 7.2 schema, but ZCode stays out of install scope).
 - Access-log redaction of the token (noted: the full URL appears in Fastify
-   request logs; acceptable for now, flagged in the security section).
+  request logs; acceptable for now, flagged in the security section).

@@ -104,7 +104,11 @@ function defaultPlanOperations(
   };
 
   const operations: Operation[] = [
-    { kind: 'write-file', content: `${JSON.stringify(meta, null, 2)}\n`, destinationPath: profileMetaPath },
+    {
+      kind: 'write-file',
+      content: `${JSON.stringify(meta, null, 2)}\n`,
+      destinationPath: profileMetaPath,
+    },
   ];
 
   return {

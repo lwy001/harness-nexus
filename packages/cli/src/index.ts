@@ -110,9 +110,7 @@ function printHermesHints(_plan: InstallPlan): void {
     );
   }
   if (w.patEnvKey) {
-    lines.push(
-      `  • Set the proxy MCP token: add '${w.patEnvKey}=<your-hn-pat>' to ~/.hermes/.env`,
-    );
+    lines.push(`  • Set the proxy MCP token: add '${w.patEnvKey}=<your-hn-pat>' to ~/.hermes/.env`);
   }
   if (w.skipped.length > 0) {
     lines.push(`  • Skipped (Hermes model incompatibility):`);
@@ -181,7 +179,9 @@ async function runInstall(args: InstallArgs): Promise<void> {
   console.log(`\nInstalled ${plan.operations.length} operation(s) into ${plan.targetRoot}.`);
   if (plan.sensitive) {
     // eslint-disable-next-line no-console
-    console.warn('WARNING: this install carries decrypted direct-mode credentials (chmod 0700 applied).');
+    console.warn(
+      'WARNING: this install carries decrypted direct-mode credentials (chmod 0700 applied).',
+    );
   }
 }
 

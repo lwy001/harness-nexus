@@ -43,7 +43,8 @@ export type PluginSourceShape =
   | { source: 'github'; repo: string }
   | { source: 'url'; url: string }
   | { source: 'git-subdir'; url: string }
-  | { source: 'npm'; package: string };
+  | { source: 'npm'; package: string }
+  | { source: 'archive'; url: string };
 
 /**
  * Resolve the trust tier for a plugin source. Rules (mirror Hermes

@@ -25,7 +25,10 @@ export function deepMergeJson(base: unknown, patch: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(patch)) return structuredClone(patch);
   const merged: Record<string, unknown> = { ...base };
   for (const [k, v] of Object.entries(patch)) {
-    merged[k] = isPlainObject(v) && isPlainObject(merged[k]) ? deepMergeJson(merged[k], v) : structuredClone(v);
+    merged[k] =
+      isPlainObject(v) && isPlainObject(merged[k])
+        ? deepMergeJson(merged[k], v)
+        : structuredClone(v);
   }
   return merged;
 }
@@ -63,12 +66,21 @@ export function applyInstall(
   try {
     for (const op of plan.operations) applyOperation(op);
   } catch (e) {
-    throw new InstallError(`Failed to write ${plan.operations.length} operations: ${(e as Error).message}`, 'APPLY_FAILED', e);
+    throw new InstallError(
+      `Failed to write ${plan.operations.length} operations: ${(e as Error).message}`,
+      'APPLY_FAILED',
+      e,
+    );
   }
 
   writeInstallState(plan, {
     installedAt: new Date().toISOString(),
-    target: { id: plan.adapter.id, target: plan.adapter.target, kind: plan.adapter.kind, root: plan.targetRoot },
+    target: {
+      id: plan.adapter.id,
+      target: plan.adapter.target,
+      kind: plan.adapter.kind,
+      root: plan.targetRoot,
+    },
     profile: { id: meta.profileId, name: meta.profileName, version: meta.profileVersion },
   });
 

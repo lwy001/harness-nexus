@@ -44,10 +44,7 @@ export function planInstall(resolved: ResolvedProfile, opts: PlanOptions = {}): 
   const issues = adapter.validate(opts.input ?? {});
   const blocking = issues.filter((i) => i.severity === 'error');
   if (blocking.length > 0) {
-    throw new InstallError(
-      blocking.map((i) => i.message).join('; '),
-      'VALIDATION_FAILED',
-    );
+    throw new InstallError(blocking.map((i) => i.message).join('; '), 'VALIDATION_FAILED');
   }
 
   return adapter.planOperations(resolved, opts.input ?? {});

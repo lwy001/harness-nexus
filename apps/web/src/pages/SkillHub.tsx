@@ -70,8 +70,12 @@ interface HubRow {
   category?: string;
   homepage?: string;
   tier: TrustTier;
-  /** The `plugin`-source shape to store when the user hits "save". */
-  pluginSource: PluginResourceSource;
+  /**
+   * The `plugin`-source shape to store when the user hits "save". Null for
+   * entries that have no faithful plugin-source representation (archive zips,
+   * e.g. our own 3.5 emitter output) — those rows can't be saved as skills.
+   */
+  pluginSource: PluginResourceSource | null;
   /** True if the source has a pin (sha/version) — drives the warn callout. */
   hasPin: boolean;
 }
@@ -343,9 +347,18 @@ function HubRowView({ row, onSave }: { row: HubRow; onSave: () => void }) {
         <TrustBadge tier={row.tier} />
       </TableCell>
       <TableCell className="pr-6 text-right">
-        <Button variant="outline" size="sm" onClick={onSave} className="gap-1.5">
-          Save as skill
-        </Button>
+        {row.pluginSource ? (
+          <Button variant="outline" size="sm" onClick={onSave} className="gap-1.5">
+            Save as skill
+          </Button>
+        ) : (
+          <span
+            className="text-muted-foreground text-xs"
+            title="Archive sources cannot be saved as plugin-source skills"
+          >
+            —
+          </span>
+        )}
       </TableCell>
     </TableRow>
   );

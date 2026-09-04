@@ -6,6 +6,7 @@
 > ground-truth format, which this earlier doc does not cover.
 >
 > **Priority revisions since this doc was written:**
+>
 > - **ZCode is out of install scope.** The ZCode findings here relied on a single
 >   on-disk inspection that is no longer reproducible, and ECC (the new
 >   reference) has zero ZCode support. `zcode` stays in the enum but has no

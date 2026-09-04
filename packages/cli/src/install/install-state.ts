@@ -22,7 +22,10 @@ export interface InstallState {
 }
 
 /** Write the ledger to its path inside the target root. */
-export function writeInstallState(plan: InstallPlan, state: Omit<InstallState, 'schemaVersion' | 'operations'>): void {
+export function writeInstallState(
+  plan: InstallPlan,
+  state: Omit<InstallState, 'schemaVersion' | 'operations'>,
+): void {
   const full: InstallState = {
     schemaVersion: INSTALL_STATE_SCHEMA_VERSION,
     ...state,

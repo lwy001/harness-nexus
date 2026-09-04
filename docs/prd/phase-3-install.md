@@ -2,8 +2,9 @@
 
 > Status: **3.1 ✅, 3.2 ✅ shipped; 3.3+ not started.** Research:
 > `docs/research/phase-3-ecc-install-patterns.md` (adapter pattern evidence base)
-> + `docs/research/phase-3-plugin-targets.md` (per-target formats). Technical
-> design: `docs/design/phase-3-install.md`.
+>
+> - `docs/research/phase-3-plugin-targets.md` (per-target formats). Technical
+>   design: `docs/design/phase-3-install.md`.
 >
 > **Priority change (this revision):** Hermes is now the first install target
 > (most needed), then Claude Code, then Codex. ZCode is out of install scope
@@ -152,7 +153,7 @@ dropped.
   `mode === 'direct'` (the Phase 2.1 stdio exclusion is lifted for direct mode).
   `stdio` + `proxy` is rejected (`409 STDIO_REQUIRES_DIRECT`).
 - **Proxy-mode behavior is unchanged**: the registry still pools `mode ===
-  'proxy'` servers, dials them, aggregates tools, and re-exposes via `/mcp`.
+'proxy'` servers, dials them, aggregates tools, and re-exposes via `/mcp`.
   Direct-mode servers are invisible to the registry (never dialed by Harness
   Nexus) but still appear in MCP Management listings.
 - **`Profile.target`** ✅ (required, immutable post-create). The create schema

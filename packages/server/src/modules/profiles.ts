@@ -107,10 +107,11 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Resolve input entries (mcpServerId → McpServer.id) into domain ProfileEntry
- * records, validating that every referenced MCP server is visible to the caller.
- * 2.2 only supports `kind === 'mcp'` entries; the `resourceId` is the
- * McpServer.id directly.
+ * Resolve input entries into domain ProfileEntry records, validating that
+ * every referenced artifact is visible to the caller:
+ *  - `{ mcpServerId }` (Phase 2.2) → kind 'mcp', resourceId = McpServer.id.
+ *  - `{ resourceId, kind }` (Phase 3.5) → a Resource reference; 'mcp' is not
+ *    accepted here (MCP servers enter via the mcpServerId arm).
  */
 async function resolveEntries(
   app: FastifyInstance,
@@ -120,18 +121,39 @@ async function resolveEntries(
 ): Promise<ProfileEntry[]> {
   const out: ProfileEntry[] = [];
   for (const e of entries) {
-    const server = await app.uow.mcpServers.findById(e.mcpServerId);
-    if (!server || !serverVisible(server, userId, role)) {
+    if ('mcpServerId' in e) {
+      const server = await app.uow.mcpServers.findById(e.mcpServerId);
+      if (!server || !serverVisible(server, userId, role)) {
+        throw new AppError(
+          `MCP server ${e.mcpServerId} not found or not accessible`,
+          409,
+          'ENTRY_TARGET_NOT_ACCESSIBLE',
+        );
+      }
+      out.push({
+        resourceId: e.mcpServerId,
+        kind: 'mcp',
+        ...(e.pinnedVersion ? { pinnedVersion: e.pinnedVersion } : {}),
+      });
+      continue;
+    }
+    const resource = await app.uow.resources.findById(e.resourceId);
+    if (
+      !resource ||
+      resource.kind !== e.kind ||
+      !(resource.scope === 'global' || resource.ownerId === userId || role === 'admin')
+    ) {
       throw new AppError(
-        `MCP server ${e.mcpServerId} not found or not accessible`,
+        `Resource ${e.resourceId} not found or not accessible`,
         409,
         'ENTRY_TARGET_NOT_ACCESSIBLE',
       );
     }
     out.push({
-      resourceId: e.mcpServerId,
-      kind: 'mcp',
+      resourceId: e.resourceId,
+      kind: e.kind,
       ...(e.pinnedVersion ? { pinnedVersion: e.pinnedVersion } : {}),
+      ...(e.installOptions ? { installOptions: e.installOptions } : {}),
     });
   }
   return out;

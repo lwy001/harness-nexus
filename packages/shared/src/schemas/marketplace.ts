@@ -36,8 +36,19 @@ const marketplaceOwnerSchema = z.object({
  * The 3 object `source` kinds that produce a standalone-installable spec.
  * The string relative-path form is excluded by construction (this is a
  * discriminated union on the `source` literal, which only objects carry).
+ *
+ * Phase 3.5 adds the `archive` arm — a plain HTTPS zip download, no git/npm.
+ * It is what Harness Nexus EMITS (the marketplace-emitter surface) and what
+ * Claude Code ≥2.1.224 consumes; the official catalog doesn't use it, so the
+ * 7.2 parse path simply never sees it in the wild. `sha256` is optional
+ * content pinning (spike-verified).
  */
 export const marketplaceSourceSchema = z.discriminatedUnion('source', [
+  z.object({
+    source: z.literal('archive'),
+    url: z.string().min(1),
+    sha256: z.string().optional(),
+  }),
   z.object({
     source: z.literal('git-subdir'),
     url: z.string().min(1),
@@ -159,9 +170,16 @@ export function skillMetaToResourceSource(meta: {
 export function marketplacePluginToResourceSource(
   plugin: MarketplacePlugin,
   pluginName: string = plugin.name,
-): PluginResourceSource {
+): PluginResourceSource | null {
   const s = plugin.source;
   let source: PluginResourceSource['source'];
+  if (s.source === 'archive') {
+    // An `archive` zip has no faithful `plugin`-source representation (the
+    // storage-side plugin union models git/npm refs, not raw zips). Only our
+    // own 3.5 emitter emits these today; the hub treats a null pluginSource
+    // as "cannot save as a plugin-source skill".
+    return null;
+  }
   if (s.source === 'github') {
     source = {
       source: 'github',

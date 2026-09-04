@@ -68,14 +68,14 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
 - ✅ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + `TARGET_IMMUTABLE`; `codex` added to the enum, `zcode` retained-but-unsupported
-- ⏳ 3.3 — Install pipeline skeleton: target adapter factory + registry + plan/apply separation + install-state ledger + `hnx install` CLI (dry-run default). No real target adapter yet.
-- ⏳ 3.4 — **Hermes adapter** (priority 1; verify `hermes_cli/` schema first). YAML `plugin.yaml` + `config.yaml` `mcp_servers:`.
-- ⏳ 3.5 — **Claude Code adapter** (priority 2). JSON `.claude-plugin/plugin.json` + `.mcp.json`; rules-as-skill.
+- ✅ 3.3 — Install pipeline skeleton: target adapter factory + registry + plan/apply separation + install-state ledger + `hnx install` CLI (dry-run default). No real target adapter yet.
+- ✅ 3.4 — **Hermes adapter** (priority 1). Python plugin bundle + `config.yaml` `mcp_servers:` merge + `AGENTS.md` rules; `${HN_PAT_*}` env placeholders.
+- ✅ 3.5 — **Marketplace emitter** (priority 2; re-planned). Serve each user's claude-code profiles as a native CC plugin marketplace over HTTP — `claude plugin marketplace add <PUBLIC_BASE_URL>/api/marketplace/<PAT>/marketplace.json` + archive-source zips; claude owns install/update/uninstall. Profile entries gained the `{resourceId, kind}` resource arm. The local-write CC adapter is demoted to an old-CLI (<2.1.224) / airgapped fallback — deferred behind the emitter.
 - ⏳ 3.6 — **Codex adapter** (priority 3). JSON `.codex-plugin/plugin.json` (+`interface`) + TOML `config.toml`; stdio-only MCP.
 - ⏳ 3.7 — Cross-target profile import with compatibility report + per-artifact compat matrix
 - ⏳ 3.8 — Other well-known agents (optional) + ECC/Superpower import adapters
-- PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md`
-- Research: `docs/research/phase-3-ecc-install-patterns.md` (adapter factory + plan/apply + install-state; Codex ground-truth) · `docs/research/phase-3-plugin-targets.md` (per-target formats; CC/Hermes detail, ZCode superseded)
+- PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md` · Design 3.5: `docs/design/phase-3.5-marketplace-emitter.md`
+- Research: `docs/research/phase-3-ecc-install-patterns.md` (adapter factory + plan/apply + install-state; Codex ground-truth) · `docs/research/phase-3-plugin-targets.md` (per-target formats; CC/Hermes detail, ZCode superseded) · `docs/research/phase-3.5-marketplace-emitter-spike.md` (empirical CC marketplace protocol constraints)
 
 ## Phase 4 — Resource management & PAT UI
 

@@ -23,6 +23,7 @@ Three coupled changes:
    **Hermes → Claude Code → Codex**.
 
 > **What changed in this revision (vs. the prior draft):**
+>
 > - **ZCode is out of install scope.** No reference material is reproducible;
 >   ECC has zero ZCode support. `zcode` stays in the `AgentTarget` enum
 >   (non-breaking) but has no adapter — `hnx install --target zcode` →
@@ -124,28 +125,30 @@ needing format transformation override `planOperations`.
 // packages/cli/src/install/types.ts
 export interface Operation {
   kind: 'copy-file' | 'merge-json' | 'merge-toml' | 'merge-yaml';
-  sourcePath: string;        // resolved profile artifact
-  destinationPath: string;   // target-native path
-  mergePayload?: unknown;    // for merge-* operations
+  sourcePath: string; // resolved profile artifact
+  destinationPath: string; // target-native path
+  mergePayload?: unknown; // for merge-* operations
 }
 
 export interface InstallPlan {
   adapter: { id: string; target: AgentTarget; kind: 'home' | 'project' };
-  targetRoot: string;        // where files land (e.g. ~/.hermes, ~/.codex)
-  installStatePath: string;  // ledger location
+  targetRoot: string; // where files land (e.g. ~/.hermes, ~/.codex)
+  installStatePath: string; // ledger location
   operations: Operation[];
-  sensitive: boolean;        // true if any op carries decrypted direct-mode creds
+  sensitive: boolean; // true if any op carries decrypted direct-mode creds
 }
 
 export interface TargetAdapter {
   readonly target: AgentTarget;
-  readonly nativeRoot: string;       // '.hermes' | '.codex' | '.claude-plugin'
+  readonly nativeRoot: string; // '.hermes' | '.codex' | '.claude-plugin'
   resolveRoot(input: ResolveInput): string;
   planOperations(resolved: ResolvedProfile, input: ResolveInput): InstallPlan;
   validate(input: ResolveInput): ValidationIssue[];
 }
 
-export function createTargetAdapter(config: AdapterConfig): TargetAdapter { /* … */ }
+export function createTargetAdapter(config: AdapterConfig): TargetAdapter {
+  /* … */
+}
 ```
 
 ```ts
@@ -194,14 +197,14 @@ subcommands ship.
 
 ### Per-target format reference
 
-| | Hermes (1st) | Claude Code (2nd) | Codex (3rd) |
-| --- | --- | --- | --- |
-| Manifest | `plugin.yaml` **YAML** | `.claude-plugin/plugin.json` **JSON** | `.codex-plugin/plugin.json` **JSON** (+`interface` block) |
-| Config | `config.yaml` **YAML** | `.mcp.json` **JSON** | `config.toml` **TOML** |
-| MCP block | `mcp_servers:` YAML | `mcpServers` JSON | `[mcp_servers.*]` TOML, **stdio-only** |
-| Memory/rules | `AGENTS.md` auto-inject | wrap-as-skill (no auto-load) | `AGENTS.md` auto-inject |
-| Hooks | `null` (Python model) | ~30 declarative events | config/prompts-based |
-| Confidence | Medium (verify `hermes_cli/`) | High | High (via ECC) |
+|              | Hermes (1st)                  | Claude Code (2nd)                     | Codex (3rd)                                               |
+| ------------ | ----------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Manifest     | `plugin.yaml` **YAML**        | `.claude-plugin/plugin.json` **JSON** | `.codex-plugin/plugin.json` **JSON** (+`interface` block) |
+| Config       | `config.yaml` **YAML**        | `.mcp.json` **JSON**                  | `config.toml` **TOML**                                    |
+| MCP block    | `mcp_servers:` YAML           | `mcpServers` JSON                     | `[mcp_servers.*]` TOML, **stdio-only**                    |
+| Memory/rules | `AGENTS.md` auto-inject       | wrap-as-skill (no auto-load)          | `AGENTS.md` auto-inject                                   |
+| Hooks        | `null` (Python model)         | ~30 declarative events                | config/prompts-based                                      |
+| Confidence   | Medium (verify `hermes_cli/`) | High                                  | High (via ECC)                                            |
 
 The format divergence (YAML / JSON / TOML) is exactly why each target gets its
 own adapter rather than a shared "JSON-family" writer.
@@ -255,14 +258,14 @@ All under `/api`, same `{ error, message }` shape. Unchanged from 3.1/3.2 except
 the install path is CLI-only (no server endpoint for install — the CLI resolves
 locally or via SDK fetch):
 
-| Method | Path | Auth | Notes |
-| ------ | ---- | ---- | ----- |
-| POST | `/api/mcp-servers` | `requireAuth`† | accepts `mode`; stdio requires `direct` |
-| PATCH | `/api/mcp-servers/:id` | `requireAuth`‡ | mode change allowed if transport permits |
-| POST | `/api/profiles` | `requireAuth`† | requires `target` |
-| PATCH | `/api/profiles/:id` | `requireAuth`‡ | omits `target`; carrying it → `409 TARGET_IMMUTABLE` |
-| POST | `/api/profiles/:id/import-from` | `requireAuth`‡ | owner-or-admin on both profiles |
-| POST | `/api/profiles/:id/import-apply` | `requireAuth`‡ | owner-or-admin on both profiles |
+| Method | Path                             | Auth           | Notes                                                |
+| ------ | -------------------------------- | -------------- | ---------------------------------------------------- |
+| POST   | `/api/mcp-servers`               | `requireAuth`† | accepts `mode`; stdio requires `direct`              |
+| PATCH  | `/api/mcp-servers/:id`           | `requireAuth`‡ | mode change allowed if transport permits             |
+| POST   | `/api/profiles`                  | `requireAuth`† | requires `target`                                    |
+| PATCH  | `/api/profiles/:id`              | `requireAuth`‡ | omits `target`; carrying it → `409 TARGET_IMMUTABLE` |
+| POST   | `/api/profiles/:id/import-from`  | `requireAuth`‡ | owner-or-admin on both profiles                      |
+| POST   | `/api/profiles/:id/import-apply` | `requireAuth`‡ | owner-or-admin on both profiles                      |
 
 † admin required iff `scope === 'global'`. ‡ ownership check on both profiles.
 
@@ -274,6 +277,7 @@ New error codes: `STDIO_REQUIRES_DIRECT` (409), `TARGET_IMMUTABLE` (409),
 Follows the Signal design system. Status: the MCP Management rename + mode badge
 (3.1) and the Profile target picker + target column badge (3.2) are shipped.
 Remaining UI work tracks the install/import phases:
+
 - **Install UX** (3.3+): a "Install" action on a profile that triggers the CLI
   (or an in-browser plan preview) — design deferred until the CLI shape is real.
 - **Import flow** (3.7): "Import from profile…" → picker → compatibility report
@@ -310,8 +314,8 @@ Remaining UI work tracks the install/import phases:
 - **3.1 ✅** — `mode` on McpServer + stdio-in-direct + rename + migration v2.
 - **3.2 ✅** — `Profile.target` (immutable) + migration v5 + TARGET_IMMUTABLE.
 - **3.3** — Install pipeline **skeleton**: adapter factory + registry + plan/apply
-  + install-state ledger + `hnx install` CLI (dry-run default). Adapter interface
-  + a stub adapter, but **no real target adapter yet**.
+  - install-state ledger + `hnx install` CLI (dry-run default). Adapter interface
+  - a stub adapter, but **no real target adapter yet**.
 - **3.4** — **Hermes adapter** (priority 1; verify `hermes_cli/` schema first).
   YAML `plugin.yaml` + `config.yaml` `mcp_servers:`; proxy/direct MCP emission.
 - **3.5** — **Marketplace emitter** (priority 2; re-planned). Serve the user's
@@ -319,11 +323,11 @@ Remaining UI work tracks the install/import phases:
   `claude plugin marketplace add <url>` + native install/update/uninstall.
   See [`phase-3.5-marketplace-emitter.md`](./phase-3.5-marketplace-emitter.md).
   The local-write **Claude Code adapter** (JSON `.claude-plugin/plugin.json`
-  + `.mcp.json`; rules-as-skill wrapping) is demoted to a fallback for old
-  CLIs (<2.1.224, no `archive` source) / airgapped hosts — deferred behind
-  the emitter.
+  - `.mcp.json`; rules-as-skill wrapping) is demoted to a fallback for old
+    CLIs (<2.1.224, no `archive` source) / airgapped hosts — deferred behind
+    the emitter.
 - **3.6** — **Codex adapter** (priority 3). JSON `.codex-plugin/plugin.json` (+`interface`)
-  + TOML `config.toml`; stdio-only MCP; `AGENTS.md` marker-merge.
+  - TOML `config.toml`; stdio-only MCP; `AGENTS.md` marker-merge.
 - **3.7** — Cross-target import (report + apply) + per-artifact compat matrix +
   UI.
 - **3.8** — Other well-known agents (openclaw / kimi / qwen / etc., optional) +

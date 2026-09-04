@@ -31,7 +31,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontalIcon } from 'lucide-react';
-import { HarnessNexusError, type Profile, type McpServer, type AgentTarget } from '@harness-nexus/sdk';
+import {
+  HarnessNexusError,
+  type Profile,
+  type McpServer,
+  type AgentTarget,
+} from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
 
@@ -260,10 +265,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="prof-target">Target</Label>
-              <Select
-                value={target}
-                onValueChange={(v) => setTarget(v as AgentTarget)}
-              >
+              <Select value={target} onValueChange={(v) => setTarget(v as AgentTarget)}>
                 <SelectTrigger id="prof-target">
                   <SelectValue />
                 </SelectTrigger>
