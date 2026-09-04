@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
@@ -37,11 +37,32 @@ import { SkillSearchRouter } from './infra/source-fetchers/search-router.js';
  *   3. error handler (maps AppError → JSON)
  *   4. route modules + MCP proxy transport
  */
+/**
+ * Request serializer that masks marketplace emit tokens in URLs. The emitter
+ * authenticates by token-in-path (claude can't send headers), so the raw URL
+ * — a bearer-equivalent secret — must never reach the logs. Also hides the
+ * Authorization header via pino redact below.
+ */
+function redactingReqSerializer(req: FastifyRequest) {
+  return {
+    method: req.method,
+    url: req.url.replace(/\/api\/marketplace\/[^/]+/g, '/api/marketplace/[token]'),
+    // Conditional spreads: pino's serializer result uses optional fields and
+    // exactOptionalPropertyTypes rejects explicit-undefined keys.
+    ...(req.headers.host !== undefined ? { host: req.headers.host } : {}),
+    ...(req.raw.socket.remoteAddress !== undefined
+      ? { remoteAddress: req.raw.socket.remoteAddress }
+      : {}),
+  };
+}
+
 export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   const isProd = process.env.NODE_ENV === 'production';
   const app = Fastify({
     logger: {
       level: config.logLevel,
+      redact: { paths: ['req.headers.authorization', 'res.headers["set-cookie"]'], censor: '[redacted]' },
+      serializers: { req: redactingReqSerializer },
       ...(isProd
         ? {}
         : {
