@@ -314,8 +314,14 @@ Remaining UI work tracks the install/import phases:
   + a stub adapter, but **no real target adapter yet**.
 - **3.4** — **Hermes adapter** (priority 1; verify `hermes_cli/` schema first).
   YAML `plugin.yaml` + `config.yaml` `mcp_servers:`; proxy/direct MCP emission.
-- **3.5** — **Claude Code adapter** (priority 2). JSON `.claude-plugin/plugin.json`
-  + `.mcp.json`; rules-as-skill wrapping; ~30 hook events.
+- **3.5** — **Marketplace emitter** (priority 2; re-planned). Serve the user's
+  profiles as a Claude Code plugin marketplace over plain HTTP(S) —
+  `claude plugin marketplace add <url>` + native install/update/uninstall.
+  See [`phase-3.5-marketplace-emitter.md`](./phase-3.5-marketplace-emitter.md).
+  The local-write **Claude Code adapter** (JSON `.claude-plugin/plugin.json`
+  + `.mcp.json`; rules-as-skill wrapping) is demoted to a fallback for old
+  CLIs (<2.1.224, no `archive` source) / airgapped hosts — deferred behind
+  the emitter.
 - **3.6** — **Codex adapter** (priority 3). JSON `.codex-plugin/plugin.json` (+`interface`)
   + TOML `config.toml`; stdio-only MCP; `AGENTS.md` marker-merge.
 - **3.7** — Cross-target import (report + apply) + per-artifact compat matrix +
