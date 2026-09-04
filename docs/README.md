@@ -51,6 +51,7 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 
 - Research: [`research/phase-3-ecc-install-patterns.md`](./research/phase-3-ecc-install-patterns.md) — the install-pipeline architecture extracted from ECC (adapter factory + plan/apply + install-state ledger; Codex ground-truth format).
 - Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — per-target plugin formats (Claude Code / Hermes; ZCode superseded). Superseded on architecture by the ECC doc above.
+- Research: [`research/phase-3.5-marketplace-emitter-spike.md`](./research/phase-3.5-marketplace-emitter-spike.md) — empirical spike: Claude Code consumes a plain-HTTP `marketplace.json` + `archive` (zip) plugin sources; capability-URL auth; version/SSRF constraints. Basis for the 3.5 re-plan (marketplace emission preferred over adapter writes for claude-code).
 - PRD: [`prd/phase-3-install.md`](./prd/phase-3-install.md)
 - Design: [`design/phase-3-install.md`](./design/phase-3-install.md) — target adapter factory (one adapter per target: Hermes → Claude Code → Codex), plan/apply, install-state ledger. ZCode out of install scope.
 
