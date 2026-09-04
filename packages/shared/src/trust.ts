@@ -23,14 +23,16 @@ export type TrustTier = z.infer<typeof trustTierSchema>;
 
 /**
  * The 4 trusted repos (ground-truth verified from Hermes's `TRUSTED_REPOS`,
- * `tools/skills_guard.py:40-49`). Capitalization of `NVIDIA` matters — the
- * canonical form is preserved here; the comparison lowercases both sides.
+ * `tools/skills_guard.py:40-49`). Stored LOWERCASE — `resolveTrustTier`
+ * lowercases the queried owner/repo before comparing, so entries must match
+ * that form ('nvidia/skills', not 'NVIDIA/skills': a capitalized entry would
+ * silently never match).
  */
 export const TRUSTED_REPOS: ReadonlySet<string> = new Set<string>([
   'openai/skills',
   'anthropics/skills',
   'huggingface/skills',
-  'NVIDIA/skills',
+  'nvidia/skills',
 ]);
 
 /**
