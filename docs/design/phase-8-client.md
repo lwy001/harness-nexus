@@ -11,19 +11,21 @@ a single client program (`hnx`, growing the existing CLI package) on each
 enrolled machine is the data plane:
 
 ```
-                       CONTROL PLANE                        DATA PLANE (per machine)
-             ┌────────────────────────────────┐   WSS (Socket.IO)   ┌────────────────────────────┐
- browser ────►│ Fastify │  /api/*  REST        │◄──────────────────►│ hnx daemon (on-demand)     │
- (JWT/PAT;    │         │  /mcp    outlet      │ daemon → /ctl,/acp │  • heartbeat / jobs        │
-  mutations)  │         │  socket.io /ctl      │ browser → /app,/acp│  • inventory scans         │
- browser ────►│         │  socket.io /app      │                    │  • ACP session manager     │
- (JWT/PAT;    │         │  socket.io /acp      │                    ├────────────────────────────┤
-  live+chat)  │         │  Machine/Job/…       │                    │ hnx mcp serve (per process)│
-             │         │  mcp-runtime         │                    │  ← stdio → agent tools     │
-             └────────────────────────────────┘                    │  → dials distributable     │
-                       ▲ platform tools +                         │    upstreams (memory creds)│
-                       └─ non-distributable creds                     + platform /mcp (PAT)     │
-                           pooled & exposed at /mcp                    (never touches the daemon)│
+                      CONTROL PLANE                        DATA PLANE (per machine)
+            ┌───────────────────────────────┐   WSS (Socket.IO)   ┌─────────────────────────────┐
+ browser ──►│ Fastify │  /api/*  REST       │◄──────────────────►│ hnx daemon (on-demand)      │
+ (durable   │         │  /mcp    outlet     │   daemon  /ctl     │  • heartbeat / jobs         │
+  mutations)│         │  socket.io /ctl     │   browser /app     │  • inventory scans          │
+ browser ◄─►│         │  socket.io /app     │   (both bidirect.) │  • chat sessions: semantic  │
+ (live UI + │         │  Machine/Job/…      │                    │    ↔ agent-protocol adapter │
+  chat +    │         │  mcp-runtime        │                    │    (ACP today; chat:* evts) │
+  control)  │         │                     │                    ├─────────────────────────────┤
+            └───────────────────────────────┘                    │ hnx mcp serve (per process) │
+                      ▲ platform tools +                         │  ← stdio → agent tools      │
+                      └─ non-distributable creds                 │  → distributable upstreams  │
+                          pooled & exposed at /mcp               │    (creds in memory only)   │
+                                                                  │  + platform /mcp (PAT)      │
+                                                                  └─────────────────────────────┘
 ```
 
 Layering rules are unchanged: `core` stays pure (new domain types + ports),
@@ -102,47 +104,51 @@ radius = realtime only), exactly as it rejects `marketplace` tokens.
 
 ### Connections & auth
 
-| Client  | Namespaces      | Handshake `auth`                      | Verified by                                                                |
-| ------- | --------------- | -------------------------------------- | --------------------------------------------------------------------------- |
-| daemon  | `/ctl` + `/acp` | `{ token: <machine PAT>, machineId }` | PAT valid + kind `machine` + `machineId` matches the PAT's machine + not revoked |
-| browser | `/app` + `/acp` | `{ token: <JWT or PAT> }`             | existing bearer logic (same channel set as REST); per-event ownership checks |
+| Client  | Namespace | Handshake `auth`                      | Verified by                                                                |
+| ------- | --------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| daemon  | `/ctl`    | `{ token: <machine PAT>, machineId }` | PAT valid + kind `machine` + `machineId` matches the PAT's machine + not revoked |
+| browser | `/app`    | `{ token: <JWT or PAT> }`             | existing bearer logic (same channel set as REST); per-event ownership checks |
 
-A client's namespaces multiplex over **one** engine.io/WSS connection. `/acp`
-is the only namespace both roles join; its middleware accepts either auth kind
-and binds `{ role: 'daemon' | 'browser', …identity }` to the socket — every
-`/acp` handler re-checks role + ownership.
+**One bidirectional namespace per client role.** The daemon connects `/ctl`
+(management + routed interactive traffic); the browser connects `/app` (UI
+push + chat + agent control). The platform bridges the two — a browser never
+talks to a daemon directly, and neither side speaks the other's event
+vocabulary.
 Protocol version rides the `machine:hello` ack (`proto: 1`); breaking changes
 bump namespace names (`/v2/ctl`), never silently mutate events.
 
 ### Isolation model (the four layers)
 
-1. **Namespace = traffic class + client role + policy boundary.** Three
-   namespaces: `/ctl` (machine management — daemon-only, machine PAT), `/app`
-   (browser UI live data — browser-only, JWT/PAT), and `/acp` (interactive
-   agent traffic — the one namespace both roles join). Each has its own
-   middleware chain: `/acp` additionally checks `machine.remoteChatEnabled` and
-   owner-only access; future rate limits attach per namespace without touching
-   the others.
+1. **Namespace = client role (auth profile + policy attach point); event
+   domain = traffic class.** Two namespaces: `/ctl` (daemon-only, machine PAT)
+   and `/app` (browser-only, JWT/PAT) — both fully bidirectional. Interactive
+   traffic classes are event domains riding the same connection (`chat:*`,
+   `agent:*`, future `file:*` / `terminal:*`), each gated by its own handler
+   checks (e.g. `chat:*` requires `machine.remoteChatEnabled` + owner), so a
+   new traffic class never needs a new namespace or a reconnect.
 2. **Event names are namespaced by domain prefix**, `<domain>:<verb>` —
-   `machine:hello`, `job:dispatch`, `acp:rpc`. Only whitelisted handlers are
+   `machine:hello`, `job:dispatch`, `chat:message.send`. Only whitelisted handlers are
    registered; anything else gets no handler (and thus no ack → sender timeout).
    Every registered handler validates its payload with the shared zod schema;
    malformed → ack error `proto:invalid`.
 3. **Rooms are the only addressing mechanism.** Server→daemon: room
-   `machine:<machineId>`. Server→browsers: room `acp:session:<sessionId>` (all
-   viewers of one conversation). No broadcast-to-all ever.
+   `machine:<machineId>`. Server→browsers: room `user:<userId>` (UI push) and
+   `chan:<sessionId>` (all viewers of one interactive channel — chat today,
+   terminal/file later). No broadcast-to-all ever.
 4. **Envelope addressing + identity binding.** Every payload carries the ids it
    concerns (`machineId` / `jobId` / `sessionId`), and the server re-verifies
    them against the socket's identity: a daemon may only report its own
-   machine's jobs; a browser may only rpc into sessions it can see (owner).
+   machine's jobs and channels; a browser may only send into sessions/channels
+   it owns.
 
 **Multiple channels per agent.** One `AgentInstance` may have N concurrent
 conversation channels (two browser conversations, a second viewer on the same
 one, …). Each channel = one `AcSession` = one `sessionId` = one daemon-side
-agent subprocess = one room. Cross-talk is impossible by construction (every
-`acp:*` event carries `sessionId`; rooms scope delivery). MCP serving is NOT a
-channel on this bus — shims are independent per-process stdio servers and never
-touch the daemon or the socket (MCP and ACP share only the PAT and server URL).
+agent subprocess = one `chan:<sessionId>` room. Cross-talk is impossible by
+construction (every interactive event carries `sessionId`; rooms scope
+delivery). MCP serving is NOT a channel on this bus — shims are independent
+per-process stdio servers and never touch the daemon or the socket (MCP and
+chat share only the PAT and server URL).
 
 ### Event catalog
 
@@ -157,45 +163,75 @@ touch the daemon or the socket (MCP and ACP share only the PAT and server URL).
 | `inventory:report` | C → S  | `{ target, snapshot }` (C3)                         | ack = stored              |
 | `config:invalidate`| S → C  | `{ profileId? }` (advisory cache push, optional)    | —                         |
 
-`/app` (server → browser UI push; browsers join `user:<userId>` on connect —
-admins additionally join `admins` for fleet-wide presence; **pure push in v1**,
-no browser→server events):
+`/app` (browser ↔ platform, **fully bidirectional**; browsers join
+`user:<userId>` on connect — admins additionally join `admins` for fleet-wide
+presence; UI-push domains + interactive domains):
 
-| Event            | Dir   | Payload                                            | Notes                                                       |
-| ---------------- | ----- | -------------------------------------------------- | ----------------------------------------------------------- |
-| `machine:status` | S → B | `{ machineId, online, lastSeenAt, daemonVersion? }` | on daemon connect/disconnect (`online` = socket presence)   |
-| `job:update`     | S → B | `{ job: Job }`                                     | on dispatch / progress (coalesced ~1s) / terminal           |
-| `agent:update`   | S → B | `{ machineId, agent: AgentInstance }`              | on registration/changes (C4)                                |
+| Event                 | Dir      | Payload                                                       | Notes                                                                              |
+| --------------------- | -------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `machine:status`      | S → B    | `{ machineId, online, lastSeenAt, daemonVersion? }`             | on daemon connect/disconnect (`online` = socket presence)                            |
+| `job:update`          | S → B    | `{ job: Job }`                                                  | on dispatch / progress (coalesced ~1s) / terminal                                    |
+| `agent:update`        | S → B    | `{ machineId, agent: AgentInstance }`                           | on registration/changes (C4)                                                         |
+| `agent:state`         | S → B    | `{ agentInstanceId, sessionId?, state }`                        | model / thinking level / permission mode etc. (C5)                                   |
+| `agent:control.apply` | B → S    | `{ target: {agentInstanceId?, sessionId?}, control: {key, value} }` | ack; routed to the daemon — `model`, `thinkingLevel`, `permissionMode`, … are keys, not events |
+| `chat:session.open`   | B → S    | `{ agentInstanceId }`                                           | ack `{ sessionId }`; checks machine online + remoteChatEnabled + owner               |
+| `chat:session.close`  | B → S    | `{ sessionId, reason? }`                                        | terminal                                                                             |
+| `chat:message.send`   | B → S    | `{ sessionId, content }`                                        | ack = accepted; routed to the daemon, which adapts it to the agent protocol          |
+| `chat:event`          | S → B    | `{ sessionId, event }`                                          | fan-out to `chan:<sessionId>`; the semantic agent stream the UI renders (below)      |
 
-`/acp` (browser + daemon ↔ server; server routes, never originates content):
+`chat:event.event` is a **semantic** stream — `message.delta`, `tool.update`,
+`permission.request`, `done`, … — defined in `shared/realtime.ts` and stable
+across agent protocols. A `raw` variant carries protocol frames verbatim for
+advanced UI needs without the platform interpreting them.
 
-| Event               | Dir           | Payload                                          | Notes                                                        |
-| ------------------- | ------------- | ------------------------------------------------ | ------------------------------------------------------------ |
-| `acp:session.open`  | browser → S   | `{ agentInstanceId }`                            | ack `{ sessionId }`; server checks machine online + remoteChatEnabled + owner; persists AcSession; emits `acp:session.start` to `machine:<id>` |
-| `acp:session.start` | S → daemon    | `{ sessionId, agentInstanceId }`                 | ack = spawned; daemon spawns the ACP subprocess for that instance |
-| `acp:session.ready` | daemon → S    | `{ sessionId, agentInfo }`                       | server joins browser sockets into `acp:session:<sid>`        |
-| `acp:rpc`           | both → S      | `{ sessionId, body }` — `body` = one JSON-RPC frame (ACP) | browser→daemon: server emits to `machine:<id>`; daemon→browser: server emits to `acp:session:<sid>` |
-| `acp:session.close` | both → S      | `{ sessionId, reason }`                          | terminal; daemon kills subprocess, room torn down            |
-| `acp:session.closed`| S → both      | `{ sessionId, reason }`                          | confirmation + fan-out to other viewers                      |
+`/ctl` interactive routing (extends the `/ctl` catalog above; S→C carries what
+browsers initiated on `/app`, C→S carries the adapted stream):
 
-ACP bodies are **framed JSON-RPC passthrough** in v1: the server routes and
-persists (audit) without semantic understanding, so ACP protocol evolution does
-not require platform changes. The browser renders method-aware UI
-(`session/request_permission` etc.) from the method name. Semantic
-interception (platform-side tool approval) remains possible later — translate
-specific methods into dedicated events — without changing the framing.
+| Event                 | Dir    | Payload                                             | Notes                                                                   |
+| --------------------- | ------ | ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| `chat:session.start`  | S → C  | `{ sessionId, agentInstanceId }`                     | ack = subprocess spawned                                                 |
+| `chat:session.ready`  | C → S  | `{ sessionId, agentInfo, state }`                    | platform joins the opening browsers into `chan:<sid>`                     |
+| `chat:message.send`   | S → C  | `{ sessionId, content }`                             | daemon adapts to the agent protocol (ACP `session/prompt` today)          |
+| `chat:event`          | C → S  | `{ sessionId, event }`                               | semantic stream + `raw` escape hatch; routed to `chan:<sid>`              |
+| `chat:session.close`  | S → C  | `{ sessionId, reason? }`                             | daemon kills the subprocess; room torn down                               |
+| `agent:control.apply` | S → C  | `{ sessionId?, agentInstanceId?, control }`          | applied via ACP method where supported, else by session restart           |
+| `agent:state`         | C → S  | `{ agentInstanceId, sessionId?, state }`             | after control changes / on state change                                   |
+
+**The daemon is the protocol-adaptation edge.** The browser speaks
+platform-semantic events (`chat:*`, `agent:control.*`); the daemon owns the
+mapping to each agent's protocol (ACP today — the C5 per-target adapter matrix
+defines what each target supports). The platform stays router + policy + audit
+and never learns agent protocols, so protocol churn is confined to the edge:
+ACP evolution reaches the UI through the `raw` variant or new semantic event
+versions, never through new platform routing.
 
 ### Division of labor: REST vs sockets, and the browser's boundary
 
 Durable mutations (enroll/revoke machines, create jobs, profiles, resources)
-stay on **REST** — one auth/validation/audit surface. Sockets carry what REST
-cannot: **server push** (`/app`) and **streams** (`/acp`). The browser
+stay on **REST** — one auth/validation/audit surface. Sockets carry everything
+session-scoped and streaming: UI push, chat, agent control, and (later) file
+management and terminal — all over `/app` on the browser side. The browser
 **never connects to a daemon** — the platform is the sole routing point
-between `/app`/`/acp` and `machine:<id>` rooms, which is also what keeps
-ownership checks and session audit centralized. Browser JWT expiry
-mid-connection: the server drops the socket on auth failure, and the web
-client re-reads its token on every Socket.IO reconnect attempt (fresh JWT
-after re-login) — a token refresh needs no extra protocol support in v1.
+between `/app` and `machine:<id>` rooms, which is also what keeps ownership
+checks and session audit centralized. Browser JWT expiry mid-connection: the
+server drops the socket on auth failure, and the web client re-reads its token
+on every Socket.IO reconnect attempt (fresh JWT after re-login) — a token
+refresh needs no extra protocol support in v1.
+
+### Future channel-based extensions (designed for, not scheduled)
+
+The channel pattern — session + `chan:<sid>` room + identity-checked envelope
++ per-domain gating — is the substrate for interactive features after C5; none
+of them need new namespaces or reconnects:
+
+- **Channel-based file management** (`file:*`): request/response browsing plus
+  change events, machine-scoped, own gating flag.
+- **Web terminal** (`terminal:*`): session-stream semantics like chat; the
+  highest-risk extension — needs its own per-machine enable + audit, same
+  posture as remote chat but stricter.
+- **More agent-control keys**: `agent:control.apply` is an open key/value
+  surface — new keys (model, thinking level, permission mode, …) are schema
+  additions in `shared/realtime.ts`, not protocol changes.
 
 ### Reliability & limits
 
@@ -325,14 +361,18 @@ same code, different trigger.
 
 ## ACP chat (C5)
 
-Routing: browser ↔ server (`/acp`) ↔ daemon (`machine:<id>` room) ↔ local
-agent subprocess (ACP over stdio). Prerequisite research: a per-target
-**ACP adapter matrix** (which agents speak ACP natively, which need a wrapper
-process, e.g. community ACP adapters) — C5 starts with that research doc.
-Gating: `machine.remoteChatEnabled` (default off) + owner-only + per-session
-`AcSession` rows retained as audit. The daemon's session manager owns
-subprocess lifecycle (spawn on `acp:session.start`, kill on close/disconnect,
-cap concurrent sessions per machine).
+Routing: browser (`/app` `chat:*` + `agent:control.*`) ↔ server ↔ daemon
+(`/ctl` routed `chat:*` to `machine:<id>`) ↔ local agent subprocess (ACP over
+stdio), with the daemon adapting semantic events ↔ ACP frames in both
+directions. Prerequisite research: a per-target **ACP adapter matrix** (which
+agents speak ACP natively, which need a wrapper process, e.g. community ACP
+adapters; which control keys each target supports) — C5 starts with that
+research doc. Gating: `machine.remoteChatEnabled` (default off) + owner-only +
+per-session `AcSession` rows retained as audit. The daemon's session manager
+owns subprocess lifecycle (spawn on `chat:session.start`, kill on
+close/disconnect, cap concurrent sessions per machine). `AcSession` is
+chat-shaped in v1; when terminal/file channels land it generalizes with a
+`kind` discriminator.
 
 ## Security model
 
@@ -400,10 +440,11 @@ wrapping the 3.3 pipeline) → web (create-agent wizard + jobs view). Verify:
 dispatch→progress→result smoke incl. offline-queue replay.
 
 **C5 — ACP chat.**
-research (adapter matrix) → shared (`/acp` schemas) → server (`/acp` routing +
-gating + session persistence) → cli (session manager + subprocess spawn) →
-web (chat UI). Verify: session open→rpc round-trip smoke against a fixture
-agent; gating tests (remote chat off ⇒ refused).
+research (adapter matrix) → shared (`chat:*` / `agent:control.*` schemas) →
+server (`/app`↔`/ctl` routing + gating + session persistence) → cli (session
+manager, subprocess spawn, semantic↔ACP adapter) → web (chat UI). Verify:
+session open → message → event round-trip smoke against a fixture agent;
+gating tests (remote chat off ⇒ refused).
 
 **C6 — orchestration.** Not designed. C1–C5 deliver its substrate: machines
 (placement), AgentInstances (addressable units), AcSessions (invocation +

@@ -70,15 +70,19 @@ design doc):
    disk.
 
 **Realtime channel requirement.** Both the client daemon AND the web frontend
-talk to the platform over **Socket.IO/WSS** — the frontend needs its own
-channel for live machine status, job progress, and above all agent chat.
-Traffic is separated by namespace (`/ctl` daemon control, `/app` browser UI
-push, `/acp` agent chat shared by both roles), with a strict event-name
-convention, room-based addressing, and per-session channel isolation for
-agents with multiple concurrent channels. Browsers only ever connect to the
-platform (never to a daemon); durable mutations stay on REST. The protocol is
-specified ahead of implementation in the design doc so server, daemon, and web
-share one schema set from day one.
+talk to the platform over **Socket.IO/WSS**, one bidirectional namespace per
+role: `/app` carries everything browser-side — live status/job push, agent
+chat messages, and agent control commands (model, thinking level, permission
+mode) — and `/ctl` carries daemon-side management plus the interactive traffic
+the platform routes down to machines (the daemon adapts it to each agent's
+protocol; the platform never learns agent protocols). A strict `domain:verb`
+event convention, room-based addressing, and per-session channel isolation
+cover agents with multiple concurrent channels, and the channel pattern is the
+substrate for future interactive features (channel-based file management, web
+terminal). Browsers only ever connect to the platform (never to a daemon);
+durable mutations stay on REST. The protocol is specified ahead of
+implementation in the design doc so server, daemon, and web share one schema
+set from day one.
 
 ## User Stories
 
@@ -121,6 +125,9 @@ share one schema set from day one.
   with one of its Agent instances from the web UI and converse with the local
   agent over ACP; sessions are logged and each concurrent conversation is an
   isolated channel.
+- As a user mid-conversation, I can switch the agent's model / thinking level
+  / permission mode from the chat header; the change is applied to the local
+  agent and the new state is pushed back to every viewer.
 
 ## Implementation Decisions
 
@@ -162,6 +169,9 @@ share one schema set from day one.
 - Orchestration (C6) design — intentionally deferred until C1–C5 land.
 - Platform-hosted MCP tools themselves (the `/mcp` outlet is prepared by C2;
   hosting tools is a separate future phase — Phase 2.3's natural home).
+- Channel-based file management and web terminal — the channel/room/envelope
+  pattern is explicitly designed to carry them (own gating flags + audit), but
+  they are not scheduled in C1–C6.
 
 ## Further Notes
 

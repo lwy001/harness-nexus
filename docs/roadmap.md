@@ -170,14 +170,17 @@ large, least-certain multi-source block (can stop partway).
 | C2   | client MCP serving                 | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
 | C3   | inventory + diff + import          | per-target scans, profile diff, one-click import into resources + profile                            | 3.7                                     |
 | C4   | remote deploy                      | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                       | reuses 3.3                              |
-| C5   | ACP chat                           | `/acp` namespace sessions + daemon session manager + web chat UI (remote chat gated, off by default)  | Phase 5 (other half)                    |
+| C5   | ACP chat                           | chat + agent control over `/app`↔`/ctl` routing, daemon-side semantic↔ACP adapters, web chat UI (remote chat gated, off by default) | Phase 5 (other half)                    |
 | C6   | orchestration                      | deliberately undesigned until C1–C5 land                                                             | Phase 6 Channels (adjacent)             |
 
 - Key locked decisions: global-scope credentials non-distributable by default
   (server `/mcp` is their sole outlet); daemon is on-demand and MCP **never**
   depends on it; agents consume MCP uniformly as stdio shims (proxy/direct
   deleted, dial site derived + admin override); realtime = Socket.IO over WSS
-  for BOTH daemon and web frontend, with `/ctl` (daemon control) / `/app`
-  (browser UI push) / `/acp` (agent chat) namespaces, `domain:verb` event
-  names, room addressing, and session-per-channel isolation.
+  with one **bidirectional namespace per role** — `/app` (browser: UI push +
+  chat + agent control) and `/ctl` (daemon: management + routed interactive
+  traffic; daemon adapts semantics ↔ agent protocol) — plus `domain:verb`
+  event names, room addressing, and session-per-channel isolation; the channel
+  pattern is the substrate for future file-management / web-terminal
+  extensions.
 - PRD: `docs/prd/phase-8-client.md` · Design: `docs/design/phase-8-client.md`
