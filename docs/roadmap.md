@@ -65,6 +65,14 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 > **Restructured** around the ECC adapter-factory pattern + plan/apply.
 > Priority: **Hermes → Claude Code → Codex**. ZCode is out of install scope
 > (no reproducible reference; retained in the enum but unsupported).
+>
+> **Pending direction — "Harness Nexus client" unification (2026-09):** the
+> plan is to fold the CLI adapter pipeline (`hnx`), the Phase 5 ACP bridge,
+> and other client-side features into a single Harness Nexus client program.
+> Discussion not yet held — shape, scope, and phasing are open. Until then:
+> the local-write Claude Code fallback adapter stays deferred (marketplace
+> emission covers CC), and further `hnx` surface growth should be weighed
+> against the unification.
 
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
 - ✅ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + `TARGET_IMMUTABLE`; `codex` added to the enum, `zcode` retained-but-unsupported
@@ -104,6 +112,10 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 - ⏳ `@harness-nexus/acp-bridge` daemon
 - ⏳ Server-side remote push of profiles to a connected tool
+
+> Likely absorbed into the planned client unification (see the note under
+> Phase 3) — the bridge daemon and the `hnx` CLI would become one client
+> program's concerns. Decide during that discussion.
 
 ## Phase 6 — Platform features
 
