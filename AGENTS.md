@@ -185,6 +185,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 - **Profile concept & install flow** → `docs/design/profiles.md`
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
+- **Client daemon, machines, realtime protocol, MCP shim, ACP chat (Phase 8)**
+  → `docs/design/phase-8-client.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -543,11 +545,21 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   ledger + `hnx install` CLI), 3.4 (Hermes adapter), and 3.5 (the Claude Code
   **marketplace emitter** — profiles served as a native CC plugin marketplace
   over HTTP, plus the `{resourceId, kind}` profile-entry arm) are shipped.
-  Remaining: 3.6 Codex adapter, 3.7 cross-target import, 3.8 other agents +
-  ECC/Superpower import adapters, the local-write CC fallback adapter, the
-  stdio bridge entry, the ACP bridge, Channels, LLM-WIKI, memory/notes.
+  Remaining in Phase 3: 3.8 other agents + ECC/Superpower import adapters, and
+  the local-write CC fallback adapter. 3.6 (Codex), 3.7 (cross-target import),
+  the stdio bridge entry, and the ACP bridge are **absorbed into Phase 8** (see
+  below). Channels, LLM-WIKI, memory/notes remain unplanned.
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
-  reproducible reference). See `docs/roadmap.md` for what remains. **Phase 2.3
+  reproducible reference). See `docs/roadmap.md` for what remains.
+  **Phase 8 — the Harness Nexus client & agent orchestration — is scoped and
+  direction-locked (2026-09), implementation starting at C1:** machines +
+  on-demand daemon over Socket.IO/WSS, client-side MCP serving via per-session
+  stdio shims (proxy/direct deleted; dial site derived from credential
+  distributability + admin override; global creds non-distributable by default
+  with server `/mcp` as their sole outlet), inventory/diff/import, remote
+  deploy jobs, gated ACP chat, then orchestration (C6, undesigned). Read
+  `docs/prd/phase-8-client.md` + `docs/design/phase-8-client.md` first.
+  **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`
   file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`

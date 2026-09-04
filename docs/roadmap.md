@@ -66,21 +66,26 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 > Priority: **Hermes → Claude Code → Codex**. ZCode is out of install scope
 > (no reproducible reference; retained in the enum but unsupported).
 >
-> **Pending direction — "Harness Nexus client" unification (2026-09):** the
-> plan is to fold the CLI adapter pipeline (`hnx`), the Phase 5 ACP bridge,
-> and other client-side features into a single Harness Nexus client program.
-> Discussion not yet held — shape, scope, and phasing are open. Until then:
-> the local-write Claude Code fallback adapter stays deferred (marketplace
-> emission covers CC), and further `hnx` surface growth should be weighed
-> against the unification.
+> **Direction decided — "Harness Nexus client" unification (2026-09):** the
+> `hnx` CLI, the Phase 5 ACP bridge, machine registration, client-side MCP
+> serving, and remote deploy fold into one Harness Nexus client program, under
+> the broader repositioning of Harness Nexus as an **agent orchestration
+> platform** (control plane = server/web, data plane = client). See **Phase 8**
+> below — PRD `docs/prd/phase-8-client.md`, design
+> `docs/design/phase-8-client.md`. Consequences for this phase: 3.6 and 3.7 are
+> absorbed into Phase 8 (C2 and C3 respectively); the local-write CC fallback
+> adapter stays deferred.
 
 - ✅ 3.1 — `McpServer.mode` (proxy/direct) + stdio re-enabled in direct mode; "MCP Connections" → "MCP Management"; removed `proxied` (mode alone decides pooling)
 - ✅ 3.2 — `Profile.target` (single, immutable) + target-narrowed creation form + `TARGET_IMMUTABLE`; `codex` added to the enum, `zcode` retained-but-unsupported
 - ✅ 3.3 — Install pipeline skeleton: target adapter factory + registry + plan/apply separation + install-state ledger + `hnx install` CLI (dry-run default). No real target adapter yet.
 - ✅ 3.4 — **Hermes adapter** (priority 1). Python plugin bundle + `config.yaml` `mcp_servers:` merge + `AGENTS.md` rules; `${HN_PAT_*}` env placeholders.
 - ✅ 3.5 — **Marketplace emitter** (priority 2; re-planned). Serve each user's claude-code profiles as a native CC plugin marketplace over HTTP — `claude plugin marketplace add <PUBLIC_BASE_URL>/api/marketplace/<PAT>/marketplace.json` + archive-source zips; claude owns install/update/uninstall. Profile entries gained the `{resourceId, kind}` resource arm. The local-write CC adapter is demoted to an old-CLI (<2.1.224) / airgapped fallback — deferred behind the emitter.
-- ⏳ 3.6 — **Codex adapter** (priority 3). JSON `.codex-plugin/plugin.json` (+`interface`) + TOML `config.toml`; stdio-only MCP.
-- ⏳ 3.7 — Cross-target profile import with compatibility report + per-artifact compat matrix
+- ➡️ 3.6 — **Codex adapter** → absorbed into Phase 8 (C2): under the client
+  stdio unification every target emits one stdio shim entry, which makes the
+  Codex adapter the trivial case (TOML `config.toml` stdio entry).
+- ➡️ 3.7 — Cross-target profile import → absorbed into Phase 8 (C3): the
+  daemon's inventory scan + diff + one-click import generalizes it
 - ⏳ 3.8 — Other well-known agents (optional) + ECC/Superpower import adapters
 - PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md` · Design 3.5: `docs/design/phase-3.5-marketplace-emitter.md`
 - Research: `docs/research/phase-3-ecc-install-patterns.md` (adapter factory + plan/apply + install-state; Codex ground-truth) · `docs/research/phase-3-plugin-targets.md` (per-target formats; CC/Hermes detail, ZCode superseded) · `docs/research/phase-3.5-marketplace-emitter-spike.md` (empirical CC marketplace protocol constraints)
@@ -110,17 +115,16 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
 
 ## Phase 5 — ACP bridge
 
-- ⏳ `@harness-nexus/acp-bridge` daemon
-- ⏳ Server-side remote push of profiles to a connected tool
-
-> Likely absorbed into the planned client unification (see the note under
-> Phase 3) — the bridge daemon and the `hnx` CLI would become one client
-> program's concerns. Decide during that discussion.
+- ➡️ Absorbed into Phase 8 (C1 daemon + control channel, C5 ACP chat). The
+  `packages/acp-bridge` skeleton is deleted when C1 lands.
 
 ## Phase 6 — Platform features
 
-- ⏳ stdio bridge entry for local tools (behind allowlist + sandbox)
-- ⏳ Chat-tool Channels (route external chats to controlled agents)
+- ➡️ stdio bridge entry → resolved by Phase 8 (C2): the per-session
+  `hnx mcp serve` stdio shim IS the stdio entry; no server-side spawning of
+  local processes ever happens.
+- ⏳ Chat-tool Channels (route external chats to controlled agents) — adjacent
+  to Phase 8's C6 orchestration
 - ⏳ LLM-WIKI knowledge base
 - ⏳ Global memory / notes
 
@@ -152,3 +156,27 @@ large, least-certain multi-source block (can stop partway).
   `category` is the filter axis (243/257 entries), not `tags` (3) or `metadata`.
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
   Harness Nexus stores references, the target tool executes.
+
+## Phase 8 — Harness Nexus client & agent orchestration 🚧 (direction locked, C1 next)
+
+> Repositioning: from asset-integration platform to **agent orchestration
+> platform**. Control plane (server + web) / data plane (one `hnx` client
+> program per enrolled machine). Decisions locked in the PRD; protocol, data
+> model, and per-phase plan in the design doc.
+
+| #    | Sub-phase                          | Delivers                                                                                             | Absorbs / impacts                        |
+| ---- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| C1   | daemon + machine registration      | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)   | Phase 5 (half); deletes `acp-bridge`     |
+| C2   | client MCP serving                 | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
+| C3   | inventory + diff + import          | per-target scans, profile diff, one-click import into resources + profile                            | 3.7                                     |
+| C4   | remote deploy                      | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                       | reuses 3.3                              |
+| C5   | ACP chat                           | `/acp` namespace sessions + daemon session manager + web chat UI (remote chat gated, off by default)  | Phase 5 (other half)                    |
+| C6   | orchestration                      | deliberately undesigned until C1–C5 land                                                             | Phase 6 Channels (adjacent)             |
+
+- Key locked decisions: global-scope credentials non-distributable by default
+  (server `/mcp` is their sole outlet); daemon is on-demand and MCP **never**
+  depends on it; agents consume MCP uniformly as stdio shims (proxy/direct
+  deleted, dial site derived + admin override); realtime = Socket.IO over WSS
+  with `/ctl` vs `/acp` namespaces, `domain:verb` event names, room addressing,
+  and session-per-channel isolation.
+- PRD: `docs/prd/phase-8-client.md` · Design: `docs/design/phase-8-client.md`

@@ -63,13 +63,13 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Research: [`research/phase-4.5-hooks.md`](./research/phase-4.5-hooks.md) — the hook event × target support matrix (CC ~30 events, ZCode 7, Hermes different model); lands in `packages/shared/src/hooks.ts`.
 - All resource kinds shipped: sub-agent, rule, command (single-file inline), hook (hooks.json + event/target matrix), skill (inline + inline-bundle multi-file).
 
-### Phase 5 — ACP bridge ⏳
+### Phase 5 — ACP bridge ➡️ absorbed into Phase 8
 
-- _PRD/design to be written._
+- Delivered by Phase 8: C1 (daemon + control channel) and C5 (ACP chat). See the Phase 8 entries below.
 
 ### Phase 6 — Platform features ⏳
 
-- _stdio bridge, Channels, LLM-WIKI, memory/notes._
+- stdio bridge entry → resolved by Phase 8 C2 (the stdio shim IS the entry). Remaining: Channels (adjacent to Phase 8 C6), LLM-WIKI, memory/notes.
 
 ### Phase 7 — Skill multi-source & plugin references ✅
 
@@ -80,6 +80,11 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Design 7.4: [`design/phase-7.4-multi-source.md`](./design/phase-7.4-multi-source.md) — 4 `SkillSource` adapters (github/well-known/url/marketplace), `SkillSearchRouter` (per-source timeout + identifier dedupe + trust-rank), `/api/skills/search`, hub dual-mode (browse + cross-source search). skills.sh/browse.sh deferred; clawhub/lobehub/hermes-index skipped (verified).
 - Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
 - 7.2–7.4 designs to be written before each ships.
+
+### Phase 8 — Harness Nexus client & agent orchestration 🚧 (direction locked, C1 next)
+
+- PRD: [`prd/phase-8-client.md`](./prd/phase-8-client.md) — the vision shift (control plane / data plane), the four locked decisions (credential distributability, `/mcp` outlet narrowing, on-demand daemon, uniform stdio MCP), and the C1–C6 scope.
+- Design: [`design/phase-8-client.md`](./design/phase-8-client.md) — data model (`Machine`/`AgentInstance`/`Job`/`AcSession`), the Socket.IO-over-WSS realtime protocol (namespaces `/ctl` + `/acp`, event catalog, rooms, isolation layers), the MCP shim process model + dial-site routing derivation, jobs/deploy, inventory/diff/import, ACP chat, security model, and the per-phase development plan.
 
 ### Concept notes (design/)
 
