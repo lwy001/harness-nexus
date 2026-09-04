@@ -568,7 +568,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
-  direction-locked, and C1–C3 are shipped (2026-09):** machines + on-demand
+  direction-locked, and C1–C4 are shipped (2026-09):** machines + on-demand
   daemon over Socket.IO/WSS, client-side MCP serving via per-session stdio
   shims (proxy/direct deleted; dial site derived from credential
   distributability + admin override; global creds non-distributable by default
@@ -616,7 +616,23 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   daemon-side** to `${cred:<KEY>}` before upload; re-import of identical
   bodies is a full reuse). The MachineDetail web page (`/machines/:id`,
   drill-down from Machines rows — no nav entry) drives scan/diff/import.
-  Remaining: C4 (jobs/deploy) → C5 (ACP chat) → C6.
+  C4 (`docs/design/phase-8-c4.md`) — jobs/remote deploy: `JobService`
+  (`server/src/jobs/service.ts`, decorated `app.realtime.jobs`) —
+  `queued → dispatched → running → succeeded | failed`, queued-only cancel,
+  disconnect/ack-timeout recovery requeues with attempts+1 (≥
+  `JOB_MAX_ATTEMPTS` ⇒ `failed JOB_ABANDONED`), terminal states ignore stale
+  replay; machine online ⇒ `dispatchPending` drains the queue;
+  `AgentInstance` (one per machine+profile, upserted on redeploy — the
+  addressable unit for C5/C6; migration `0009`); `POST/GET
+/api/machines/:id/jobs` + `POST /api/jobs/:id/cancel` + `GET
+/api/machines/:id/agents` (`modules/jobs.ts`; deploy to claude-code →
+  `409 TARGET_NOT_DEPLOYABLE` — that target rides the 3.5 emitter); `GET
+/api/client/deploy-bundle` in `modules/client-config.ts` — machine PAT REST
+  exception #2 (the resolved `ResolvedProfile` bundle); the daemon's
+  `job:dispatch` handler (`cli/src/daemon/jobs.ts`) reuses the UNCHANGED 3.3
+  pipeline with `job:progress`/`job:result` reporting; `/app` `job:update`
+  push; MachineDetail Deployments card. Remaining: C5 (ACP chat — start from
+  `docs/research/phase-8-c5-acp-web-demo.md`) → C6.
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`

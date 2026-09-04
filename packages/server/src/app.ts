@@ -21,6 +21,7 @@ import { resourcesRoutes } from './modules/resources.js';
 import { skillsRoutes } from './modules/skills.js';
 import { machinesRoutes } from './modules/machines.js';
 import { inventoryRoutes } from './modules/inventory.js';
+import { jobsRoutes } from './modules/jobs.js';
 import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
@@ -170,6 +171,13 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   await registerRealtime(app, {
     maxHttpBufferSize: config.socketMaxHttpBufferSize,
     inventoryTimeoutMs: config.inventoryRequestTimeoutMs,
+    jobAckTimeoutMs: config.jobAckTimeoutMs,
+    jobSweepIntervalMs: config.jobSweepIntervalMs,
+    jobMaxAttempts: config.jobMaxAttempts,
+  });
+  app.realtime.jobs.start();
+  app.addHook('onClose', async () => {
+    app.realtime.jobs.stop();
   });
 
   // Error handler: AppError → its status/code; zod → 400; else 500.
@@ -203,6 +211,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await skillsRoutes(api);
     await machinesRoutes(api);
     await inventoryRoutes(api);
+    await jobsRoutes(api);
     await clientConfigRoutes(api);
     await marketplaceRoutes(api);
   });

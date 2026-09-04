@@ -1,9 +1,15 @@
 # Design: Phase 8 C4 — remote deploy (jobs over the 3.3 pipeline + agent instances)
 
-> Status: **planned** (branch `phase-8-c4`). Parent design:
+> Status: **implemented** (branch `phase-8-c4`). Parent design:
 > `docs/design/phase-8-client.md` § "Jobs & remote deploy (C4)". PRD:
 > `docs/prd/phase-8-client.md` ("创建Agent则是可以选择一种支持的Agent+profile
 > 一键部署"). C3: `docs/design/phase-8-c3.md` (shipped — inventory/import).
+> Verification: server 42 (fake-daemon lifecycle incl. offline queue →
+> reconnect replay, disconnect recovery to the JOB_ABANDONED cap, ack-timeout
+> sweep, gates), smoke `[8 C4]` with the REAL daemon dist — offline queue →
+> connect → deploy-bundle fetch via machine PAT → 3.3 pipeline writes the
+> fixture `~/.hermes` + ledger → AgentInstance upsert on redeploy — 240/240
+> overall; SQLite `0009` job/instance upsert + cascade verified.
 
 ## Scope
 
@@ -12,8 +18,8 @@ C4 turns "install a profile on a machine" into a platform-issued, replayable
 manual local path; same code, different trigger):
 
 1. **Job model** (`core/domain/job.ts`, migration `0009`): `Job {id, machineId,
-   ownerId, type: 'deploy', status: queued|dispatched|running|succeeded|failed|
-   cancelled, payload, result, error, attempts, createdAt, updatedAt}` +
+ownerId, type: 'deploy', status: queued|dispatched|running|succeeded|failed|
+cancelled, payload, result, error, attempts, createdAt, updatedAt}` +
    `JobRepository` (findById / listByMachine / listRecoverable / save /
    deleteByMachine). `jobTypeSchema` keeps `'scan' | 'import'` reserved, but
    C3's interactive request/response flows STAY as they are — jobs exist for
@@ -21,7 +27,7 @@ manual local path; same code, different trigger):
    interactive scan/import gains nothing from queue semantics (documented
    absorption decision, replaces the parent doc's "absorbs these flows").
 2. **AgentInstance model** (same migration): `{id, machineId, ownerId, target,
-   profileId, profileVersion, name, directory, jobId, createdAt, updatedAt}` —
+profileId, profileVersion, name, directory, jobId, createdAt, updatedAt}` —
    what C5 chats with and C6 orchestrates. Registered on deploy success;
    **upserted by (machineId, profileId)** so re-deploying = upgrading one
    instance. Machine delete cascades both tables.
@@ -103,7 +109,7 @@ create ──▶ queued ──dispatch──▶ dispatched ──progress──�
    cascade), repos in both drivers, machine-delete cascade.
 4. **server jobs** — `JobService` + realtime wiring (`job:progress` /
    `job:result` handlers, online ⇒ `dispatchPending`, disconnect ⇒ recovery)
-   + sweep lifecycle (start/stop with the app).
+   - sweep lifecycle (start/stop with the app).
 5. **server routes** — `modules/jobs.ts` + deploy-bundle in client-config +
    config keys.
 6. **cli** — daemon job executor + capability bump.

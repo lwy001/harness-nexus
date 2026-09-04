@@ -12,9 +12,11 @@ import {
   type InventoryUpdatedEvent,
   type MachineStatusEvent,
 } from '@harness-nexus/shared';
+import { jobProgressEventSchema, jobResultEventSchema, type JobView } from '@harness-nexus/shared';
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
+import { JobService } from '../jobs/service.js';
 
 /**
  * Realtime channel (Phase 8) — Socket.IO attached to the Fastify HTTP server.
@@ -33,6 +35,8 @@ export interface RealtimeService {
   presence: MachinePresence;
   /** Scan/collect waiters for the inventory request/response flow (C3). */
   inventory: InventoryCoordinator;
+  /** Job state machine (C4) — dispatch/recover driven by presence below. */
+  jobs: JobService;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -41,7 +45,13 @@ export interface RealtimeService {
 
 export async function registerRealtime(
   app: FastifyInstance,
-  opts: { maxHttpBufferSize: number; inventoryTimeoutMs: number },
+  opts: {
+    maxHttpBufferSize: number;
+    inventoryTimeoutMs: number;
+    jobAckTimeoutMs: number;
+    jobSweepIntervalMs: number;
+    jobMaxAttempts: number;
+  },
 ): Promise<void> {
   await app.register(socketIOPlugin, {
     cors: { origin: true },
@@ -50,6 +60,26 @@ export async function registerRealtime(
 
   const presence = new MachinePresence();
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
+  const jobs = new JobService(
+    {
+      uow: app.uow,
+      isOnline: (machineId) => presence.isOnline(machineId),
+      dispatch: (job: JobView) => {
+        app.io.of('/ctl').to(`machine:${job.machineId}`).emit('job:dispatch', { job });
+      },
+      update: (job: JobView) => {
+        app.io
+          .of('/app')
+          .to([`user:${job.ownerId}`, 'admins'])
+          .emit('job:update', { job });
+      },
+    },
+    {
+      ackTimeoutMs: opts.jobAckTimeoutMs,
+      sweepIntervalMs: opts.jobSweepIntervalMs,
+      maxAttempts: opts.jobMaxAttempts,
+    },
+  );
 
   const statusEvent = (machine: Machine, online: boolean): MachineStatusEvent => ({
     machineId: machine.id,
@@ -61,6 +91,7 @@ export async function registerRealtime(
   const realtime: RealtimeService = {
     presence,
     inventory,
+    jobs,
     broadcastStatus(machine, online) {
       app.io
         .of('/app')
@@ -121,6 +152,8 @@ export async function registerRealtime(
       const updated = await touchLastSeen(machine);
       if (presence.connected(machineId, socket.id)) {
         realtime.broadcastStatus(updated, true);
+        // The daemon is back — drain anything queued while it was offline.
+        void realtime.jobs.dispatchPending(machineId);
       }
     })();
 
@@ -199,10 +232,33 @@ export async function registerRealtime(
       ack?.(known ? { accepted: true } : { error: 'unknown-request' });
     });
 
+    // C4 — daemon job reporting. Progress accepts queued/dispatched/running;
+    // result settles the job (terminal states ignore stale replay).
+    socket.on('job:progress', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = jobProgressEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      ack?.({ accepted: true });
+      void realtime.jobs.onProgress(machineId, parsed.data);
+    });
+
+    socket.on('job:result', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = jobResultEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      ack?.({ accepted: true });
+      void realtime.jobs.onResult(machineId, parsed.data);
+    });
+
     socket.on('disconnect', () => {
       const wentOffline = presence.disconnected(socket.id);
       if (wentOffline === null) return;
       inventory.failMachine(wentOffline);
+      void realtime.jobs.recoverMachine(wentOffline);
       void (async () => {
         const machine = await app.uow.machines.findById(wentOffline);
         if (machine) {

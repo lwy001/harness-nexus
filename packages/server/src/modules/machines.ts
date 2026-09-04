@@ -112,6 +112,9 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
     // Drop live sockets first (broadcasts offline), then revoke the PAT so the
     // daemon can never reconnect, then remove the row.
     app.realtime.disconnectMachine(machine);
+    app.realtime.inventory.failMachine(machine.id);
+    await app.realtime.jobs.purgeMachine(machine.id);
+    await app.uow.inventories.deleteByMachine(machine.id);
     await app.uow.tokens.delete(machine.enrollmentPatId);
     await app.uow.machines.delete(machine.id);
     return { ok: true };

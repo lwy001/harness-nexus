@@ -92,12 +92,66 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
     };
     return reply.send(config);
   });
+
+  // ---- GET /api/client/deploy-bundle?profile=<id> (C4) ----
+  // The resolved profile bundle a daemon's deploy job needs — exactly what
+  // the CLI resolver would otherwise fetch N+1. Machine PAT exception #2:
+  // same auth + visibility treatment as /api/client/mcp-config.
+  app.get('/api/client/deploy-bundle', async (req, reply) => {
+    const caller = await resolveClientCaller(app, req);
+    if (!caller) {
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+    }
+    const profileId = (req.query as { profile?: string }).profile;
+    if (!profileId) {
+      throw new AppError('A profile query parameter is required', 400, 'PROFILE_REQUIRED');
+    }
+    const profile = await app.uow.profiles.findById(profileId);
+    if (!profile || !visibleProfile(profile, caller.userId, caller.role)) {
+      throw new AppError('Profile not found', 404, 'PROFILE_NOT_FOUND');
+    }
+
+    const artifacts: unknown[] = [];
+    for (const entry of profile.entries) {
+      if (entry.kind === 'mcp') {
+        const server = await app.uow.mcpServers.findById(entry.resourceId);
+        if (!server || !visibleServer(server, caller.userId, caller.role)) {
+          throw new AppError(
+            'A profile entry references an MCP server you cannot access',
+            403,
+            'PROFILE_ENTRY_NOT_ACCESSIBLE',
+          );
+        }
+        artifacts.push({ entryId: entry.resourceId, kind: 'mcp', mcpServer: server });
+      } else {
+        const resource = await app.uow.resources.findById(entry.resourceId);
+        if (
+          !resource ||
+          resource.kind !== entry.kind ||
+          !(
+            resource.scope === 'global' ||
+            resource.ownerId === caller.userId ||
+            caller.role === 'admin'
+          )
+        ) {
+          throw new AppError(
+            'A profile entry references a resource you cannot access',
+            403,
+            'PROFILE_ENTRY_NOT_ACCESSIBLE',
+          );
+        }
+        artifacts.push({ entryId: entry.resourceId, kind: entry.kind, resource });
+      }
+    }
+    return reply.send({ profile, artifacts });
+  });
 }
 
 /**
  * Resolve the caller from the Authorization header. Machine PATs
- * (`machine-ctl`) map to their machine's owner — the ONLY REST surface they
- * unlock; the root auth hook rejects them everywhere else. Marketplace tokens
+ * (`machine-ctl`) map to their machine's owner — the ONLY REST surfaces they
+ * unlock (mcp-config + deploy-bundle); the root auth hook rejects them
+ * everywhere else. Marketplace tokens
  * are rejected (their blast radius is the emitter URL only).
  */
 async function resolveClientCaller(

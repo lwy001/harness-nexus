@@ -35,13 +35,29 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { RocketIcon, SquareIcon } from 'lucide-react';
 import {
   HarnessNexusError,
+  type AgentInstanceView,
   type ImportResult,
   type InventoryDiff,
+  type JobView,
   type MachineView,
   type Profile,
 } from '@harness-nexus/sdk';
+
+/** Wire shape of `job:update` (mirrors shared/realtime.ts). */
+interface JobUpdateEvent {
+  job: JobView;
+}
+
+/** Status → Signal-system color encoding (state colors only; --signal unused). */
+const JOB_STATUS_CLASS: Record<string, string> = {
+  succeeded: 'bg-ok',
+  failed: 'bg-danger',
+  running: 'bg-warn',
+  cancelled: 'bg-muted-foreground/40',
+};
 
 /** One row of `GET /api/machines/:id/inventory` (server view shape). */
 interface InventoryEntry {
@@ -81,6 +97,8 @@ export function MachineDetailPage() {
   const [machine, setMachine] = useState<MachineView | null>(null);
   const [inventory, setInventory] = useState<InventoryEntry[] | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [jobs, setJobs] = useState<JobView[] | null>(null);
+  const [agents, setAgents] = useState<AgentInstanceView[]>([]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
@@ -96,9 +114,27 @@ export function MachineDetailPage() {
     }
   }, [id, logout]);
 
+  const refreshJobs = useCallback(async () => {
+    if (!id) return;
+    try {
+      const [jobs, agents] = await Promise.all([
+        withAuthGuard(() => api.listMachineJobs(id), logout),
+        withAuthGuard(() => api.listMachineAgents(id), logout),
+      ]);
+      setJobs(jobs);
+      setAgents(agents);
+    } catch {
+      // job data is supplementary — a failure here doesn't blank the page
+    }
+  }, [id, logout]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void refreshJobs();
+  }, [refreshJobs]);
 
   // Live updates: presence patches the header; a fresh snapshot refetches.
   useEffect(() => {
@@ -118,13 +154,25 @@ export function MachineDetailPage() {
     const onInventory = (e: InventoryUpdatedEvent): void => {
       if (e.machineId === id) void refresh();
     };
+    const onJobUpdate = (e: JobUpdateEvent): void => {
+      if (e.job.machineId !== id) return;
+      setJobs((prev) => {
+        const list = prev ?? [];
+        return list.some((j) => j.id === e.job.id)
+          ? list.map((j) => (j.id === e.job.id ? e.job : j))
+          : [e.job, ...list];
+      });
+      if (e.job.status === 'succeeded' || e.job.status === 'failed') void refreshJobs();
+    };
     socket.on('machine:status', onStatus);
     socket.on('inventory:updated', onInventory);
+    socket.on('job:update', onJobUpdate);
     return () => {
       socket.off('machine:status', onStatus);
       socket.off('inventory:updated', onInventory);
+      socket.off('job:update', onJobUpdate);
     };
-  }, [id, refresh]);
+  }, [id, refresh, refreshJobs]);
 
   async function scan(): Promise<void> {
     if (!id) return;
@@ -206,6 +254,13 @@ export function MachineDetailPage() {
             <TargetInventoryCard key={entry.target} entry={entry} />
           ))}
           {targets.length > 0 ? <DiffAndImport machineId={id!} targets={targets} /> : null}
+          <DeploymentsCard
+            machineId={id!}
+            online={machine?.online === true}
+            jobs={jobs}
+            agents={agents}
+            onChanged={refreshJobs}
+          />
         </div>
       )}
     </AppShell>
@@ -554,5 +609,199 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
       <p className="font-mono text-xl tabular-nums">{value}</p>
       <p className="text-muted-foreground text-xs">{label}</p>
     </div>
+  );
+}
+
+function JobStatusBadge({ status }: { status: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        className={`size-2 rounded-full ${JOB_STATUS_CLASS[status] ?? 'bg-muted-foreground/40'}`}
+      />
+      <span className="font-mono text-xs tabular-nums">{status}</span>
+    </span>
+  );
+}
+
+/**
+ * Deploy jobs + deployed agent instances (Phase 8 C4). A deploy queues when
+ * the daemon is offline and replays on reconnect — the hint says so instead
+ * of hiding the queue.
+ */
+function DeploymentsCard({
+  machineId,
+  online,
+  jobs,
+  agents,
+  onChanged,
+}: {
+  machineId: string;
+  online: boolean;
+  jobs: JobView[] | null;
+  agents: AgentInstanceView[];
+  onChanged: () => void;
+}) {
+  const { logout } = useAuth();
+  const [profiles, setProfiles] = useState<Profile[] | null>(null);
+  const [profileId, setProfileId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await withAuthGuard(() => api.listProfiles(), logout);
+        // Only targets with a local-write install adapter can be deployed.
+        setProfiles(all.filter((p) => p.target === 'hermes' || p.target === 'codex'));
+      } catch {
+        setProfiles([]);
+      }
+    })();
+  }, [logout]);
+
+  async function deploy(): Promise<void> {
+    if (!profileId) return;
+    setBusy(true);
+    try {
+      await withAuthGuard(() => api.createMachineJob(machineId, { profileId }), logout);
+      toast.success(online ? 'Deploy job dispatched' : 'Deploy job queued (daemon offline)');
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Deploy failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel(job: JobView): Promise<void> {
+    try {
+      await withAuthGuard(() => api.cancelJob(job.id), logout);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Cancel failed');
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <RocketIcon className="size-4" />
+          Deployments
+        </CardTitle>
+        <CardDescription>
+          Deploy a profile as a job — it queues while the daemon is offline and replays when the
+          machine comes back. Re-deploying upgrades the same agent instance.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid min-w-64 gap-2">
+            <Label htmlFor="deploy-profile">Profile</Label>
+            <Select value={profileId} onValueChange={setProfileId}>
+              <SelectTrigger id="deploy-profile" className="font-mono text-xs">
+                <SelectValue placeholder="Pick a profile…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(profiles ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="font-mono text-xs">
+                    {p.name} ({p.target})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => void deploy()} disabled={busy || profileId === ''}>
+            <RocketIcon className="size-4" />
+            {busy ? 'Creating…' : online ? 'Deploy' : 'Queue deploy'}
+          </Button>
+          <p className="text-muted-foreground pb-2 text-sm">
+            {profiles !== null && profiles.length === 0
+              ? 'No deployable profiles (hermes/codex) yet.'
+              : null}
+          </p>
+        </div>
+
+        <div className="overflow-hidden rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-4">Job</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Detail</TableHead>
+                <TableHead className="pr-4 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {jobs === null ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-muted-foreground py-6 text-center">
+                    Loading jobs…
+                  </TableCell>
+                </TableRow>
+              ) : jobs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-muted-foreground py-6 text-center">
+                    No jobs yet.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                jobs.map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell className="pl-4">
+                      <span className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {job.type}
+                        </Badge>
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {new Date(job.createdAt).toLocaleString()}
+                        </span>
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <JobStatusBadge status={job.status} />
+                    </TableCell>
+                    <TableCell className="max-w-[24rem] truncate text-muted-foreground text-xs">
+                      {job.error ?? (job.status === 'queued' ? 'waiting for daemon' : '—')}
+                    </TableCell>
+                    <TableCell className="pr-4 text-right">
+                      {job.status === 'queued' ? (
+                        <Button variant="ghost" size="sm" onClick={() => void cancel(job)}>
+                          <SquareIcon className="size-4" />
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Agent instances ({agents.length})</p>
+          {agents.length === 0 ? (
+            <p className="text-muted-foreground text-sm">Nothing deployed on this machine yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {agents.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{a.name}</span>
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {a.target}
+                  </Badge>
+                  <span className="text-muted-foreground font-mono text-xs">{a.directory}</span>
+                  {a.profileVersion ? (
+                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                      v{a.profileVersion}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

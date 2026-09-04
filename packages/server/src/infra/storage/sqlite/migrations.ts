@@ -183,6 +183,42 @@ CREATE TABLE IF NOT EXISTS machine_inventory (
 );
     `,
   },
+  {
+    version: 9,
+    description:
+      'phase 8 C4 — replayable jobs + deployed agent instances (one per machine+profile)',
+    sql: `
+CREATE TABLE IF NOT EXISTS jobs (
+  id          TEXT PRIMARY KEY,
+  machine_id  TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  owner_id    TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  result      TEXT,
+  error       TEXT,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_machine ON jobs(machine_id);
+
+CREATE TABLE IF NOT EXISTS agent_instances (
+  id              TEXT PRIMARY KEY,
+  machine_id      TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  owner_id        TEXT NOT NULL,
+  target          TEXT NOT NULL,
+  profile_id      TEXT NOT NULL,
+  profile_version TEXT,
+  name            TEXT NOT NULL,
+  directory       TEXT NOT NULL,
+  job_id          TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE (machine_id, profile_id)
+);
+    `,
+  },
 ] as const;
 
 /**

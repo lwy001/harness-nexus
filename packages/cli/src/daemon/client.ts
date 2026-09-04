@@ -6,12 +6,13 @@ import {
   type MachineHelloAck,
 } from '@harness-nexus/shared';
 import { collectItems, scanAllTargets, scanTarget } from '../inventory/scan.js';
+import { attachJobHandlers } from './jobs.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.2.0-c3';
+export const DAEMON_VERSION = '0.3.0-c4';
 
-/** Capabilities this daemon build carries (Phase 8 C3: inventory scan/collect). */
-export const DAEMON_CAPABILITIES = ['inventory'];
+/** Capabilities this daemon build carries (C3: inventory; C4: deploy jobs). */
+export const DAEMON_CAPABILITIES = ['inventory', 'deploy'];
 
 export interface DaemonOptions {
   server: string;
@@ -36,6 +37,8 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
     auth: { token: options.token, machineId: options.machineId },
     transports: ['websocket'],
   });
+
+  attachJobHandlers(socket, { server: options.server, token: options.token });
 
   const reportAll = (requestId?: string): void => {
     void (async () => {

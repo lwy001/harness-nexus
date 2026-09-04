@@ -11,6 +11,10 @@ import type {
   Machine,
   MachineInventorySnapshot,
   InventoryRepository,
+  Job,
+  AgentInstance,
+  JobRepository,
+  AgentInstanceRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -39,6 +43,9 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const machines = new Map<string, Machine>();
   // key: `${machineId}\u0000${target}` — one latest snapshot per pair
   const inventories = new Map<string, MachineInventorySnapshot>();
+  const jobs = new Map<string, Job>();
+  // key: `${machineId}\u0000${profileId}` — one deployed instance per pair
+  const agentInstances = new Map<string, AgentInstance>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -253,6 +260,52 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const jobRepo: JobRepository = {
+    async findById(id) {
+      return jobs.get(id) ?? null;
+    },
+    async listByMachine(machineId) {
+      return [...jobs.values()]
+        .filter((j) => j.machineId === machineId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    },
+    async listRecoverable() {
+      return [...jobs.values()]
+        .filter((j) => j.status === 'queued' || j.status === 'dispatched' || j.status === 'running')
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(job) {
+      jobs.set(job.id, job);
+      return job;
+    },
+    async deleteByMachine(machineId) {
+      for (const [id, j] of [...jobs.entries()]) if (j.machineId === machineId) jobs.delete(id);
+    },
+  };
+
+  const agentInstanceRepo: AgentInstanceRepository = {
+    async findById(id) {
+      return [...agentInstances.values()].find((a) => a.id === id) ?? null;
+    },
+    async listByMachine(machineId) {
+      return [...agentInstances.values()]
+        .filter((a) => a.machineId === machineId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async findByMachineAndProfile(machineId, profileId) {
+      return agentInstances.get(`${machineId}\u0000${profileId}`) ?? null;
+    },
+    async save(instance) {
+      agentInstances.set(`${instance.machineId}\u0000${instance.profileId}`, instance);
+      return instance;
+    },
+    async deleteByMachine(machineId) {
+      for (const key of [...agentInstances.keys()]) {
+        if (key.split('\u0000')[0] === machineId) agentInstances.delete(key);
+      }
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -263,5 +316,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     resources: resourceRepo,
     machines: machineRepo,
     inventories: inventoryRepo,
+    jobs: jobRepo,
+    agentInstances: agentInstanceRepo,
   };
 }

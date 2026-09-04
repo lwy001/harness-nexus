@@ -1,0 +1,94 @@
+import type { Socket } from 'socket.io-client';
+import {
+  jobDispatchEventSchema,
+  type JobView,
+  deployResultDataSchema,
+} from '@harness-nexus/shared';
+import { HarnessNexusClient } from '@harness-nexus/sdk';
+import { planInstall } from '../install/planner.js';
+import { applyInstall } from '../install/installer.js';
+import type { ResolvedProfile } from '../install/types.js';
+
+/**
+ * Daemon-side job executor (Phase 8 C4). docs/design/phase-8-c4.md.
+ *
+ * A deploy job is the 3.3 pipeline with a different trigger: fetch the
+ * resolved bundle with the machine PAT (`GET /api/client/deploy-bundle` —
+ * machine PAT exception #2), plan, apply + ledger, reporting `job:progress`
+ * per phase and one terminal `job:result`. Plans are idempotent overwrites,
+ * so a redelivered job (server recovered it after a disconnect) simply
+ * re-runs. `scan`/`import` job types are reserved by the protocol — C3's
+ * interactive flows handle them; arriving here they settle as unsupported.
+ */
+
+export interface JobExecutorOptions {
+  server: string;
+  /** The daemon's machine PAT. */
+  token: string;
+}
+
+export function attachJobHandlers(socket: Socket, opts: JobExecutorOptions): void {
+  socket.on('job:dispatch', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = jobDispatchEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    // Ack = ACCEPTED, not completed — the server's dispatched state means
+    // "with the daemon", the terminal result arrives separately.
+    ack?.({ accepted: true });
+    const job = parsed.data.job;
+    if (job.type !== 'deploy') {
+      socket.emit('job:result', {
+        jobId: job.id,
+        ok: false,
+        error: `job type '${job.type}' is not supported by this daemon`,
+      });
+      return;
+    }
+    void runDeploy(socket, opts, job);
+  });
+}
+
+async function runDeploy(socket: Socket, opts: JobExecutorOptions, job: JobView): Promise<void> {
+  const payload = job.payload as { profileId: string; directory?: string | undefined };
+  const progress = (phase: string, message?: string): void => {
+    socket.emit('job:progress', { jobId: job.id, phase, ...(message ? { message } : {}) });
+  };
+  const result = (ok: boolean, extra: { error?: string; data?: unknown }): void => {
+    socket.emit('job:result', { jobId: job.id, ok, ...extra });
+  };
+
+  try {
+    const client = new HarnessNexusClient({ baseUrl: opts.server, token: opts.token });
+    progress('resolve', `fetching profile ${payload.profileId}`);
+    const bundle = (await client.getDeployBundle(payload.profileId)) as ResolvedProfile;
+
+    // Adapters read the server base from HN_SERVER when emitting the
+    // `hnx mcp serve` shim entry (same as `hnx install`).
+    process.env.HN_SERVER = opts.server;
+
+    progress('plan', 'planning install');
+    const plan = planInstall(bundle, {
+      ...(payload.directory ? { input: { outDir: payload.directory } } : {}),
+    });
+
+    progress('apply', `writing ${plan.operations.length} operation(s)`);
+    applyInstall(plan, {
+      profileId: bundle.profile.id,
+      profileName: bundle.profile.name,
+      profileVersion: bundle.profile.version,
+    });
+
+    const data = deployResultDataSchema.parse({
+      name: bundle.profile.name,
+      directory: plan.targetRoot,
+      target: plan.adapter.target,
+      profileId: bundle.profile.id,
+      ...(bundle.profile.version ? { profileVersion: bundle.profile.version } : {}),
+    });
+    result(true, { data });
+  } catch (e) {
+    result(false, { error: e instanceof Error ? e.message : String(e) });
+  }
+}

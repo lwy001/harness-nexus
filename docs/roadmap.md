@@ -157,7 +157,7 @@ large, least-certain multi-source block (can stop partway).
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
   Harness Nexus stores references, the target tool executes.
 
-## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C3 shipped)
+## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C4 shipped)
 
 > Repositioning: from asset-integration platform to **agent orchestration
 > platform**. Control plane (server + web) / data plane (one `hnx` client
@@ -169,7 +169,7 @@ large, least-certain multi-source block (can stop partway).
 | **C1** ✅ | daemon + machine registration | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)                                 | Phase 5 (half); deletes `acp-bridge`      |
 | **C2** ✅ | client MCP serving            | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode        | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
 | **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                           | 3.7                                       |
-| C4        | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                     | reuses 3.3                                |
+| **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                     | reuses 3.3                                |
 | C5        | ACP chat                      | chat + agent control over `/app`↔`/ctl` routing, daemon-side semantic↔ACP adapters, web chat UI (remote chat gated, off by default) | Phase 5 (other half)                      |
 | C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                            | Phase 6 Channels (adjacent)               |
 
@@ -185,7 +185,7 @@ large, least-certain multi-source block (can stop partway).
   extensions.
 - PRD: `docs/prd/phase-8-client.md` · Design: `docs/design/phase-8-client.md` ·
   Design C1: `docs/design/phase-8-c1.md` · Design C2: `docs/design/phase-8-c2.md` ·
-  Design C3: `docs/design/phase-8-c3.md`
+  Design C3: `docs/design/phase-8-c3.md` · Design C4: `docs/design/phase-8-c4.md`
 - ✅ **C1 shipped (2026-09, branch `phase-8-c1`)**: `Machine` entity + repos +
   SQLite migration `0006`; machine PATs (`scopes: ['machine-ctl']`) rejected by
   the REST hook (realtime-only blast radius); realtime v0 — `fastify-socket.io`
@@ -226,3 +226,19 @@ STDIO_REQUIRES_CLIENT` / `409 CREDENTIAL_NOT_DISTRIBUTABLE` /
   owner; `/app` `inventory:updated` push; MachineDetail web page (inventory
   tables, diff view, import wizard) linked from Machines rows; SDK inventory
   methods; vitest wired into the CLI package.
+- ✅ **C4 shipped (2026-09, branch `phase-8-c4`)**: `Job` state machine
+  (`queued → dispatched → running → succeeded | failed`, queued-only cancel;
+  disconnect / ack-timeout-sweep recovery requeues with `attempts+1`, ≥
+  `JOB_MAX_ATTEMPTS` ⇒ `failed JOB_ABANDONED`; terminal states ignore stale
+  replay) in `JobService` (`app.realtime.jobs`); `AgentInstance` upserted per
+  (machine, profile) on deploy success — the C5/C6 addressable unit;
+  migration `0009` + both drivers; `/api/machines/:id/jobs` (POST deploy —
+  soft `deploy`-capability gate when online, `409 TARGET_NOT_DEPLOYABLE` for
+  claude-code which stays on the 3.5 emitter path) + jobs list + cancel +
+  `/api/machines/:id/agents`; `GET /api/client/deploy-bundle` (machine PAT
+  REST exception #2 — the resolved bundle the daemon's executor fetches);
+  daemon `job:dispatch` handler reusing the UNCHANGED 3.3 pipeline
+  (plan/apply/ledger, `job:progress` per phase); `/app` `job:update` push;
+  MachineDetail Deployments card (deploy form, live jobs table, agent
+  instances). C3's interactive scan/import stay direct request/response —
+  jobs are for replayable fire-and-forget work.

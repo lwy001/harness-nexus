@@ -9,6 +9,8 @@
 
 import type {
   Credential,
+  AgentInstance,
+  Job,
   Machine,
   MachineInventorySnapshot,
   McpServer,
@@ -113,6 +115,24 @@ export interface InventoryRepository {
   deleteByMachine(machineId: string): Promise<void>;
 }
 
+export interface JobRepository {
+  findById(id: string): Promise<Job | null>;
+  listByMachine(machineId: string): Promise<Job[]>;
+  /** Non-terminal jobs (queued | dispatched | running) — recovery input. */
+  listRecoverable(): Promise<Job[]>;
+  save(job: Job): Promise<Job>;
+  deleteByMachine(machineId: string): Promise<void>;
+}
+
+export interface AgentInstanceRepository {
+  findById(id: string): Promise<AgentInstance | null>;
+  listByMachine(machineId: string): Promise<AgentInstance[]>;
+  /** One instance per (machine, profile) — re-deploy upserts. */
+  findByMachineAndProfile(machineId: string, profileId: string): Promise<AgentInstance | null>;
+  save(instance: AgentInstance): Promise<AgentInstance>;
+  deleteByMachine(machineId: string): Promise<void>;
+}
+
 export interface UnitOfWork {
   resources: ResourceRepository;
   profiles: ProfileRepository;
@@ -123,4 +143,6 @@ export interface UnitOfWork {
   credentials: CredentialRepository;
   machines: MachineRepository;
   inventories: InventoryRepository;
+  jobs: JobRepository;
+  agentInstances: AgentInstanceRepository;
 }

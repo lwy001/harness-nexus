@@ -62,7 +62,7 @@ export const machineStatusEventSchema = z.object({
   daemonVersion: z.string().nullable().optional(),
 });
 
-// ---- job envelopes (v0 — framing fixed in C1, handlers land in C4) ----
+// ---- job envelopes (C1 framing, C4 semantics) ----
 
 export const jobTypeSchema = z.enum(['deploy', 'import', 'scan']);
 export const jobStatusSchema = z.enum([
@@ -84,9 +84,31 @@ export const jobViewSchema = z.object({
   payload: z.unknown(),
   result: z.unknown().nullable().optional(),
   error: z.string().nullable().optional(),
+  /** Delivery attempts (disconnect/ack-timeout recoveries increment it; ≥ max ⇒ failed). */
+  attempts: z.number().int().min(0).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
+
+/** `Job.payload` for `type: 'deploy'` (C4). */
+export const deployJobPayloadSchema = z.object({
+  profileId: z.string().min(1).max(64),
+  /** Optional install-root override on the machine (maps to the planner's `outDir`). */
+  directory: z.string().min(1).max(512).optional(),
+});
+
+/** server → browser (/app): a job transitioned. */
+export const jobUpdateEventSchema = z.object({ job: jobViewSchema });
+
+/** What a daemon reports in `job:result.data` for a successful deploy (C4). */
+export const deployResultDataSchema = z.object({
+  name: z.string().min(1).max(128),
+  directory: z.string().min(1).max(512),
+  target: z.string().min(1).max(32),
+  profileId: z.string().min(1).max(64),
+  profileVersion: z.string().max(64).optional(),
+});
+export type DeployResultData = z.infer<typeof deployResultDataSchema>;
 
 /** server → daemon: execute this job (ack = accepted, not completed). */
 export const jobDispatchEventSchema = z.object({ job: jobViewSchema });
@@ -165,6 +187,8 @@ export type MachineStatusEvent = z.infer<typeof machineStatusEventSchema>;
 export type JobType = z.infer<typeof jobTypeSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type JobView = z.infer<typeof jobViewSchema>;
+export type DeployJobPayload = z.infer<typeof deployJobPayloadSchema>;
+export type JobUpdateEvent = z.infer<typeof jobUpdateEventSchema>;
 export type JobDispatchEvent = z.infer<typeof jobDispatchEventSchema>;
 export type JobProgressEvent = z.infer<typeof jobProgressEventSchema>;
 export type JobResultEvent = z.infer<typeof jobResultEventSchema>;

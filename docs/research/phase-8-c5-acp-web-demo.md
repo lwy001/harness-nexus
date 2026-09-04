@@ -20,15 +20,15 @@ Portal           ↔ socket.io /proxy acp-bridge (DSH plugin)      — maps DSH 
 
 Key source files (worth re-reading when implementing C5):
 
-| File | Role |
-| --- | --- |
-| `acp-bridge/src/bridge.js` (660) | session lifecycle (new/load/fork/close/delete), prompt single-flight + followup queue, cancel watchdog, permission round-trip, reconnect registration |
-| `acp-bridge/src/updates.js` (133) | **pure** DSH session-event → ACP `session/update` mapping — a working first row for our C5 adapter matrix |
-| `acp-bridge/src/portal-client.js` (107) | socket.io back-connection; first-connect vs reconnect distinction |
-| `portal/server.js` (631) | channel registry, envelope routing by `channelId` room, `/api/fs/*` gateway, `/terminal` PTY namespace |
-| `portal/src/hooks/useAcpConnection.ts` (1352) | browser-side: all ACP message consumption, session ops with 90s timeout, optimistic insert reconciliation |
-| `portal/src/model/fold.ts` (304) | pure fold reducer: update stream → conversation rows (O(1) hot path) |
-| `portal/workspace-fs.js` (227) | path clamping (resolve + containment + symlink realpath), git status/diff |
+| File                                          | Role                                                                                                                                                  |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acp-bridge/src/bridge.js` (660)              | session lifecycle (new/load/fork/close/delete), prompt single-flight + followup queue, cancel watchdog, permission round-trip, reconnect registration |
+| `acp-bridge/src/updates.js` (133)             | **pure** DSH session-event → ACP `session/update` mapping — a working first row for our C5 adapter matrix                                             |
+| `acp-bridge/src/portal-client.js` (107)       | socket.io back-connection; first-connect vs reconnect distinction                                                                                     |
+| `portal/server.js` (631)                      | channel registry, envelope routing by `channelId` room, `/api/fs/*` gateway, `/terminal` PTY namespace                                                |
+| `portal/src/hooks/useAcpConnection.ts` (1352) | browser-side: all ACP message consumption, session ops with 90s timeout, optimistic insert reconciliation                                             |
+| `portal/src/model/fold.ts` (304)              | pure fold reducer: update stream → conversation rows (O(1) hot path)                                                                                  |
+| `portal/workspace-fs.js` (227)                | path clamping (resolve + containment + symlink realpath), git status/diff                                                                             |
 
 ## Protocol anatomy (envelope)
 
@@ -45,7 +45,7 @@ socket.io event name. Two families, exactly our `domain:verb` split:
   connect/disconnect), `control.agent_restart`.
 - **data-plane** — `acp` envelopes `{jsonrpc:'2.0', method, params}`:
   `session/{new,list,load,fork,prompt,cancel,close,delete,set_mode,
-  set_config_option}` down, `session/update` up (streaming).
+set_config_option}` down, `session/update` up (streaming).
 
 `session/update` shapes actually consumed by the frontend:
 `user_message_chunk | agent_message_chunk | agent_thought_chunk | tool_call |
@@ -70,12 +70,12 @@ because ops are strictly serialized (see pitfalls).
    the first proven row of our adapter matrix. Our envelope/auth/rooms stay
    as designed (`chat:*` events carrying ACP-shaped params).
 2. **Turn-level status as a control event** — their `control.session_status
-   active|idle` maps 1:1 to our planned `agent:state`; the UI's "generating"
+active|idle` maps 1:1 to our planned `agent:state`; the UI's "generating"
    hinge is exactly this, and the demo shows what breaks when it's missing
    (see cancel watchdog).
 3. **Permission round-trip semantics** (load-bearing):
    - `optionId` must be passed through VERBATIM (`allow_always | allow |
-     reject`); any transformation counts as rejection.
+reject`); any transformation counts as rejection.
    - 60s timeout ⇒ settle as `cancelled` (never leave a dangling waiter);
      agent-side abort signal also settles.
    - Every decision emits an audit event (`permission_audit`) — matches our
@@ -113,14 +113,14 @@ because ops are strictly serialized (see pitfalls).
 
 ## What we do differently (locked, non-negotiable)
 
-| Demo | Harness Nexus Phase 8 |
-| --- | --- |
-| Single user, every endpoint unauthenticated | JWT/PAT auth; machine PAT blast radius; chat additionally gated by `machine.remoteChatEnabled` (off by default), owner-only, AcSession audit rows, concurrent-session cap |
-| Portal = dumb router; browser understands ACP fully | Server stays the routing/authorization point; daemon is the protocol-adaptation edge; browser consumes ACP-shaped payloads over our `chat:*` events |
-| channelId in every envelope, room = channelId | Explicit ids in envelopes + identity binding; rooms are addressing only (`chan:<sessionId>`) |
-| `onAny` passthrough on both sides | Whitelisted handlers only, every payload zod-validated (our isolation model) |
-| One agent process per bridge connection | Daemon hosts a session manager with N sessions; AgentInstance rows make agents addressable platform-side |
-| fs/terminal on the Portal itself (host machine) | fs/terminal must ride the daemon on the USER's machine via `/ctl` routing — never the server |
+| Demo                                                | Harness Nexus Phase 8                                                                                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Single user, every endpoint unauthenticated         | JWT/PAT auth; machine PAT blast radius; chat additionally gated by `machine.remoteChatEnabled` (off by default), owner-only, AcSession audit rows, concurrent-session cap |
+| Portal = dumb router; browser understands ACP fully | Server stays the routing/authorization point; daemon is the protocol-adaptation edge; browser consumes ACP-shaped payloads over our `chat:*` events                       |
+| channelId in every envelope, room = channelId       | Explicit ids in envelopes + identity binding; rooms are addressing only (`chan:<sessionId>`)                                                                              |
+| `onAny` passthrough on both sides                   | Whitelisted handlers only, every payload zod-validated (our isolation model)                                                                                              |
+| One agent process per bridge connection             | Daemon hosts a session manager with N sessions; AgentInstance rows make agents addressable platform-side                                                                  |
+| fs/terminal on the Portal itself (host machine)     | fs/terminal must ride the daemon on the USER's machine via `/ctl` routing — never the server                                                                              |
 
 ## Pitfall checklist (verbatim-critical, from their AGENTS.md + code)
 

@@ -22,6 +22,7 @@ import type {
   Machine,
 } from '@harness-nexus/core';
 import type {
+  JobView,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -33,6 +34,7 @@ import type {
 } from '@harness-nexus/shared';
 export {
   SCANNABLE_TARGETS,
+  jobViewSchema,
   HOOK_EVENTS,
   HOOK_SUPPORT,
   resolveTrustTier,
@@ -42,6 +44,7 @@ export {
   type HookEvent,
 } from '@harness-nexus/shared';
 export type {
+  JobView,
   InventorySnapshot,
   InventoryDiff,
   MarketplaceCatalog,
@@ -74,6 +77,21 @@ export interface PatView {
 export interface MachineView extends Machine {
   online: boolean;
 }
+/** A deployed agent on a machine (Phase 8 C4) — one per (machine, profile). */
+export interface AgentInstanceView {
+  id: string;
+  machineId: string;
+  ownerId: string;
+  target: string;
+  profileId: string;
+  profileVersion: string | null;
+  name: string;
+  directory: string;
+  jobId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Response of POST /api/machines/:id/inventory/import (Phase 8 C3). */
 export interface ImportResult {
   profile: Profile;
@@ -318,6 +336,38 @@ export class HarnessNexusClient {
     },
   ): Promise<ImportResult> {
     return this.request('POST', `/api/machines/${machineId}/inventory/import`, input);
+  }
+
+  // ---- jobs + agents (Phase 8 C4) ----
+  async createMachineJob(
+    machineId: string,
+    input: { profileId: string; directory?: string },
+  ): Promise<JobView> {
+    const res = await this.request('POST', `/api/machines/${machineId}/jobs`, input);
+    return res.job;
+  }
+
+  async listMachineJobs(machineId: string): Promise<JobView[]> {
+    const res = await this.request('GET', `/api/machines/${machineId}/jobs`);
+    return res.jobs;
+  }
+
+  async cancelJob(jobId: string): Promise<JobView> {
+    const res = await this.request('POST', `/api/jobs/${jobId}/cancel`);
+    return res.job;
+  }
+
+  async listMachineAgents(machineId: string): Promise<AgentInstanceView[]> {
+    const res = await this.request('GET', `/api/machines/${machineId}/agents`);
+    return res.agents;
+  }
+
+  /** The resolved profile bundle a deploy fetches (machine PAT exception #2). */
+  async getDeployBundle(profileId: string): Promise<{ profile: Profile; artifacts: unknown[] }> {
+    return this.request(
+      'GET',
+      `/api/client/deploy-bundle?profile=${encodeURIComponent(profileId)}`,
+    );
   }
 
   // ---- settings ----

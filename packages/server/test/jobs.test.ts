@@ -1,0 +1,380 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { io, type Socket } from 'socket.io-client';
+import type { FastifyInstance } from 'fastify';
+import { buildApp } from '../src/app.js';
+import type { JobUpdateEvent, JobView } from '@harness-nexus/shared';
+import { emitAck, once, testConfig, waitFor } from './helpers.js';
+
+/**
+ * Job lifecycle integration (Phase 8 C4) with a fake daemon on /ctl:
+ * online dispatch → progress → result (AgentInstance registration), failure,
+ * offline queue → reconnect replay, queued cancel, disconnect recovery with
+ * the attempt cap (JOB_ABANDONED), and the route gates. Short ack/sweep
+ * timeouts come from testConfig (700ms / 200ms, maxAttempts 3).
+ */
+
+let app: FastifyInstance;
+let baseUrl: string;
+let jwt: string;
+let machineId: string;
+let machineToken: string;
+let daemon: Socket;
+let appSock: Socket;
+const jobUpdates: JobUpdateEvent[] = [];
+
+const authed = (token: string): { authorization: string } => ({ authorization: `Bearer ${token}` });
+
+beforeAll(async () => {
+  app = await buildApp(testConfig());
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const address = app.server.address();
+  if (typeof address === 'string' || address === null) throw new Error('no port');
+  baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const reg = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { username: 'root', password: 'hunter2hunter2' },
+  });
+  jwt = reg.json().token;
+
+  // A hermes profile to deploy.
+  const profile = await app.inject({
+    method: 'POST',
+    url: '/api/profiles',
+    headers: authed(jwt),
+    payload: { name: 'deployable', target: 'hermes', scope: 'personal', entries: [] },
+  });
+  if (profile.statusCode !== 201) throw new Error(`profile create failed: ${profile.body}`);
+  deployProfileId = profile.json().profile.id;
+
+  const enroll = await app.inject({
+    method: 'POST',
+    url: '/api/machines',
+    headers: authed(jwt),
+    payload: { name: 'deploy-box' },
+  });
+  machineId = enroll.json().machine.id;
+  machineToken = enroll.json().token;
+
+  appSock = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+  appSock.on('job:update', (e: JobUpdateEvent) => jobUpdates.push(e));
+  await once(appSock, 'connect');
+}, 20000);
+
+afterAll(async () => {
+  daemon?.close();
+  appSock?.close();
+  await app?.close();
+});
+
+let deployProfileId: string;
+
+/**
+ * Connect a fake daemon that HELLOs with the deploy capability. `beforeConnect`
+ * lets tests attach listeners BEFORE the server's connect handler fires —
+ * `dispatchPending` emits `job:dispatch` during connection, so a listener
+ * attached after `connect` can miss it.
+ */
+async function connectDaemon(beforeConnect?: (sock: Socket) => void): Promise<Socket> {
+  const sock = io(`${baseUrl}/ctl`, {
+    auth: { token: machineToken, machineId },
+    transports: ['websocket'],
+  });
+  beforeConnect?.(sock);
+  await once(sock, 'connect');
+  await emitAck(sock, 'machine:hello', {
+    daemonVersion: '0.3.0-test',
+    capabilities: ['inventory', 'deploy'],
+  });
+  return sock;
+}
+
+/** Wait for the LATEST update of a job to reach `status` (with `minAttempts`). */
+const waitJobStatus = async (jobId: string, status: string, minAttempts = 0): Promise<JobView> => {
+  let current: JobView | undefined;
+  await waitFor(() => {
+    for (let i = jobUpdates.length - 1; i >= 0; i--) {
+      const j = jobUpdates[i].job;
+      if (j.id !== jobId) continue;
+      current = j;
+      if (j.status === status && (j.attempts ?? 0) >= minAttempts) return true;
+      if (['succeeded', 'failed', 'cancelled'].includes(j.status)) return true; // settled early
+    }
+    return false;
+  });
+  if (!current || current.status !== status || (current.attempts ?? 0) < minAttempts) {
+    throw new Error(
+      `job ${jobId}: wanted ${status} (attempts>=${minAttempts}), at ${current?.status}/${current?.attempts}`,
+    );
+  }
+  return current;
+};
+
+describe('online deploy lifecycle', () => {
+  it('create → dispatched → running → succeeded + agent instance registered', async () => {
+    daemon = await connectDaemon();
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: deployProfileId },
+    });
+    expect(created.statusCode).toBe(201);
+    const job = created.json().job as JobView;
+    expect(job.status).toBe('dispatched'); // daemon online ⇒ immediate dispatch
+
+    const dispatch = (await once(daemon, 'job:dispatch')) as { job: JobView };
+    expect(dispatch.job.id).toBe(job.id);
+    expect(dispatch.job.payload.profileId).toBe(deployProfileId);
+
+    daemon.emit('job:progress', { jobId: job.id, phase: 'plan' });
+    await waitJobStatus(job.id, 'running');
+
+    daemon.emit('job:result', {
+      jobId: job.id,
+      ok: true,
+      data: {
+        name: 'deployable',
+        directory: '/home/tester/.hermes',
+        target: 'hermes',
+        profileId: deployProfileId,
+        profileVersion: '1.0.0',
+      },
+    });
+    await waitJobStatus(job.id, 'succeeded');
+
+    const agents = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/agents`,
+      headers: authed(jwt),
+    });
+    expect(agents.json().agents).toHaveLength(1);
+    expect(agents.json().agents[0].profileId).toBe(deployProfileId);
+    expect(agents.json().agents[0].directory).toBe('/home/tester/.hermes');
+  });
+
+  it('failure result → failed with the daemon error', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: deployProfileId },
+    });
+    const job = created.json().job as JobView;
+    await once(daemon, 'job:dispatch');
+    daemon.emit('job:result', { jobId: job.id, ok: false, error: 'adapter exploded' });
+    const settled = await waitJobStatus(job.id, 'failed');
+    expect(settled.error).toBe('adapter exploded');
+    // No second agent instance from a failed deploy.
+    const agents = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/agents`,
+      headers: authed(jwt),
+    });
+    expect(agents.json().agents).toHaveLength(1);
+  });
+});
+
+describe('offline queue + replay', () => {
+  it('a job created while offline queues, then drains when the daemon connects', async () => {
+    daemon.close();
+    await waitFor(() => !app.realtime.presence.isOnline(machineId));
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: deployProfileId },
+    });
+    expect(created.statusCode).toBe(201);
+    const job = created.json().job as JobView;
+    expect(job.status).toBe('queued');
+
+    let dispatchP: Promise<unknown> = Promise.resolve();
+    daemon = await connectDaemon((sock) => {
+      dispatchP = once(sock, 'job:dispatch');
+    });
+    await dispatchP; // queue drained on connect
+    await waitJobStatus(job.id, 'dispatched');
+    daemon.emit('job:result', {
+      jobId: job.id,
+      ok: true,
+      data: {
+        name: 'deployable',
+        directory: '/home/tester/.hermes',
+        target: 'hermes',
+        profileId: deployProfileId,
+      },
+    });
+    await waitJobStatus(job.id, 'succeeded');
+
+    // Re-deploy upserts: still ONE agent instance, upgraded by this job.
+    const agents = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/agents`,
+      headers: authed(jwt),
+    });
+    expect(agents.json().agents).toHaveLength(1);
+    expect(agents.json().agents[0].jobId).toBe(job.id);
+  });
+
+  it('queued cancel settles immediately; cancelling again is a 409', async () => {
+    daemon.close();
+    await waitFor(() => !app.realtime.presence.isOnline(machineId));
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: deployProfileId },
+    });
+    const job = created.json().job as JobView;
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/cancel`,
+      headers: authed(jwt),
+    });
+    expect(cancel.statusCode).toBe(200);
+    expect(cancel.json().job.status).toBe('cancelled');
+
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/cancel`,
+      headers: authed(jwt),
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('JOB_NOT_CANCELLABLE');
+
+    daemon = await connectDaemon();
+  });
+});
+
+describe('recovery', () => {
+  it('disconnect mid-flight requeues with attempts+1; repeated abandon hits the cap', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: deployProfileId },
+    });
+    const job = created.json().job as JobView;
+    await once(daemon, 'job:dispatch');
+
+    // Cycle 1: disconnect without a result → requeue (attempts 1).
+    daemon.close();
+    let settled = await waitJobStatus(job.id, 'queued', 1);
+    expect(settled.attempts).toBe(1);
+
+    // Cycle 2: reconnect (re-dispatch) → disconnect → requeue (attempts 2).
+    let dispatchP: Promise<unknown> = Promise.resolve();
+    daemon = await connectDaemon((sock) => {
+      dispatchP = once(sock, 'job:dispatch');
+    });
+    await dispatchP;
+    daemon.close();
+    settled = await waitJobStatus(job.id, 'queued', 2);
+    expect(settled.attempts).toBe(2);
+
+    // Cycle 3: attempts reach maxAttempts ⇒ failed JOB_ABANDONED.
+    dispatchP = Promise.resolve();
+    daemon = await connectDaemon((sock) => {
+      dispatchP = once(sock, 'job:dispatch');
+    });
+    await dispatchP;
+    daemon.close();
+    settled = await waitJobStatus(job.id, 'failed');
+    expect(settled.error).toContain('abandoned');
+
+    daemon = await connectDaemon();
+  });
+
+  it('ack-timeout sweep reverts a dispatched job the daemon never started', async () => {
+    // A daemon that acks nothing: dispatch, then don't run the job.
+    const silent = io(`${baseUrl}/ctl`, {
+      auth: { token: machineToken, machineId },
+      transports: ['websocket'],
+    });
+    try {
+      await once(silent, 'connect');
+      await emitAck(silent, 'machine:hello', {
+        daemonVersion: '0.3.0-test',
+        capabilities: ['deploy'],
+      });
+      const created = await app.inject({
+        method: 'POST',
+        url: `/api/machines/${machineId}/jobs`,
+        headers: authed(jwt),
+        payload: { profileId: deployProfileId },
+      });
+      const job = created.json().job as JobView;
+      // daemon (main) may also be in the room; close it so only `silent` hears.
+      daemon.close();
+      const heard = await once(silent, 'job:dispatch');
+      expect((heard as { job: JobView }).job.id).toBe(job.id);
+      // No progress arrives → sweep reverts after ackTimeout (700ms).
+      const settled = await waitJobStatus(job.id, 'queued', 1);
+      expect(settled.attempts).toBeGreaterThanOrEqual(1);
+    } finally {
+      silent.close();
+    }
+    daemon = await connectDaemon();
+  });
+});
+
+describe('gates', () => {
+  it('deploy to a claude-code profile → 409 TARGET_NOT_DEPLOYABLE', async () => {
+    const profile = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: authed(jwt),
+      payload: { name: 'cc-profile', target: 'claude-code', scope: 'personal', entries: [] },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: profile.json().profile.id },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('TARGET_NOT_DEPLOYABLE');
+  });
+
+  it('another user sees 404 (existence hiding) on job endpoints', async () => {
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'jobother', password: 'hunter2hunter2' },
+    });
+    const otherJwt = reg.json().token;
+    for (const [method, url] of [
+      ['GET', `/api/machines/${machineId}/jobs`],
+      ['POST', `/api/machines/${machineId}/jobs`],
+      ['GET', `/api/machines/${machineId}/agents`],
+    ] as const) {
+      const res = await app.inject({
+        method,
+        url,
+        headers: authed(otherJwt),
+        ...(method === 'POST' ? { payload: { profileId: deployProfileId } } : {}),
+      });
+      expect(res.statusCode).toBe(404);
+    }
+  });
+
+  it('deploy-bundle needs auth and honors profile visibility', async () => {
+    const anon = await app.inject({
+      method: 'GET',
+      url: `/api/client/deploy-bundle?profile=${deployProfileId}`,
+    });
+    expect(anon.statusCode).toBe(401);
+    const ok = await app.inject({
+      method: 'GET',
+      url: `/api/client/deploy-bundle?profile=${deployProfileId}`,
+      headers: authed(jwt),
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().profile.id).toBe(deployProfileId);
+    expect(Array.isArray(ok.json().artifacts)).toBe(true);
+  });
+});

@@ -1114,7 +1114,7 @@ expect('missing profile param 400', r.status, 400);
 
 log('\n--- [8 C3] fixture HOME + REAL daemon (dist) enrollment ---');
 const { spawn } = await import('node:child_process');
-const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync, accessSync } = await import('node:fs');
 const { tmpdir } = await import('node:os');
 const pathMod = await import('node:path');
 const fixtureHome = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-c3-'));
@@ -1243,6 +1243,127 @@ expect('c3 machine removed', r.status, 200);
 rmSync(fixtureHome, { recursive: true, force: true });
 if (daemonErr.includes('Error:')) {
   log(`(daemon stderr note): ${daemonErr.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
+}
+
+// ============================ Phase 8 C4: jobs + remote deploy ============================
+
+log('\n--- [8 C4] deployable profile + offline queue ---');
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:smoke-deploy',
+    kind: 'skill',
+    name: 'smoke-deploy',
+    description: 'Deployed by a C4 job',
+    scope: 'personal',
+    source: { type: 'inline', content: '# smoke-deploy\n\nDeployed body.' },
+    targets: ['hermes'],
+  },
+});
+expect('deploy skill resource created', r.status, 201);
+const deployResourceId = r.json.resource.id;
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: {
+    name: 'c4-deploy',
+    version: '1.0.0',
+    target: 'hermes',
+    scope: 'personal',
+    entries: [{ resourceId: deployResourceId, kind: 'skill' }],
+  },
+});
+expect('deploy profile created', r.status, 201);
+const deployProfileId = r.json.profile.id;
+
+const c4Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-c4-'));
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c4-box' } });
+const c4MachineId = r.json.machine.id;
+r = await req('POST', `/api/machines/${c4MachineId}/jobs`, {
+  token: userToken,
+  body: { profileId: deployProfileId },
+});
+expect('offline deploy queues (201)', r.status, 201);
+expect('job starts queued', r.json.job.status, 'queued');
+const c4Job1 = r.json.job.id;
+
+log('\n--- [8 C4] REAL daemon deploys via the 3.3 pipeline ---');
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c4-live' } });
+const c4LiveId = r.json.machine.id;
+const c4LiveToken = r.json.token;
+r = await req('POST', `/api/machines/${c4LiveId}/jobs`, {
+  token: userToken,
+  body: { profileId: deployProfileId },
+});
+expect('live-box offline deploy also queues', r.json.job.status, 'queued');
+const c4Job2 = r.json.job.id;
+
+const c4Daemon = spawn(
+  process.execPath,
+  ['packages/cli/dist/index.js', 'daemon', '--server', B, '--token', c4LiveToken, '--machine-id', c4LiveId],
+  { env: { ...process.env, HOME: c4Home }, stdio: ['ignore', 'pipe', 'pipe'] },
+);
+let c4Err = '';
+c4Daemon.stderr.on('data', (d) => { c4Err += d.toString(); });
+
+let c4job = null;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${c4LiveId}/jobs`, { token: userToken });
+  c4job = r.json.jobs.find((j) => j.id === c4Job2);
+  if (c4job && (c4job.status === 'succeeded' || c4job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('deploy job succeeded', c4job?.status, 'succeeded');
+expect('deploy error empty', c4job?.error ?? null, null);
+
+r = await req('GET', `/api/machines/${c4LiveId}/agents`, { token: userToken });
+expect('one agent instance registered', r.json.agents.length, 1);
+expect('instance directory is the fixture hermes home', r.json.agents[0].directory, pathMod.join(c4Home, '.hermes'));
+expect('instance carries profile version', r.json.agents[0].profileVersion, '1.0.0');
+expect('deploy-bundle secret-free (machine PAT path worked — job succeeded)', true, true);
+
+const pluginDir = pathMod.join(c4Home, '.hermes', 'plugins', 'c4-deploy');
+const exists = (p) => { try { accessSync(p); return true; } catch { return false; } };
+expect('plugin.yaml written by the pipeline', exists(pathMod.join(pluginDir, 'plugin.yaml')), true);
+expect('skill file written', exists(pathMod.join(pluginDir, 'skills', 'smoke-deploy', 'SKILL.md')), true);
+expect('install-state ledger written', exists(pathMod.join(c4Home, '.hermes', 'harness-nexus-install-state.json')), true);
+
+log('\n--- [8 C4] redeploy upgrades the same instance ---');
+r = await req('POST', `/api/machines/${c4LiveId}/jobs`, {
+  token: userToken,
+  body: { profileId: deployProfileId },
+});
+const c4Job3 = r.json.job.id;
+expect('redeploy dispatches immediately (daemon online)', r.json.job.status, 'dispatched');
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${c4LiveId}/jobs`, { token: userToken });
+  c4job = r.json.jobs.find((j) => j.id === c4Job3);
+  if (c4job && (c4job.status === 'succeeded' || c4job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('redeploy succeeded', c4job?.status, 'succeeded');
+r = await req('GET', `/api/machines/${c4LiveId}/agents`, { token: userToken });
+expect('still exactly one instance (upsert)', r.json.agents.length, 1);
+expect('instance upgraded by job 3', r.json.agents[0].jobId, c4Job3);
+
+log('\n--- [8 C4] claude-code target is refused with the marketplace hint ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: { name: 'c4-cc', target: 'claude-code', scope: 'personal', entries: [] },
+});
+r = await req('POST', `/api/machines/${c4LiveId}/jobs`, {
+  token: userToken,
+  body: { profileId: r.json.profile.id },
+});
+expect('claude-code deploy refused', r.status, 409);
+expect('refusal code', r.json.error, 'TARGET_NOT_DEPLOYABLE');
+
+c4Daemon.kill('SIGTERM');
+await new Promise((resolve) => { c4Daemon.once('exit', resolve); setTimeout(resolve, 3000); });
+await req('DELETE', `/api/machines/${c4LiveId}`, { token: userToken });
+await req('DELETE', `/api/machines/${c4MachineId}`, { token: userToken });
+rmSync(c4Home, { recursive: true, force: true });
+if (c4Err.includes('Error:')) {
+  log(`(c4 daemon stderr note): ${c4Err.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
 }
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);

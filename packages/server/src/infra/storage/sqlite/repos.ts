@@ -16,6 +16,10 @@ import type {
   MachineInventorySnapshot,
   InventoryAgentData,
   InventoryRepository,
+  Job,
+  AgentInstance,
+  JobRepository,
+  AgentInstanceRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -766,6 +770,173 @@ export function sqliteInventoryRepository(db: Database): InventoryRepository {
     },
     async deleteByMachine(machineId) {
       db.prepare('DELETE FROM machine_inventory WHERE machine_id = ?').run(machineId);
+    },
+  };
+}
+
+// ---- jobs + agent instances (phase 8 C4) ----
+
+interface JobRow {
+  id: string;
+  machine_id: string;
+  owner_id: string;
+  type: string;
+  status: string;
+  payload: string;
+  result: string | null;
+  error: string | null;
+  attempts: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapJob(row: JobRow): Job {
+  return {
+    id: row.id,
+    machineId: row.machine_id,
+    ownerId: row.owner_id,
+    type: row.type as Job['type'],
+    status: row.status as Job['status'],
+    payload: JSON.parse(row.payload) as Record<string, unknown>,
+    result: row.result === null ? null : JSON.parse(row.result),
+    error: row.error,
+    attempts: row.attempts,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function sqliteJobRepository(db: Database): JobRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow | undefined;
+      return row ? mapJob(row) : null;
+    },
+    async listByMachine(machineId) {
+      const rows = db
+        .prepare('SELECT * FROM jobs WHERE machine_id = ? ORDER BY created_at DESC, id')
+        .all(machineId) as JobRow[];
+      return rows.map(mapJob);
+    },
+    async listRecoverable() {
+      const rows = db
+        .prepare(
+          "SELECT * FROM jobs WHERE status IN ('queued', 'dispatched', 'running') ORDER BY created_at",
+        )
+        .all() as JobRow[];
+      return rows.map(mapJob);
+    },
+    async save(job) {
+      db.prepare(
+        `INSERT INTO jobs
+           (id, machine_id, owner_id, type, status, payload, result, error, attempts, created_at, updated_at)
+         VALUES (@id, @machine_id, @owner_id, @type, @status, @payload, @result, @error, @attempts, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           status     = excluded.status,
+           payload    = excluded.payload,
+           result     = excluded.result,
+           error      = excluded.error,
+           attempts   = excluded.attempts,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: job.id,
+        machine_id: job.machineId,
+        owner_id: job.ownerId,
+        type: job.type,
+        status: job.status,
+        payload: JSON.stringify(job.payload),
+        result: job.result === null ? null : JSON.stringify(job.result),
+        error: job.error,
+        attempts: job.attempts,
+        created_at: job.createdAt,
+        updated_at: job.updatedAt,
+      });
+      return job;
+    },
+    async deleteByMachine(machineId) {
+      db.prepare('DELETE FROM jobs WHERE machine_id = ?').run(machineId);
+    },
+  };
+}
+
+interface AgentInstanceRow {
+  id: string;
+  machine_id: string;
+  owner_id: string;
+  target: string;
+  profile_id: string;
+  profile_version: string | null;
+  name: string;
+  directory: string;
+  job_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapAgentInstance(row: AgentInstanceRow): AgentInstance {
+  return {
+    id: row.id,
+    machineId: row.machine_id,
+    ownerId: row.owner_id,
+    target: row.target as AgentInstance['target'],
+    profileId: row.profile_id,
+    profileVersion: row.profile_version,
+    name: row.name,
+    directory: row.directory,
+    jobId: row.job_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function sqliteAgentInstanceRepository(db: Database): AgentInstanceRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM agent_instances WHERE id = ?').get(id) as
+        AgentInstanceRow | undefined;
+      return row ? mapAgentInstance(row) : null;
+    },
+    async listByMachine(machineId) {
+      const rows = db
+        .prepare('SELECT * FROM agent_instances WHERE machine_id = ? ORDER BY created_at')
+        .all(machineId) as AgentInstanceRow[];
+      return rows.map(mapAgentInstance);
+    },
+    async findByMachineAndProfile(machineId, profileId) {
+      const row = db
+        .prepare('SELECT * FROM agent_instances WHERE machine_id = ? AND profile_id = ?')
+        .get(machineId, profileId) as AgentInstanceRow | undefined;
+      return row ? mapAgentInstance(row) : null;
+    },
+    async save(instance) {
+      db.prepare(
+        `INSERT INTO agent_instances
+           (id, machine_id, owner_id, target, profile_id, profile_version, name, directory, job_id, created_at, updated_at)
+         VALUES (@id, @machine_id, @owner_id, @target, @profile_id, @profile_version, @name, @directory, @job_id, @created_at, @updated_at)
+         ON CONFLICT(machine_id, profile_id) DO UPDATE SET
+           id              = excluded.id,
+           profile_version = excluded.profile_version,
+           name            = excluded.name,
+           directory       = excluded.directory,
+           job_id          = excluded.job_id,
+           updated_at      = excluded.updated_at`,
+      ).run({
+        id: instance.id,
+        machine_id: instance.machineId,
+        owner_id: instance.ownerId,
+        target: instance.target,
+        profile_id: instance.profileId,
+        profile_version: instance.profileVersion,
+        name: instance.name,
+        directory: instance.directory,
+        job_id: instance.jobId,
+        created_at: instance.createdAt,
+        updated_at: instance.updatedAt,
+      });
+      return instance;
+    },
+    async deleteByMachine(machineId) {
+      db.prepare('DELETE FROM agent_instances WHERE machine_id = ?').run(machineId);
     },
   };
 }
