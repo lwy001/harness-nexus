@@ -73,15 +73,34 @@ try {
   await waitReady();
   log('--- server ready ---');
 
-  log('\n--- register user + PAT ---');
+  log('\n--- register user + marketplace emit token ---');
   let r = await req('POST', '/api/auth/register', {
     body: { username: 'smoke', password: 'hunter2hunter2' },
   });
   expect('register status', r.status, 201);
   const jwt = r.json.token;
-  r = await req('POST', '/api/pats', { token: jwt, body: { name: 'emitter' } });
+  r = await req('POST', '/api/pats', {
+    token: jwt,
+    body: { name: 'emitter', kind: 'marketplace' },
+  });
   expect('pat status', r.status, 201);
   const pat = r.json.token;
+  expect('pat carries marketplace scope', r.json.pat.scopes.includes('marketplace'), true);
+  expect(
+    'add command shape',
+    r.json.addCommand.startsWith('claude plugin marketplace add http://127.0.0.1:17800/api/marketplace/'),
+    true,
+  );
+
+  log('\n--- token-kind isolation ---');
+  // An API PAT must NOT authenticate the marketplace URL...
+  r = await req('POST', '/api/pats', { token: jwt, body: { name: 'cli' } });
+  const apiPat = r.json.token;
+  r = await req('GET', `/api/marketplace/${apiPat}/marketplace.json`);
+  expect('api pat on marketplace -> 404', r.status, 404);
+  // ...and the marketplace token must NOT authenticate the REST API.
+  r = await req('GET', '/api/auth/me', { token: pat });
+  expect('marketplace pat on api -> 401', r.status, 401);
 
   log('\n--- create resources (skill / bundle-skill / rule / command / sub_agent / hook) ---');
   const mkResource = (over) =>
@@ -248,7 +267,10 @@ try {
     body: { username: 'mallory', password: 'hunter2hunter2' },
   });
   const malloryJwt = r.json.token;
-  r = await req('POST', '/api/pats', { token: malloryJwt, body: { name: 'm' } });
+  r = await req('POST', '/api/pats', {
+    token: malloryJwt,
+    body: { name: 'm', kind: 'marketplace' },
+  });
   const malloryPat = r.json.token;
   r = await req('GET', `/api/marketplace/${malloryPat}/archives/${profileId}.zip`, { raw: true });
   expect('cross-user archive status', r.status, 404);

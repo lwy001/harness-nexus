@@ -69,6 +69,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   app.decorate('requireAuth', requireAuth);
   app.decorate('requireAdmin', requireAdmin);
   app.decorate('credentialEncryptionKey', config.credentialEncryptionKey);
+  app.decorate('publicBaseUrl', config.publicBaseUrl);
 
   // Phase 7.2 — marketplace catalog service + its allowlist. The only
   // outbound-fetch surface in the server. `createMarketplaceFetcher` returns a

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { LayersIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon } from 'lucide-react';
+import { LayersIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon, TerminalIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { AppShell } from '@/components/app-shell';
@@ -76,11 +76,37 @@ export function ProfilesPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Bundles of MCP servers that agent tools connect through. An agent tool authenticates with
-          a PAT and targets a profile via <code className="font-mono">/mcp?profile=&lt;id&gt;</code>
-          .
+          Bundles of MCP servers and resources that agent tools install or connect through.
         </p>
       </div>
+
+      {user && (
+        <Card className="mb-6 border-dashed">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <TerminalIcon className="size-4" />
+              Install in Claude Code
+            </CardTitle>
+            <CardDescription>
+              Every <code className="font-mono">claude-code</code> profile below is served as a
+              native Claude Code plugin. Create a marketplace token once, then on your machine:
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="bg-muted overflow-x-auto rounded-md border p-3 font-mono text-xs leading-relaxed">
+              <code>{`claude plugin marketplace add <server>/api/marketplace/<marketplace-token>/marketplace.json
+claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}</code>
+            </pre>
+            <p className="text-muted-foreground mt-2 text-xs">
+              The add command is shown once when you create the token —{' '}
+              <a className="text-signal underline-offset-4 hover:underline" href="/tokens">
+                manage tokens
+              </a>
+              . Install, update, and uninstall are then handled by Claude Code itself.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

@@ -190,9 +190,21 @@ export class HarnessNexusClient {
   // ---- PATs ----
   async createPat(input: {
     name: string;
+    /**
+     * Token purpose (Phase 3.5): `api` (default) powers the CLI/REST API;
+     * `marketplace` is an emit token that ONLY authenticates the marketplace
+     * emitter URL. For `marketplace`, the response additionally carries the
+     * ready-to-paste `addCommand` + `marketplaceUrl` (shown once, like the token).
+     */
+    kind?: 'api' | 'marketplace';
     scopes?: string[];
     expiresAt?: string;
-  }): Promise<{ pat: PatView; token: string }> {
+  }): Promise<{
+    pat: PatView;
+    token: string;
+    marketplaceUrl?: string;
+    addCommand?: string;
+  }> {
     return this.request('POST', '/api/pats', input);
   }
 

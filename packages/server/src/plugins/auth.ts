@@ -35,6 +35,12 @@ export function registerAuthHook(app: FastifyInstance): void {
     if (raw.startsWith(PAT_PREFIX)) {
       const record = await uow.tokens.findByTokenHash(hashToken(raw));
       if (record && (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())) {
+        // Marketplace (emit) tokens are URL-capability tokens for the 3.5
+        // emitter only — they must not authenticate REST API calls.
+        if (record.scopes.includes('marketplace')) {
+          req.user = null;
+          return;
+        }
         const user = await uow.users.findById(record.userId);
         if (user && user.status === 'active') {
           req.user = { id: user.id, role: user.role };

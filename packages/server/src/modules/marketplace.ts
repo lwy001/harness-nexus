@@ -50,10 +50,13 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Resolve the PAT embedded in the URL path into the requesting user, mirroring
- * the auth plugin's PAT path (sha256 lookup + expiry + active check +
- * touchLastUsed). Returns the full user row — the emitter needs `username` for
- * the marketplace name.
+ * Resolve the emit token embedded in the URL path into the requesting user.
+ * Mirrors the auth plugin's PAT path (sha256 lookup + expiry + active check +
+ * touchLastUsed) with one extra gate: only tokens carrying the `marketplace`
+ * scope (created via `POST /api/pats {kind:'marketplace'}`) are accepted —
+ * general API PATs are not URL-capability tokens and must not leak through
+ * URLs into logs. Returns the full user row — the emitter needs `username`
+ * for the marketplace name.
  */
 async function resolveTokenUser(
   app: FastifyInstance,
@@ -64,7 +67,11 @@ async function resolveTokenUser(
     throw new AppError('Marketplace not found', 404, 'MARKETPLACE_NOT_FOUND');
   }
   const record = await app.uow.tokens.findByTokenHash(hashToken(raw));
-  if (record && (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())) {
+  if (
+    record &&
+    record.scopes.includes('marketplace') &&
+    (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())
+  ) {
     const user = await app.uow.users.findById(record.userId);
     if (user && user.status === 'active') {
       req.user = { id: user.id, role: user.role };

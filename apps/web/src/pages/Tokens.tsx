@@ -38,6 +38,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { HarnessNexusError, type PatView } from '@harness-nexus/sdk';
 
@@ -74,8 +81,9 @@ export function TokensPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Access tokens</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Personal access tokens (<code className="font-mono">hnpat_…</code>) authenticate the CLI
-          or automation against this server as you. The full token is shown{' '}
-          <strong>only once</strong> at creation — copy it then.
+          or automation against this server as you. A{' '}
+          <strong>marketplace</strong> token authorizes only your Claude Code plugin-marketplace
+          URL. The full token is shown <strong>only once</strong> at creation — copy it then.
         </p>
       </div>
 
@@ -194,21 +202,28 @@ export function TokensPage() {
 function CreateToken({ onCreated }: { onCreated: () => void }) {
   const { logout } = useAuth();
   const [name, setName] = useState('');
+  const [kind, setKind] = useState<'api' | 'marketplace'>('api');
   const [expiresLocal, setExpiresLocal] = useState(''); // datetime-local string, "" = never
   const [busy, setBusy] = useState(false);
   // The raw token lives only here, never in the list. Cleared on dialog close.
   const [createdToken, setCreatedToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // For marketplace tokens: the one-shot `claude plugin marketplace add` command.
+  const [createdAddCommand, setCreatedAddCommand] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'token' | 'command' | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
       const expiresAt = expiresLocal === '' ? undefined : new Date(expiresLocal).toISOString();
-      const { token } = await withAuthGuard(() => api.createPat({ name, expiresAt }), logout);
+      const { token, addCommand } = await withAuthGuard(
+        () => api.createPat({ name, ...(kind !== 'api' ? { kind } : {}), expiresAt }),
+        logout,
+      );
       toast.success('Token created');
       setCreatedToken(token);
-      setCopied(false);
+      setCreatedAddCommand(addCommand ?? null);
+      setCopied(null);
       setName('');
       setExpiresLocal('');
       onCreated();
@@ -219,11 +234,11 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
     }
   }
 
-  function copyToken() {
-    if (!createdToken) return;
-    void navigator.clipboard.writeText(createdToken).then(() => {
-      setCopied(true);
-      toast.success('Token copied');
+  function copy(kind: 'token' | 'command', text: string | null) {
+    if (!text) return;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(kind);
+      toast.success(kind === 'token' ? 'Token copied' : 'Command copied');
     });
   }
 
@@ -241,7 +256,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-2">
                 <Label htmlFor="pat-name">Name</Label>
                 <Input
@@ -255,6 +270,21 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
                 />
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="pat-kind">Purpose</Label>
+                <Select
+                  value={kind}
+                  onValueChange={(v) => setKind(v as 'api' | 'marketplace')}
+                >
+                  <SelectTrigger id="pat-kind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="api">API / CLI</SelectItem>
+                    <SelectItem value="marketplace">Claude Code marketplace</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="pat-expires">Expires (optional)</Label>
                 <Input
                   id="pat-expires"
@@ -264,6 +294,13 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
                 />
               </div>
             </div>
+            {kind === 'marketplace' && (
+              <p className="text-muted-foreground text-sm">
+                A marketplace token only authorizes your plugin-marketplace URL (it cannot call the
+                API). Claude Code installs your <code className="font-mono">claude-code</code>{' '}
+                profiles from it — the add command is shown once after creation.
+              </p>
+            )}
             <div>
               <Button type="submit" disabled={busy}>
                 {busy ? 'Creating…' : 'Create token'}
@@ -276,7 +313,10 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
       <Dialog
         open={createdToken !== null}
         onOpenChange={(o) => {
-          if (!o) setCreatedToken(null);
+          if (!o) {
+            setCreatedToken(null);
+            setCreatedAddCommand(null);
+          }
         }}
       >
         <DialogContent showCloseButton={false} className="sm:max-w-xl">
@@ -295,6 +335,31 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
             </AlertDescription>
           </Alert>
 
+          {createdAddCommand && (
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">Install your marketplace in Claude Code:</p>
+              <div className="bg-muted flex items-center gap-2 rounded-md border p-3">
+                <code className="text-foreground min-w-0 flex-1 break-all font-mono text-xs">
+                  {createdAddCommand}
+                </code>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={() => copy('command', createdAddCommand)}
+                >
+                  {copied === 'command' ? (
+                    <CheckIcon className="size-4" />
+                  ) : (
+                    <CopyIcon className="size-4" />
+                  )}
+                  {copied === 'command' ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="bg-muted flex items-center gap-2 rounded-md border p-3">
             <code className="text-foreground min-w-0 flex-1 break-all font-mono text-sm">
               {createdToken}
@@ -304,15 +369,21 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
               size="sm"
               variant="secondary"
               className="shrink-0"
-              onClick={copyToken}
+              onClick={() => copy('token', createdToken)}
             >
-              {copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
-              {copied ? 'Copied' : 'Copy'}
+              {copied === 'token' ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+              {copied === 'token' ? 'Copied' : 'Copy'}
             </Button>
           </div>
 
           <DialogFooter>
-            <Button type="button" onClick={() => setCreatedToken(null)}>
+            <Button
+              type="button"
+              onClick={() => {
+                setCreatedToken(null);
+                setCreatedAddCommand(null);
+              }}
+            >
               Done
             </Button>
           </DialogFooter>

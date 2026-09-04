@@ -41,6 +41,13 @@ export const updateRoleSchema = z.object({
 
 export const createPatSchema = z.object({
   name: z.string().min(1).max(64),
+  /**
+   * Token purpose (Phase 3.5). `api` (default) — a general PAT for the CLI /
+   * automation / REST API. `marketplace` — an emit token whose ONLY power is
+   * the marketplace-emitter URL (it cannot call the REST API); mapped to
+   * `scopes: ['marketplace']` on the stored record.
+   */
+  kind: z.enum(['api', 'marketplace']).default('api'),
   scopes: z.array(z.string()).optional(),
   expiresAt: z.string().datetime().optional(),
 });
