@@ -140,6 +140,39 @@ reject`); any transformation counts as rejection.
   (multi-instance sharing one DSH_HOME), `trimToClosedPrefix` for fork seeds
   (events must be a closed prefix).
 
+## Adapter matrix (completed 2026-09 — the C5 prerequisite)
+
+The per-target matrix the parent design demanded. Every adapter speaks ACP
+v1 (JSON-RPC 2.0, newline-delimited) over stdio, which is exactly the
+daemon's subprocess contract — the daemon never cares which adapter runs.
+
+| Target      | Adapter                                                                                                                                                                                           | How to spawn                              | Notes                                                                                                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| claude-code | [`@zed-industries/claude-agent-acp`](https://www.npmjs.com/package/@zed-industries/claude-code-acp) (renamed from `claude-code-acp`; [repo](https://github.com/zed-industries/claude-code-acp))   | `npx -y @zed-industries/claude-agent-acp` | Official Zed adapter, now powered by the Claude Agent SDK (bundles the CLI). Requires local Claude auth. [Zed blog](https://zed.dev/blog/claude-code-via-acp).                                                           |
+| codex       | [`@zed-industries/codex-acp`](https://github.com/zed-industries/codex-acp) ([npm](https://www.npmjs.com/package/@zed-industries/codex-acp))                                                       | `npx -y @zed-industries/codex-acp`        | Official Zed adapter wrapping the OpenAI Codex CLI; needs `codex` on PATH. [Codex-in-Zed announcement](https://zed.dev/blog/codex-is-live-in-zed).                                                                       |
+| hermes      | Hermes Agent's native [`acp_adapter`](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) ([internals](https://hermes-agent.nousresearch.com/docs/developer-guide/acp-internals)) | `python3 -m acp_adapter`                  | Ships in Hermes as an install extra (`agent-client-protocol`); runs Hermes as an ACP server over stdio. [Issue #569](https://github.com/NousResearch/hermes-agent/issues/569) framed it as a first-class interface mode. |
+| dsh         | bridge plugin from this demo (`acp-bridge/src/updates.js`)                                                                                                                                        | (demo-specific)                           | Proven by the reference; not an install target we ship.                                                                                                                                                                  |
+| zcode       | none found                                                                                                                                                                                        | —                                         | No ACP adapter exists; zcode also has no install adapter (3.x). Row deferred until one appears.                                                                                                                          |
+
+Consequences for the daemon (C5): one generic `spawn <command>` + ACP client
+covers every target; only the command table differs. The table lives in code
+with per-target env overrides (`HN_ACP_COMMAND_<TARGET>`), so the fixture
+agent used by tests and users with pinned/local adapter installs both work
+without code changes.
+
+Wire surface actually needed (from the [ACP v1 schema](https://github.com/agentclientprotocol/agent-client-protocol)):
+client→agent `initialize` (→ `initialized` notification), `session/new`,
+`session/prompt`, `session/cancel`, `session/close`; agent→client
+`session/update` (notification) and `session/request_permission` (request;
+option kinds `allow_once | allow_always | reject_once | reject_always`,
+`optionId` returned verbatim; a client-side turn cancel MUST answer
+`cancelled`). `stopReason`: `end_turn | cancelled | max_tokens | refusal`.
+Tool kinds: `read | edit | delete | move | search | execute | think | fetch |
+switch_mode | other`; tool statuses: `pending | in_progress | completed |
+failed`. `fs/*`, `terminal/*`, `elicitation/*` exist in the schema but are
+capability-gated — the daemon does not implement them in v1 (agents that
+need them degrade or refuse).
+
 ## Impact on the C5 plan
 
 - The prerequisite "per-target ACP adapter matrix" now has one filled row:
@@ -147,6 +180,8 @@ reject`); any transformation counts as rejection.
   Remaining rows to research: Claude Code (native ACP adapters exist in the
   Zed ecosystem), Codex (community adapters), Hermes (wrapper needed; hooks
   model differs), zcode (unknown).
+  → **Resolved above**: claude-code/codex via official Zed adapters, hermes
+  native, zcode deferred.
 - C5's daemon session manager should be modeled on `bridge.js`'s state machine
   (inflight ctl, sessionOp chain, pendingToolCalls, permissionWaiter, timers
   set with unified disposal) — but multiplexed per session instead of one
