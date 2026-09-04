@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   CheckIcon,
@@ -205,7 +206,11 @@ function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () 
 
   return (
     <TableRow>
-      <TableCell className="pl-6 font-medium">{machine.name}</TableCell>
+      <TableCell className="pl-6 font-medium">
+        <Link to={`/machines/${machine.id}`} className="hover:underline">
+          {machine.name}
+        </Link>
+      </TableCell>
       <TableCell className="text-muted-foreground font-mono text-xs">{host || '—'}</TableCell>
       <TableCell>
         {machine.daemonVersion ? (

@@ -1,0 +1,199 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { collectItems, scanAllTargets, scanTarget } from '../src/inventory/scan.js';
+
+let home: string;
+
+function setupHome(): string {
+  home = mkdtempSync(path.join(tmpdir(), 'hnx-inventory-'));
+  const w = (rel: string, content: string): void => {
+    const file = path.join(home, rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, content, 'utf8');
+  };
+
+  // ---- claude-code ----
+  w(
+    '.claude/skills/docx/SKILL.md',
+    '---\nname: docx\ndescription: Work with Word documents\n---\n\n# docx\n\nCreate and edit .docx files.\n',
+  );
+  w('.claude/skills/docx/references/formats.md', 'Format notes.\n');
+  w(
+    '.claude/commands/deploy.md',
+    '---\ndescription: Deploy the app\n---\nDeploy to production carefully.\n',
+  );
+  w('.claude/agents/reviewer.md', 'You are a code reviewer.\n');
+  w('.claude/skills/binary-skill/SKILL.md', 'before\u0000after\n'); // binary sniff
+  w(
+    '.claude.json',
+    JSON.stringify({
+      mcpServers: {
+        github: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-github'],
+          env: { GITHUB_TOKEN: 'ghp-SECRET-VALUE' },
+        },
+        'harness-nexus-demo': { command: '/usr/local/bin/hnx', args: ['mcp', 'serve'] },
+      },
+    }),
+  );
+
+  // ---- codex (with an install ledger — alpha is platform-written) ----
+  w('.codex/skills/alpha/SKILL.md', 'Alpha skill body.\n');
+  w('.codex/prompts/prompt-a.md', 'Prompt body.\n');
+  w(
+    '.codex/config.toml',
+    [
+      '# user comment',
+      '[mcp_servers.harness-nexus-my-profile]',
+      'command = "hnx"',
+      'args = ["mcp", "serve", "--profile", "p1"]',
+      '',
+      '[mcp_servers.user-server]',
+      'command = "uvx"',
+      'args = ["mcp-server-fetch"]',
+      '',
+    ].join('\n'),
+  );
+  w(
+    '.codex/harness-nexus-install-state.json',
+    JSON.stringify({
+      schemaVersion: 'harness-nexus.install.v1',
+      installedAt: new Date().toISOString(),
+      target: { id: 'p1', target: 'codex', kind: 'profile', root: path.join(home, '.codex') },
+      profile: { id: 'p1', name: 'my-profile', version: '1.0.0' },
+      operations: [
+        {
+          kind: 'write-file',
+          content: '',
+          destinationPath: path.join(home, '.codex', 'skills', 'alpha', 'SKILL.md'),
+        },
+      ],
+    }),
+  );
+
+  // ---- hermes ----
+  w(
+    '.hermes/plugins/my-plugin/plugin.yaml',
+    'name: my-plugin\nversion: 1.0.0\nauthor: Harness Nexus\nkind: standalone\n',
+  );
+  w('.hermes/plugins/my-plugin/skills/hshare/SKILL.md', 'Shared skill from our plugin.\n');
+  w(
+    '.hermes/plugins/third-party/plugin.yaml',
+    'name: third-party\nversion: 0.1.0\nauthor: someone-else\nkind: standalone\n',
+  );
+  w('.hermes/plugins/third-party/skills/hshare/SKILL.md', 'Same-name skill, third party.\n');
+  w('.hermes/AGENTS.md', 'Project rules for Hermes.\n');
+  w(
+    '.hermes/config.yaml',
+    [
+      'mcp_servers:',
+      '  fetcher:',
+      '    command: uvx',
+      '    args:',
+      '      - mcp-server-fetch',
+      '    env:',
+      '      FETCH_KEY: fetch-secret-123',
+      '',
+    ].join('\n'),
+  );
+
+  return home;
+}
+
+afterAll(() => {
+  if (home) rmSync(home, { recursive: true, force: true });
+});
+
+describe('claude-code scanner', () => {
+  it('discovers skills/commands/agents/mcp with origins and summaries', () => {
+    const h = setupHome();
+    const snap = scanTarget('claude-code', h);
+    expect(snap.target).toBe('claude-code');
+    expect(snap.agents).toHaveLength(1);
+    const items = snap.agents[0]!.items;
+    const docx = items.find((i) => i.name === 'docx')!;
+    expect(docx.kind).toBe('skill');
+    expect(docx.origin).toBe('local');
+    expect(docx.summary).toBe('Create and edit .docx files.');
+    expect(docx.meta?.multi).toBe(true);
+    expect(docx.importable).toBe(true);
+
+    expect(items.find((i) => i.name === 'deploy')?.kind).toBe('command');
+    expect(items.find((i) => i.name === 'reviewer')?.kind).toBe('sub_agent');
+    expect(items.find((i) => i.name === 'binary-skill')?.importable).toBe(false);
+
+    const shim = items.find((i) => i.name === 'harness-nexus-demo')!;
+    expect(shim.kind).toBe('mcp');
+    expect(shim.origin).toBe('platform');
+    expect(snap.agents[0]!.profileApplied).toBe(true);
+  });
+
+  it('redacts mcp env values daemon-side — plaintext never crosses the wire', async () => {
+    const h = setupHome();
+    const payload = await collectItems('claude-code', [{ kind: 'mcp', name: 'github' }], h);
+    const wire = JSON.stringify(payload);
+    expect(wire).not.toContain('ghp-SECRET-VALUE');
+    expect(wire).toContain('${cred:GITHUB_TOKEN}');
+    expect(payload[0]!.ok).toBe(true);
+  });
+});
+
+describe('codex scanner', () => {
+  it('marks ledger-written artifacts as platform origin', () => {
+    const h = setupHome();
+    const snap = scanTarget('codex', h);
+    const items = snap.agents[0]!.items;
+    expect(items.find((i) => i.name === 'alpha')?.origin).toBe('platform');
+    expect(items.find((i) => i.name === 'prompt-a')?.origin).toBe('local');
+    const shim = items.find((i) => i.name === 'harness-nexus-my-profile')!;
+    expect(shim.origin).toBe('platform');
+    expect(shim.meta?.command).toBe('hnx');
+    const user = items.find((i) => i.name === 'user-server')!;
+    expect(user.origin).toBe('local');
+    expect(user.meta?.transport).toBe('stdio');
+  });
+
+  it('collects a stdio transport verbatim from config.toml', async () => {
+    const h = setupHome();
+    const payload = await collectItems('codex', [{ kind: 'mcp', name: 'user-server' }], h);
+    expect(payload[0]!.artifact).toEqual({
+      kind: 'mcp',
+      transport: { type: 'stdio', command: 'uvx', args: ['mcp-server-fetch'] },
+    });
+  });
+});
+
+describe('hermes scanner', () => {
+  it('separates our plugin skills from third-party ones and dedupes by (kind,name)', () => {
+    const h = setupHome();
+    const snap = scanTarget('hermes', h);
+    const items = snap.agents[0]!.items;
+    const shared = items.filter((i) => i.name === 'hshare');
+    expect(shared).toHaveLength(1); // first occurrence wins
+    expect(items.find((i) => i.name === 'AGENTS')?.kind).toBe('rule');
+    expect(items.find((i) => i.name === 'fetcher')?.meta?.command).toBe('uvx');
+  });
+
+  it('redacts hermes mcp env values', async () => {
+    const h = setupHome();
+    const payload = await collectItems('hermes', [{ kind: 'mcp', name: 'fetcher' }], h);
+    const wire = JSON.stringify(payload);
+    expect(wire).not.toContain('fetch-secret-123');
+    expect(wire).toContain('${cred:FETCH_KEY}');
+  });
+});
+
+describe('scanAllTargets', () => {
+  it('reports a snapshot for every supported target and validates against the wire schema', async () => {
+    const h = setupHome();
+    const snapshots = scanAllTargets(h);
+    expect(snapshots.map((s) => s.target).sort()).toEqual(['claude-code', 'codex', 'hermes']);
+    const { inventorySnapshotSchema } = await import('@harness-nexus/shared');
+    for (const snap of snapshots) {
+      expect(inventorySnapshotSchema.safeParse(snap).success).toBe(true);
+    }
+  });
+});

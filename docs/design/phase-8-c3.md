@@ -1,9 +1,15 @@
 # Design: Phase 8 C3 — inventory, diff & one-click import
 
-> Status: **planned** (branch `phase-8-c3`). Parent design:
+> Status: **implemented** (branch `phase-8-c3`). Parent design:
 > `docs/design/phase-8-client.md` § "Inventory, diff & import (C3)". PRD:
 > `docs/prd/phase-8-client.md` ("读取当前Agent的各种插件、工具 … 一键导入并创建
 > profile"). C2: `docs/design/phase-8-c2.md` (shipped — client MCP serving).
+> Verification: shared 41 (snapshot/event schemas + pure diff matrix), cli 7
+> (fixture-HOME scanners incl. the env/header redaction assertion), server 33
+> (fake-daemon integration: scan round-trip, import → reuse-or-create →
+> profile, idempotent re-import, all gates), smoke `[8 C3]` — the REAL daemon
+> dist against a fixture HOME (scan → import → re-import reuse → diff → 409s)
+> — 220/220 overall; SQLite migration `0008` upsert/cascade verified.
 
 ## Scope
 
@@ -16,12 +22,12 @@ the vision (the deploy half is C4):
    - claude-code: `~/.claude/skills|commands|agents` + `mcpServers` in `~/.claude.json`
    - codex: `~/.codex/skills|prompts` + `[mcp_servers.*]` in `~/.codex/config.toml`
    - hermes: `~/.hermes/plugins/*/skills` + `mcp_servers` in `~/.hermes/config.yaml`
-     + `~/.hermes/AGENTS.md` (rules)
-   Each item carries `{kind, name, origin: 'platform'|'local', path, summary,
-   contentPreview, importable, meta?}`. `origin: 'platform'` is derived from
-   markers we own (install-state ledger, `harness-nexus[-*]` MCP entry names) —
-   never guessed from content. Absent home dir ⇒ target absent from the report
-   (honest: "not installed here").
+     - `~/.hermes/AGENTS.md` (rules)
+       Each item carries `{kind, name, origin: 'platform'|'local', path, summary,
+contentPreview, importable, meta?}`. `origin: 'platform'` is derived from
+       markers we own (install-state ledger, `harness-nexus[-*]` MCP entry names) —
+       never guessed from content. Absent home dir ⇒ target absent from the report
+       (honest: "not installed here").
 2. **Direct request/response over `/ctl`** (no `Job` rows in C3 — C4 formalizes
    the queue/replay semantics and absorbs these flows; `jobTypeSchema` already
    reserves `'scan' | 'import'`):
@@ -36,7 +42,7 @@ the vision (the deploy half is C4):
    - The daemon also auto-reports every target after each successful
      `machine:hello` — inventory is fresh whenever the daemon comes up.
 3. **Storage**: `machine_inventory` table (migration `0008`), `UNIQUE(machine_id,
-   target)`, report stored as a JSON document. New `MachineInventorySnapshot`
+target)`, report stored as a JSON document. New `MachineInventorySnapshot`
    domain type + `InventoryRepository` port (`findLatest`, `list`, `save`
    upsert, `deleteByMachine`) + both drivers. Machine deletion clears its rows.
 4. **REST** (`modules/inventory.ts`, all under the machine owner-or-admin +
@@ -44,14 +50,14 @@ the vision (the deploy half is C4):
    - `GET /api/machines/:id/inventory` — latest snapshot per target.
    - `POST /api/machines/:id/inventory/scan` `{targets?}` — gates: offline →
      `409 MACHINE_OFFLINE`; daemon without the `inventory` capability → `409
-     DAEMON_NO_INVENTORY`; then awaits one report per requested target
+DAEMON_NO_INVENTORY`; then awaits one report per requested target
      (`INVENTORY_REQUEST_TIMEOUT_MS`, default 60s; a concurrent scan → `409
-     SCAN_IN_PROGRESS`). Timeout → `504 INVENTORY_SCAN_TIMEOUT` with partials.
+SCAN_IN_PROGRESS`). Timeout → `504 INVENTORY_SCAN_TIMEOUT` with partials.
    - `GET /api/machines/:id/inventory/diff?profile=<id>` — the snapshot for the
      profile's `target` diffed against the profile (404 if profile/snapshot
      missing/not visible).
    - `POST /api/machines/:id/inventory/import` `{target, profileName,
-     items:[{kind,name}]}` — collect → create → bundle; synchronous (bounded by
+items:[{kind,name}]}` — collect → create → bundle; synchronous (bounded by
      the same timeout); responds `{profile, created[], reused[], warnings[]}`.
 5. **Diff is pure** (`shared/src/diff-inventory.ts`): profile entries are
    resolved server-side to `{kind, name}` pairs, then matched against snapshot
@@ -63,7 +69,7 @@ the vision (the deploy half is C4):
    `notInProfile` (origin `local`) is exactly the import-candidate list.
 6. **Import** = reuse-or-create, then bundle:
    - Non-MCP items → `Resource` rows (`key = '<kind>:<slug(name)>'`, `targets:
-     [target]`, `source: inline` single-file / `inline-bundle` multi-file skill).
+[target]`, `source: inline` single-file / `inline-bundle` multi-file skill).
      If a resource with the same key exists AND the content is identical →
      **reuse** (re-import is idempotent); different content → suffix `-<n>` on
      the key. This mirrors the "plans are idempotent overwrites" doctrine.
@@ -80,7 +86,7 @@ the vision (the deploy half is C4):
    the platform). The import response carries a warning per placeholder whose
    credential does not exist yet, so the user knows to fill them in.
 8. **Daemon capability**: `machine:hello` now reports `capabilities:
-   ['inventory']`; the scan route checks it for a precise error instead of a
+['inventory']`; the scan route checks it for a precise error instead of a
    timeout against an old daemon.
 9. **Web**: `MachineDetail` page at `/machines/:id` (linked from Machines rows,
    no sidebar entry — drill-down, not a top-level surface): header (online
@@ -126,7 +132,7 @@ where cheap, else `ok: false, error: 'too-large'` in the payload).
 
 1. **shared** — `schemas/inventory.ts` (snapshot/item/artifact/import request +
    diff response) + realtime event schemas (`inventory:scan|report|collect|
-   payload`, `/app` `inventory:updated`) + `diff-inventory.ts` pure function.
+payload`, `/app` `inventory:updated`) + `diff-inventory.ts` pure function.
    Unit tests: schema round-trips, diff matrix (applied / missing / candidates /
    coarse-MCP).
 2. **core** — `domain/inventory.ts` (`MachineInventorySnapshot`, plain item/
@@ -148,7 +154,7 @@ where cheap, else `ok: false, error: 'too-large'` in the payload).
    **redaction assertion**: an env/header plaintext value never appears in any
    emitted payload.
 8. **web** — `MachineDetail.tsx` + route + Machines row link + `inventory:
-   updated` subscription.
+updated` subscription.
 9. **verify** — server integration tests (fake daemon socket: report ingest,
    scan round-trip, import round-trip incl. idempotent re-import + redaction +
    409/404 gates); smoke `[8 C3]` block: enroll → spawn the REAL daemon dist

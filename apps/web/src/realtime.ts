@@ -9,6 +9,13 @@ import { TOKEN_KEY } from './api.js';
  * never talk to daemons — the platform is the only routing point.
  */
 
+/** Wire shape of `inventory:updated` (mirrors shared/realtime.ts). */
+export interface InventoryUpdatedEvent {
+  machineId: string;
+  target: string;
+  reportedAt: string;
+}
+
 /** Wire shape of `machine:status` (mirrors shared/realtime.ts). */
 export interface MachineStatusEvent {
   machineId: string;

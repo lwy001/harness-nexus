@@ -20,6 +20,7 @@ import { profilesRoutes } from './modules/profiles.js';
 import { resourcesRoutes } from './modules/resources.js';
 import { skillsRoutes } from './modules/skills.js';
 import { machinesRoutes } from './modules/machines.js';
+import { inventoryRoutes } from './modules/inventory.js';
 import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
@@ -166,7 +167,10 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
 
   // Realtime channel (Socket.IO /ctl + /app) — after storage/jwt decorations,
   // before routes (routes read app.realtime for presence).
-  await registerRealtime(app, { maxHttpBufferSize: config.socketMaxHttpBufferSize });
+  await registerRealtime(app, {
+    maxHttpBufferSize: config.socketMaxHttpBufferSize,
+    inventoryTimeoutMs: config.inventoryRequestTimeoutMs,
+  });
 
   // Error handler: AppError → its status/code; zod → 400; else 500.
   app.setErrorHandler((err, req, reply) => {
@@ -198,6 +202,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await resourcesRoutes(api);
     await skillsRoutes(api);
     await machinesRoutes(api);
+    await inventoryRoutes(api);
     await clientConfigRoutes(api);
     await marketplaceRoutes(api);
   });

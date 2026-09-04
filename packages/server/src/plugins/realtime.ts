@@ -7,10 +7,14 @@ import {
   appHandshakeAuthSchema,
   ctlHandshakeAuthSchema,
   machineHelloSchema,
+  inventoryReportEventSchema,
+  inventoryPayloadEventSchema,
+  type InventoryUpdatedEvent,
   type MachineStatusEvent,
 } from '@harness-nexus/shared';
-import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
+import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
+import { InventoryCoordinator } from '../realtime/inventory.js';
 
 /**
  * Realtime channel (Phase 8) — Socket.IO attached to the Fastify HTTP server.
@@ -27,6 +31,8 @@ import { MachinePresence } from '../realtime/presence.js';
 
 export interface RealtimeService {
   presence: MachinePresence;
+  /** Scan/collect waiters for the inventory request/response flow (C3). */
+  inventory: InventoryCoordinator;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -35,7 +41,7 @@ export interface RealtimeService {
 
 export async function registerRealtime(
   app: FastifyInstance,
-  opts: { maxHttpBufferSize: number },
+  opts: { maxHttpBufferSize: number; inventoryTimeoutMs: number },
 ): Promise<void> {
   await app.register(socketIOPlugin, {
     cors: { origin: true },
@@ -43,6 +49,7 @@ export async function registerRealtime(
   });
 
   const presence = new MachinePresence();
+  const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
 
   const statusEvent = (machine: Machine, online: boolean): MachineStatusEvent => ({
     machineId: machine.id,
@@ -53,6 +60,7 @@ export async function registerRealtime(
 
   const realtime: RealtimeService = {
     presence,
+    inventory,
     broadcastStatus(machine, online) {
       app.io
         .of('/app')
@@ -141,9 +149,60 @@ export async function registerRealtime(
       })();
     });
 
+    // C3 — daemon scan result: validate, persist (latest per machine+target),
+    // resolve any pending scan waiter, and push the freshness signal to /app.
+    socket.on('inventory:report', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = inventoryReportEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const snapshot = parsed.data.snapshot;
+      void (async () => {
+        const machine = await app.uow.machines.findById(machineId);
+        if (!machine) {
+          socket.disconnect(true);
+          return;
+        }
+        const row = {
+          id: generateId(),
+          machineId,
+          target: snapshot.target,
+          daemonVersion: machine.daemonVersion,
+          reportedAt: new Date().toISOString(),
+          scannedAt: snapshot.scannedAt,
+          agents: snapshot.agents,
+        };
+        await app.uow.inventories.save(row);
+        inventory.onReport(machineId, row);
+        const event: InventoryUpdatedEvent = {
+          machineId,
+          target: row.target,
+          reportedAt: row.reportedAt,
+        };
+        app.io
+          .of('/app')
+          .to([`user:${machine.ownerId}`, 'admins'])
+          .emit('inventory:updated', event);
+        ack?.({ stored: true });
+      })();
+    });
+
+    // C3 — collected artifact bodies for an import; resolve its waiter.
+    socket.on('inventory:payload', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = inventoryPayloadEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const known = inventory.onPayload(parsed.data.requestId, parsed.data.items);
+      ack?.(known ? { accepted: true } : { error: 'unknown-request' });
+    });
+
     socket.on('disconnect', () => {
       const wentOffline = presence.disconnected(socket.id);
       if (wentOffline === null) return;
+      inventory.failMachine(wentOffline);
       void (async () => {
         const machine = await app.uow.machines.findById(wentOffline);
         if (machine) {

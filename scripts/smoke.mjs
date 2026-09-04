@@ -1110,5 +1110,140 @@ expect('anonymous config fetch 401', r.status, 401);
 r = await req('GET', '/api/client/mcp-config', { token: userToken });
 expect('missing profile param 400', r.status, 400);
 
+// ============================ Phase 8 C3: inventory + diff + import ============================
+
+log('\n--- [8 C3] fixture HOME + REAL daemon (dist) enrollment ---');
+const { spawn } = await import('node:child_process');
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+const { tmpdir } = await import('node:os');
+const pathMod = await import('node:path');
+const fixtureHome = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-c3-'));
+const fw = (rel, content) => {
+  const file = pathMod.join(fixtureHome, rel);
+  mkdirSync(pathMod.dirname(file), { recursive: true });
+  writeFileSync(file, content, 'utf8');
+};
+fw('.claude/skills/smoke-skill/SKILL.md', '---\nname: smoke-skill\ndescription: Smoke skill\n---\n\nSmoke skill body.\n');
+fw('.claude/commands/smoke-command.md', 'A smoke command body.\n');
+fw('.claude/skills/huge-skill/SKILL.md', 'x'.repeat(300 * 1024)); // over the 256 KiB cap
+fw('.claude.json', JSON.stringify({
+  mcpServers: {
+    'smoke-mcp-local': {
+      command: 'npx',
+      args: ['-y', 'smoke-mcp'],
+      env: { SMOKE_KEY: 'ghp-SMOKE-SECRET-VALUE' },
+    },
+  },
+}));
+fw('.codex/skills/codex-skill/SKILL.md', 'Codex skill body.\n');
+fw('.codex/prompts/smoke-prompt.md', 'Codex prompt body.\n');
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c3-laptop' } });
+expect('c3 enroll status', r.status, 201);
+const c3MachineId = r.json.machine.id;
+const c3Token = r.json.token;
+
+const daemonProc = spawn(
+  process.execPath,
+  ['packages/cli/dist/index.js', 'daemon', '--server', B, '--token', c3Token, '--machine-id', c3MachineId],
+  { env: { ...process.env, HOME: fixtureHome }, stdio: ['ignore', 'pipe', 'pipe'] },
+);
+let daemonErr = '';
+daemonProc.stderr.on('data', (d) => { daemonErr += d.toString(); });
+let c3online = false;
+for (let i = 0; i < 100 && !c3online; i++) {
+  r = await req('GET', `/api/machines/${c3MachineId}`, { token: userToken });
+  c3online = r.json.machine.online;
+  if (!c3online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('real daemon online', c3online, true);
+r = await req('GET', `/api/machines/${c3MachineId}`, { token: userToken });
+expect('daemon advertises inventory capability', r.json.machine.capabilities.includes('inventory'), true);
+
+log('\n--- [8 C3] scan via the real daemon → stored snapshots ---');
+r = await req('POST', `/api/machines/${c3MachineId}/inventory/scan`, { token: userToken, body: {} });
+expect('scan status', r.status, 200);
+expect('scanned 3 targets', r.json.inventory.length, 3);
+const ccSnap = r.json.inventory.find((i) => i.target === 'claude-code');
+expect('cc snapshot has an agent', ccSnap.agents.length, 1);
+const ccItems = ccSnap.agents[0].items;
+expect('skill discovered', ccItems.some((i) => i.kind === 'skill' && i.name === 'smoke-skill' && i.origin === 'local'), true);
+expect('oversized skill not importable', ccItems.find((i) => i.name === 'huge-skill').importable, false);
+expect('mcp discovered', ccItems.some((i) => i.kind === 'mcp' && i.name === 'smoke-mcp-local'), true);
+expect('command discovered', ccItems.some((i) => i.kind === 'command' && i.name === 'smoke-command'), true);
+const codexSnap = r.json.inventory.find((i) => i.target === 'codex');
+expect('codex prompt discovered', codexSnap.agents[0].items.some((i) => i.name === 'smoke-prompt'), true);
+const hermesSnap = r.json.inventory.find((i) => i.target === 'hermes');
+expect('absent hermes home is an empty snapshot', hermesSnap.agents[0].items.length, 0);
+
+log('\n--- [8 C3] import → resources + McpServer + profile (secrets redacted daemon-side) ---');
+r = await req('POST', `/api/machines/${c3MachineId}/inventory/import`, {
+  token: userToken,
+  body: {
+    target: 'claude-code',
+    profileName: 'C3 smoke import',
+    items: [
+      { kind: 'skill', name: 'smoke-skill' },
+      { kind: 'command', name: 'smoke-command' },
+      { kind: 'mcp', name: 'smoke-mcp-local' },
+    ],
+  },
+});
+expect('import status', r.status, 200);
+expect('created 3', r.json.created.length, 3);
+expect('reused 0', r.json.reused.length, 0);
+expect('env plaintext NEVER crosses to the server', JSON.stringify(r.json).includes('ghp-SMOKE-SECRET-VALUE'), false);
+expect('missing-credential warning present', r.json.warnings.some((w) => w.includes('SMOKE_KEY')), true);
+const c3ProfileId = r.json.profile.id;
+r = await req('GET', '/api/mcp-servers', { token: userToken });
+const imported = r.json.mcpServers.find((m) => m.name === 'smoke-mcp-local');
+expect('mcp row created personal', imported.scope, 'personal');
+expect('mcp env is a placeholder', imported.transport.env.SMOKE_KEY, '\${cred:SMOKE_KEY}');
+
+log('\n--- [8 C3] re-import is a full reuse (idempotent) ---');
+r = await req('POST', `/api/machines/${c3MachineId}/inventory/import`, {
+  token: userToken,
+  body: {
+    target: 'claude-code',
+    profileName: 'C3 smoke import again',
+    items: [
+      { kind: 'skill', name: 'smoke-skill' },
+      { kind: 'command', name: 'smoke-command' },
+      { kind: 'mcp', name: 'smoke-mcp-local' },
+    ],
+  },
+});
+expect('re-import status', r.status, 200);
+expect('nothing new created', r.json.created.length, 0);
+expect('all three reused', r.json.reused.length, 3);
+
+log('\n--- [8 C3] diff: name-matched entries applied, mcp arm missing until installed ---');
+r = await req('GET', `/api/machines/${c3MachineId}/inventory/diff?profile=${c3ProfileId}`, { token: userToken });
+expect('diff status', r.status, 200);
+expect('skill applied by name', r.json.diff.upToDate.some((u) => u.name === 'smoke-skill'), true);
+expect('mcp arm missing (no shim installed)', r.json.diff.missingOnMachine.map((m) => m.name).join(','), 'smoke-mcp-local');
+
+log('\n--- [8 C3] import of an unimportable item is refused ---');
+r = await req('POST', `/api/machines/${c3MachineId}/inventory/import`, {
+  token: userToken,
+  body: {
+    target: 'claude-code',
+    profileName: 'should fail',
+    items: [{ kind: 'skill', name: 'huge-skill' }],
+  },
+});
+expect('unimportable rejected', r.status, 409);
+expect('unimportable code', r.json.error, 'INVENTORY_ITEM_NOT_IMPORTABLE');
+
+log('\n--- [8 C3] machine removal cascades inventory rows ---');
+daemonProc.kill('SIGTERM');
+await new Promise((resolve) => { daemonProc.once('exit', resolve); setTimeout(resolve, 3000); });
+r = await req('DELETE', `/api/machines/${c3MachineId}`, { token: userToken });
+expect('c3 machine removed', r.status, 200);
+rmSync(fixtureHome, { recursive: true, force: true });
+if (daemonErr.includes('Error:')) {
+  log(`(daemon stderr note): ${daemonErr.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
+}
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

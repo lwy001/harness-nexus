@@ -166,6 +166,23 @@ ALTER TABLE mcp_servers DROP COLUMN mode;
 ALTER TABLE credentials ADD COLUMN distributable INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 8,
+    description:
+      'phase 8 C3 — latest inventory snapshot per (machine, target); report stored as a JSON document',
+    sql: `
+CREATE TABLE IF NOT EXISTS machine_inventory (
+  id             TEXT PRIMARY KEY,
+  machine_id     TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  target         TEXT NOT NULL,
+  daemon_version TEXT,
+  reported_at    TEXT NOT NULL,
+  scanned_at     TEXT NOT NULL,
+  report         TEXT NOT NULL,
+  UNIQUE (machine_id, target)
+);
+    `,
+  },
 ] as const;
 
 /**

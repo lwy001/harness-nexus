@@ -15,6 +15,7 @@ import { ProfilesPage } from '@/pages/Profiles';
 import { ResourcesPage } from '@/pages/Resources';
 import { SkillHubPage } from '@/pages/SkillHub';
 import { MachinesPage } from '@/pages/Machines';
+import { MachineDetailPage } from '@/pages/MachineDetail';
 
 export function App() {
   return (
@@ -37,6 +38,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <MachinesPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/machines/:id"
+              element={
+                <RequireAuth>
+                  <MachineDetailPage />
                 </RequireAuth>
               }
             />

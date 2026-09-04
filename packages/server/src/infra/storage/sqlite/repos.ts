@@ -13,6 +13,9 @@ import type {
   ResourceSource,
   AgentTarget,
   Machine,
+  MachineInventorySnapshot,
+  InventoryAgentData,
+  InventoryRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -697,6 +700,72 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
     },
     async delete(id) {
       db.prepare('DELETE FROM machines WHERE id = ?').run(id);
+    },
+  };
+}
+
+// ---- machine inventory (phase 8 C3) ----
+
+interface InventoryRow {
+  id: string;
+  machine_id: string;
+  target: string;
+  daemon_version: string | null;
+  reported_at: string;
+  scanned_at: string;
+  report: string;
+}
+
+function mapInventory(row: InventoryRow): MachineInventorySnapshot {
+  return {
+    id: row.id,
+    machineId: row.machine_id,
+    target: row.target as MachineInventorySnapshot['target'],
+    daemonVersion: row.daemon_version,
+    reportedAt: row.reported_at,
+    scannedAt: row.scanned_at,
+    agents: JSON.parse(row.report) as InventoryAgentData[],
+  };
+}
+
+export function sqliteInventoryRepository(db: Database): InventoryRepository {
+  return {
+    async findLatest(machineId, target) {
+      const row = db
+        .prepare('SELECT * FROM machine_inventory WHERE machine_id = ? AND target = ?')
+        .get(machineId, target) as InventoryRow | undefined;
+      return row ? mapInventory(row) : null;
+    },
+    async list(machineId) {
+      const rows = db
+        .prepare('SELECT * FROM machine_inventory WHERE machine_id = ? ORDER BY target')
+        .all(machineId) as InventoryRow[];
+      return rows.map(mapInventory);
+    },
+    async save(snapshot) {
+      db.prepare(
+        `INSERT INTO machine_inventory
+           (id, machine_id, target, daemon_version, reported_at, scanned_at, report)
+         VALUES (@id, @machine_id, @target, @daemon_version, @reported_at, @scanned_at, @report)
+         ON CONFLICT(machine_id, target) DO UPDATE SET
+           id             = excluded.id,
+           daemon_version = excluded.daemon_version,
+           reported_at    = excluded.reported_at,
+           scanned_at     = excluded.scanned_at,
+           report         = excluded.report`,
+      ).run({
+        id: snapshot.id,
+        machine_id: snapshot.machineId,
+        target: snapshot.target,
+        daemon_version: snapshot.daemonVersion,
+        reported_at: snapshot.reportedAt,
+        scanned_at: snapshot.scannedAt,
+        report: JSON.stringify(snapshot.agents),
+      });
+      return snapshot;
+    },
+    async deleteByMachine(machineId) {
+      db.prepare('DELETE FROM machine_inventory WHERE machine_id = ?').run(machineId);
     },
   };
 }

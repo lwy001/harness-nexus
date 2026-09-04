@@ -10,6 +10,7 @@
 import type {
   Credential,
   Machine,
+  MachineInventorySnapshot,
   McpServer,
   PersonalAccessToken,
   Profile,
@@ -101,6 +102,17 @@ export interface MachineRepository {
  * Aggregate of all repositories. A storage driver provides one of these; the
  * server composes it into its modules via dependency injection.
  */
+export interface InventoryRepository {
+  findLatest(
+    machineId: string,
+    target: MachineInventorySnapshot['target'],
+  ): Promise<MachineInventorySnapshot | null>;
+  list(machineId: string): Promise<MachineInventorySnapshot[]>;
+  /** Upsert — exactly one row per (machine, target); the latest snapshot wins. */
+  save(snapshot: MachineInventorySnapshot): Promise<MachineInventorySnapshot>;
+  deleteByMachine(machineId: string): Promise<void>;
+}
+
 export interface UnitOfWork {
   resources: ResourceRepository;
   profiles: ProfileRepository;
@@ -110,4 +122,5 @@ export interface UnitOfWork {
   mcpServers: McpServerRepository;
   credentials: CredentialRepository;
   machines: MachineRepository;
+  inventories: InventoryRepository;
 }

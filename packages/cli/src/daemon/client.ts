@@ -1,9 +1,17 @@
 import { arch, hostname, platform } from 'node:os';
 import { io } from 'socket.io-client';
-import type { MachineHelloAck } from '@harness-nexus/shared';
+import {
+  inventoryCollectRequestSchema,
+  inventoryScanRequestSchema,
+  type MachineHelloAck,
+} from '@harness-nexus/shared';
+import { collectItems, scanAllTargets, scanTarget } from '../inventory/scan.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.1.0-c1';
+export const DAEMON_VERSION = '0.2.0-c3';
+
+/** Capabilities this daemon build carries (Phase 8 C3: inventory scan/collect). */
+export const DAEMON_CAPABILITIES = ['inventory'];
 
 export interface DaemonOptions {
   server: string;
@@ -16,16 +24,26 @@ export interface DaemonOptions {
  * The on-demand Harness Nexus daemon (Phase 8 C1): connects to the server's
  * `/ctl` namespace, says `machine:hello` on every (re)connect so presence and
  * metadata stay fresh, and stays attached until SIGINT/SIGTERM. Socket.IO
- * handles reconnection with backoff; each reconnect re-runs hello.
+ * handles reconnection with backoff; each reconnect re-runs hello and — since
+ * C3 — re-reports every target's inventory (fresh snapshots whenever the
+ * daemon comes up).
  *
  * The machine shows online exactly while this process is running — that is
- * the honest-presence contract; MCP serving (C2) will NOT depend on it.
+ * the honest-presence contract; MCP serving (C2) does NOT depend on it.
  */
 export function runDaemon(options: DaemonOptions): Promise<void> {
   const socket = io(`${options.server}/ctl`, {
     auth: { token: options.token, machineId: options.machineId },
     transports: ['websocket'],
   });
+
+  const reportAll = (requestId?: string): void => {
+    void (async () => {
+      for (const snapshot of scanAllTargets()) {
+        socket.emit('inventory:report', { ...(requestId ? { requestId } : {}), snapshot });
+      }
+    })();
+  };
 
   socket.on('connect', () => {
     socket.emit(
@@ -35,7 +53,7 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
         os: platform(),
         arch: arch(),
         hostname: hostname(),
-        capabilities: [],
+        capabilities: DAEMON_CAPABILITIES,
       },
       (res: unknown) => {
         const ack = res as MachineHelloAck | { error: string };
@@ -48,8 +66,55 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
         console.log(
           `hnx daemon: online (proto ${(ack as MachineHelloAck).proto}, machine ${(ack as MachineHelloAck).machineId})`,
         );
+        reportAll();
       },
     );
+  });
+
+  socket.on('inventory:scan', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = inventoryScanRequestSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    ack?.({ accepted: true });
+    const { requestId, targets } = parsed.data;
+    void (async () => {
+      for (const target of targets) {
+        try {
+          const snapshot = scanTarget(target);
+          socket.emit('inventory:report', { requestId, snapshot });
+        } catch {
+          // No scanner for this target on this build — still report the empty
+          // shape so the server's waiter never hangs on it.
+          const home = `~/.${target}`;
+          socket.emit('inventory:report', {
+            requestId,
+            snapshot: {
+              target,
+              scannedAt: new Date().toISOString(),
+              agents: [{ name: home, directory: home, profileApplied: false, items: [] }],
+            },
+          });
+        }
+      }
+    })();
+  });
+
+  socket.on('inventory:collect', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = inventoryCollectRequestSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    ack?.({ accepted: true });
+    const { requestId, target, items } = parsed.data;
+    void (async () => {
+      // Bodies are read fresh (paths re-derived) and secrets redacted
+      // daemon-side before anything crosses the wire.
+      const payloadItems = await collectItems(target, items);
+      socket.emit('inventory:payload', { requestId, items: payloadItems });
+    })();
   });
 
   socket.on('connect_error', (err: Error) => {

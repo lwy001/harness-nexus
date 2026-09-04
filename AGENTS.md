@@ -568,7 +568,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
-  direction-locked, and C1–C2 are shipped (2026-09):** machines + on-demand
+  direction-locked, and C1–C3 are shipped (2026-09):** machines + on-demand
   daemon over Socket.IO/WSS, client-side MCP serving via per-session stdio
   shims (proxy/direct deleted; dial site derived from credential
   distributability + admin override; global creds non-distributable by default
@@ -598,11 +598,29 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   pass through, outlet dialed as a passthrough upstream), install adapters
   emit one baked-path shim entry (Hermes simplified; **Codex adapter shipped**
   — skills/prompts + TOML `[mcp_servers]` merge), emitter `EMITTER_MODE`
-  (`client` default / `server` fallback). Remaining: C3 (inventory/import) →
-  C4 (jobs/deploy) → C5 (ACP chat) → C6.
+  (`client` default / `server` fallback). C3
+  (`docs/design/phase-8-c3.md`) — inventory/diff/import: daemon per-target
+  scanners in `packages/cli/src/inventory/` (claude-code/codex/hermes;
+  platform origin from the install ledger + `harness-nexus[-*]` MCP names,
+  never guessed from content), snapshots over `/ctl`
+  (`inventory:scan|report|collect|payload`, auto-report after hello,
+  capability `inventory`), `machine_inventory` storage (migration `0008`,
+  latest per machine+target), `InventoryCoordinator` waiters
+  (`src/realtime/inventory.ts`, exposed as `app.realtime.inventory`), pure
+  `diffInventory` in `shared/diff-inventory.ts` (MCP arm is deliberately
+  coarse; hook entries are skipped — no scanner), and
+  `modules/inventory.ts` (`GET /inventory`, `POST /inventory/scan` —
+  online+capability gated with a synchronous await, `GET /inventory/diff`,
+  `POST /inventory/import` — collect → reuse-or-create → profile; MCP items
+  become `McpServer` rows, never resources; **env/header values are redacted
+  daemon-side** to `${cred:<KEY>}` before upload; re-import of identical
+  bodies is a full reuse). The MachineDetail web page (`/machines/:id`,
+  drill-down from Machines rows — no nav entry) drives scan/diff/import.
+  Remaining: C4 (jobs/deploy) → C5 (ACP chat) → C6.
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`
-  file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
-  (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
+  file. Vitest is wired in `@harness-nexus/shared`, `@harness-nexus/server`, and
+  `@harness-nexus/cli` (`test/` dirs, excluded from build tsconfigs;
+  `pnpm --filter … run test`);
   throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.

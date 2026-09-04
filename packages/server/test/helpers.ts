@@ -21,6 +21,7 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     skillGithubTaps: '',
     skillSearchTimeoutMs: 100,
     socketMaxHttpBufferSize: 1024 * 1024,
+    inventoryRequestTimeoutMs: 5000,
     ...overrides,
   };
 }

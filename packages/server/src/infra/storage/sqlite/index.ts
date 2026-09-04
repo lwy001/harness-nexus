@@ -12,6 +12,7 @@ import {
   sqliteProfileRepository,
   sqliteResourceRepository,
   sqliteMachineRepository,
+  sqliteInventoryRepository,
 } from './repos.js';
 
 /**
@@ -38,5 +39,6 @@ export function createSqliteUnitOfWork(dbPath: string): UnitOfWork {
     profiles: sqliteProfileRepository(db),
     resources: sqliteResourceRepository(db),
     machines: sqliteMachineRepository(db),
+    inventories: sqliteInventoryRepository(db),
   };
 }

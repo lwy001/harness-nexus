@@ -28,8 +28,11 @@ import type {
   PluginResourceSource,
   McpToolInfo,
   ClientMcpConfig,
+  InventorySnapshot,
+  InventoryDiff,
 } from '@harness-nexus/shared';
 export {
+  SCANNABLE_TARGETS,
   HOOK_EVENTS,
   HOOK_SUPPORT,
   resolveTrustTier,
@@ -39,6 +42,8 @@ export {
   type HookEvent,
 } from '@harness-nexus/shared';
 export type {
+  InventorySnapshot,
+  InventoryDiff,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -69,6 +74,15 @@ export interface PatView {
 export interface MachineView extends Machine {
   online: boolean;
 }
+/** Response of POST /api/machines/:id/inventory/import (Phase 8 C3). */
+export interface ImportResult {
+  profile: Profile;
+  created: { kind: string; name: string; id: string; key?: string }[];
+  reused: { kind: string; name: string; id: string; key?: string }[];
+  failed: { kind: string; name: string; error: string }[];
+  warnings: string[];
+}
+
 export interface CredentialView {
   id: string;
   name: string;
@@ -261,6 +275,49 @@ export class HarnessNexusClient {
 
   async deleteMachine(id: string): Promise<void> {
     await this.request('DELETE', `/api/machines/${id}`);
+  }
+
+  // ---- machine inventory (Phase 8 C3) ----
+  async getMachineInventory(machineId: string): Promise<
+    {
+      target: string;
+      daemonVersion: string | null;
+      reportedAt: string;
+      scannedAt: string;
+      agents: InventorySnapshot['agents'];
+    }[]
+  > {
+    const res = await this.request('GET', `/api/machines/${machineId}/inventory`);
+    return res.inventory;
+  }
+
+  async scanMachineInventory(
+    machineId: string,
+    targets?: InventorySnapshot['target'][],
+  ): Promise<{ target: string; reportedAt: string; agents: InventorySnapshot['agents'] }[]> {
+    const res = await this.request('POST', `/api/machines/${machineId}/inventory/scan`, {
+      ...(targets ? { targets } : {}),
+    });
+    return res.inventory;
+  }
+
+  async diffMachineInventory(machineId: string, profileId: string): Promise<InventoryDiff> {
+    const res = await this.request(
+      'GET',
+      `/api/machines/${machineId}/inventory/diff?profile=${encodeURIComponent(profileId)}`,
+    );
+    return res.diff;
+  }
+
+  async importMachineInventory(
+    machineId: string,
+    input: {
+      target: InventorySnapshot['target'];
+      profileName: string;
+      items: { kind: 'skill' | 'command' | 'sub_agent' | 'rule' | 'mcp'; name: string }[];
+    },
+  ): Promise<ImportResult> {
+    return this.request('POST', `/api/machines/${machineId}/inventory/import`, input);
   }
 
   // ---- settings ----

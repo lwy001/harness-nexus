@@ -9,6 +9,8 @@ import type {
   Profile,
   Resource,
   Machine,
+  MachineInventorySnapshot,
+  InventoryRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -35,6 +37,8 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const profiles = new Map<string, Profile>();
   const resources = new Map<string, Resource>();
   const machines = new Map<string, Machine>();
+  // key: `${machineId}\u0000${target}` — one latest snapshot per pair
+  const inventories = new Map<string, MachineInventorySnapshot>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -229,6 +233,26 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const inventoryRepo: InventoryRepository = {
+    async findLatest(machineId, target) {
+      return inventories.get(`${machineId}\u0000${target}`) ?? null;
+    },
+    async list(machineId) {
+      return [...inventories.values()]
+        .filter((s) => s.machineId === machineId)
+        .sort((a, b) => a.target.localeCompare(b.target));
+    },
+    async save(snapshot) {
+      inventories.set(`${snapshot.machineId}\u0000${snapshot.target}`, snapshot);
+      return snapshot;
+    },
+    async deleteByMachine(machineId) {
+      for (const key of [...inventories.keys()]) {
+        if (key.split('\u0000')[0] === machineId) inventories.delete(key);
+      }
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -238,5 +262,6 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     profiles: profileRepo,
     resources: resourceRepo,
     machines: machineRepo,
+    inventories: inventoryRepo,
   };
 }
