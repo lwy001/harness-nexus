@@ -33,15 +33,15 @@ zod schemas in `shared`, sockets/routes in `server`, client code in `cli`.
 
 ## Package layout
 
-| Package        | Change                                                                                                          |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| `packages/cli` | Grows into the client: `src/daemon/` (socket client, `/ctl` + `/acp` handlers), `src/mcp-shim/` (C2), target scanners (C3). Keeps the 3.3 install pipeline unchanged as the job executor (C4). |
-| `acp-bridge`   | **Deleted in C1** — its concerns move into `hnx daemon`.                                                          |
-| `mcp-runtime`  | **New in C2**: `McpRegistry` extracted from `server/src/mcp/registry.ts`, made transport-agnostic (injectable `configProvider` + `secretResolver` instead of `UnitOfWork` + encryption key). Used by BOTH the server's `/mcp` and the client shim. |
-| `packages/server` | `src/plugins/realtime.ts` (socket.io attach + per-namespace auth), `src/modules/machines.ts` / `agents.ts` / `jobs.ts` / `client-config.ts`. |
-| `packages/shared` | `src/realtime.ts` — zod schemas for every envelope/event (single source for server, daemon, web).             |
-| `packages/core`   | Domain: `Machine`, `AgentInstance`, `Job`, `AcSession` + repository ports.                                     |
-| `apps/web`       | socket.io-client + Machines / machine-detail / jobs / chat pages.                                              |
+| Package           | Change                                                                                                                                                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli`    | Grows into the client: `src/daemon/` (socket client, `/ctl` + `/acp` handlers), `src/mcp-shim/` (C2), target scanners (C3). Keeps the 3.3 install pipeline unchanged as the job executor (C4).                                                     |
+| `acp-bridge`      | **Deleted in C1** — its concerns move into `hnx daemon`.                                                                                                                                                                                           |
+| `mcp-runtime`     | **New in C2**: `McpRegistry` extracted from `server/src/mcp/registry.ts`, made transport-agnostic (injectable `configProvider` + `secretResolver` instead of `UnitOfWork` + encryption key). Used by BOTH the server's `/mcp` and the client shim. |
+| `packages/server` | `src/plugins/realtime.ts` (socket.io attach + per-namespace auth), `src/modules/machines.ts` / `agents.ts` / `jobs.ts` / `client-config.ts`.                                                                                                       |
+| `packages/shared` | `src/realtime.ts` — zod schemas for every envelope/event (single source for server, daemon, web).                                                                                                                                                  |
+| `packages/core`   | Domain: `Machine`, `AgentInstance`, `Job`, `AcSession` + repository ports.                                                                                                                                                                         |
+| `apps/web`        | socket.io-client + Machines / machine-detail / jobs / chat pages.                                                                                                                                                                                  |
 
 New deps: `socket.io` (server), `socket.io-client` (cli, web). The server also
 serves Socket.IO over the same HTTP port (`path: /socket.io` default) so TLS and
@@ -104,10 +104,10 @@ radius = realtime only), exactly as it rejects `marketplace` tokens.
 
 ### Connections & auth
 
-| Client  | Namespace | Handshake `auth`                      | Verified by                                                                |
-| ------- | --------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| Client  | Namespace | Handshake `auth`                      | Verified by                                                                      |
+| ------- | --------- | ------------------------------------- | -------------------------------------------------------------------------------- |
 | daemon  | `/ctl`    | `{ token: <machine PAT>, machineId }` | PAT valid + kind `machine` + `machineId` matches the PAT's machine + not revoked |
-| browser | `/app`    | `{ token: <JWT or PAT> }`             | existing bearer logic (same channel set as REST); per-event ownership checks |
+| browser | `/app`    | `{ token: <JWT or PAT> }`             | existing bearer logic (same channel set as REST); per-event ownership checks     |
 
 **One bidirectional namespace per client role.** The daemon connects `/ctl`
 (management + routed interactive traffic); the browser connects `/app` (UI
@@ -154,30 +154,30 @@ chat share only the PAT and server URL).
 
 `/ctl` (daemon ↔ server):
 
-| Event              | Dir    | Payload                                             | Ack                       |
-| ------------------ | ------ | --------------------------------------------------- | ------------------------- |
-| `machine:hello`    | C → S  | `{ daemonVersion, os, arch, hostname, capabilities }` | `{ proto, machineId }` — also updates Machine metadata; on success the server replays queued jobs as `job:dispatch` |
-| `job:dispatch`     | S → C  | `{ job: Job }` (full record incl. `payload`)        | ack = daemon accepted (delivery, not completion) |
-| `job:progress`     | C → S  | `{ jobId, phase, message?, percent? }`              | —                         |
-| `job:result`       | C → S  | `{ jobId, ok, error?, data? }` (terminal)           | ack = recorded            |
-| `inventory:report` | C → S  | `{ target, snapshot }` (C3)                         | ack = stored              |
-| `config:invalidate`| S → C  | `{ profileId? }` (advisory cache push, optional)    | —                         |
+| Event               | Dir   | Payload                                               | Ack                                                                                                                 |
+| ------------------- | ----- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `machine:hello`     | C → S | `{ daemonVersion, os, arch, hostname, capabilities }` | `{ proto, machineId }` — also updates Machine metadata; on success the server replays queued jobs as `job:dispatch` |
+| `job:dispatch`      | S → C | `{ job: Job }` (full record incl. `payload`)          | ack = daemon accepted (delivery, not completion)                                                                    |
+| `job:progress`      | C → S | `{ jobId, phase, message?, percent? }`                | —                                                                                                                   |
+| `job:result`        | C → S | `{ jobId, ok, error?, data? }` (terminal)             | ack = recorded                                                                                                      |
+| `inventory:report`  | C → S | `{ target, snapshot }` (C3)                           | ack = stored                                                                                                        |
+| `config:invalidate` | S → C | `{ profileId? }` (advisory cache push, optional)      | —                                                                                                                   |
 
 `/app` (browser ↔ platform, **fully bidirectional**; browsers join
 `user:<userId>` on connect — admins additionally join `admins` for fleet-wide
 presence; UI-push domains + interactive domains):
 
-| Event                 | Dir      | Payload                                                       | Notes                                                                              |
-| --------------------- | -------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `machine:status`      | S → B    | `{ machineId, online, lastSeenAt, daemonVersion? }`             | on daemon connect/disconnect (`online` = socket presence)                            |
-| `job:update`          | S → B    | `{ job: Job }`                                                  | on dispatch / progress (coalesced ~1s) / terminal                                    |
-| `agent:update`        | S → B    | `{ machineId, agent: AgentInstance }`                           | on registration/changes (C4)                                                         |
-| `agent:state`         | S → B    | `{ agentInstanceId, sessionId?, state }`                        | model / thinking level / permission mode etc. (C5)                                   |
-| `agent:control.apply` | B → S    | `{ target: {agentInstanceId?, sessionId?}, control: {key, value} }` | ack; routed to the daemon — `model`, `thinkingLevel`, `permissionMode`, … are keys, not events |
-| `chat:session.open`   | B → S    | `{ agentInstanceId }`                                           | ack `{ sessionId }`; checks machine online + remoteChatEnabled + owner               |
-| `chat:session.close`  | B → S    | `{ sessionId, reason? }`                                        | terminal                                                                             |
-| `chat:message.send`   | B → S    | `{ sessionId, content }`                                        | ack = accepted; routed to the daemon, which adapts it to the agent protocol          |
-| `chat:event`          | S → B    | `{ sessionId, event }`                                          | fan-out to `chan:<sessionId>`; the semantic agent stream the UI renders (below)      |
+| Event                 | Dir   | Payload                                                             | Notes                                                                                          |
+| --------------------- | ----- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `machine:status`      | S → B | `{ machineId, online, lastSeenAt, daemonVersion? }`                 | on daemon connect/disconnect (`online` = socket presence)                                      |
+| `job:update`          | S → B | `{ job: Job }`                                                      | on dispatch / progress (coalesced ~1s) / terminal                                              |
+| `agent:update`        | S → B | `{ machineId, agent: AgentInstance }`                               | on registration/changes (C4)                                                                   |
+| `agent:state`         | S → B | `{ agentInstanceId, sessionId?, state }`                            | model / thinking level / permission mode etc. (C5)                                             |
+| `agent:control.apply` | B → S | `{ target: {agentInstanceId?, sessionId?}, control: {key, value} }` | ack; routed to the daemon — `model`, `thinkingLevel`, `permissionMode`, … are keys, not events |
+| `chat:session.open`   | B → S | `{ agentInstanceId }`                                               | ack `{ sessionId }`; checks machine online + remoteChatEnabled + owner                         |
+| `chat:session.close`  | B → S | `{ sessionId, reason? }`                                            | terminal                                                                                       |
+| `chat:message.send`   | B → S | `{ sessionId, content }`                                            | ack = accepted; routed to the daemon, which adapts it to the agent protocol                    |
+| `chat:event`          | S → B | `{ sessionId, event }`                                              | fan-out to `chan:<sessionId>`; the semantic agent stream the UI renders (below)                |
 
 `chat:event.event` is a **semantic** stream — `message.delta`, `tool.update`,
 `permission.request`, `done`, … — defined in `shared/realtime.ts` and stable
@@ -187,15 +187,15 @@ advanced UI needs without the platform interpreting them.
 `/ctl` interactive routing (extends the `/ctl` catalog above; S→C carries what
 browsers initiated on `/app`, C→S carries the adapted stream):
 
-| Event                 | Dir    | Payload                                             | Notes                                                                   |
-| --------------------- | ------ | ---------------------------------------------------- | ------------------------------------------------------------------------ |
-| `chat:session.start`  | S → C  | `{ sessionId, agentInstanceId }`                     | ack = subprocess spawned                                                 |
-| `chat:session.ready`  | C → S  | `{ sessionId, agentInfo, state }`                    | platform joins the opening browsers into `chan:<sid>`                     |
-| `chat:message.send`   | S → C  | `{ sessionId, content }`                             | daemon adapts to the agent protocol (ACP `session/prompt` today)          |
-| `chat:event`          | C → S  | `{ sessionId, event }`                               | semantic stream + `raw` escape hatch; routed to `chan:<sid>`              |
-| `chat:session.close`  | S → C  | `{ sessionId, reason? }`                             | daemon kills the subprocess; room torn down                               |
-| `agent:control.apply` | S → C  | `{ sessionId?, agentInstanceId?, control }`          | applied via ACP method where supported, else by session restart           |
-| `agent:state`         | C → S  | `{ agentInstanceId, sessionId?, state }`             | after control changes / on state change                                   |
+| Event                 | Dir   | Payload                                     | Notes                                                            |
+| --------------------- | ----- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `chat:session.start`  | S → C | `{ sessionId, agentInstanceId }`            | ack = subprocess spawned                                         |
+| `chat:session.ready`  | C → S | `{ sessionId, agentInfo, state }`           | platform joins the opening browsers into `chan:<sid>`            |
+| `chat:message.send`   | S → C | `{ sessionId, content }`                    | daemon adapts to the agent protocol (ACP `session/prompt` today) |
+| `chat:event`          | C → S | `{ sessionId, event }`                      | semantic stream + `raw` escape hatch; routed to `chan:<sid>`     |
+| `chat:session.close`  | S → C | `{ sessionId, reason? }`                    | daemon kills the subprocess; room torn down                      |
+| `agent:control.apply` | S → C | `{ sessionId?, agentInstanceId?, control }` | applied via ACP method where supported, else by session restart  |
+| `agent:state`         | C → S | `{ agentInstanceId, sessionId?, state }`    | after control changes / on state change                          |
 
 **The daemon is the protocol-adaptation edge.** The browser speaks
 platform-semantic events (`chat:*`, `agent:control.*`); the daemon owns the
@@ -221,15 +221,16 @@ refresh needs no extra protocol support in v1.
 ### Future channel-based extensions (designed for, not scheduled)
 
 The channel pattern — session + `chan:<sid>` room + identity-checked envelope
-+ per-domain gating — is the substrate for interactive features after C5; none
-of them need new namespaces or reconnects:
 
-- **Channel-based file management** (`file:*`): request/response browsing plus
+- per-domain gating — is the substrate for interactive features after C5; none
+  of them need new namespaces or reconnects:
+
+* **Channel-based file management** (`file:*`): request/response browsing plus
   change events, machine-scoped, own gating flag.
-- **Web terminal** (`terminal:*`): session-stream semantics like chat; the
+* **Web terminal** (`terminal:*`): session-stream semantics like chat; the
   highest-risk extension — needs its own per-machine enable + audit, same
   posture as remote chat but stricter.
-- **More agent-control keys**: `agent:control.apply` is an open key/value
+* **More agent-control keys**: `agent:control.apply` is an open key/value
   surface — new keys (model, thinking level, permission mode, …) are schema
   additions in `shared/realtime.ts`, not protocol changes.
 
@@ -296,8 +297,8 @@ Per profile entry referencing an `McpServer`:
 4. Server-side pooling condition (2.2's `mode === 'proxy'`) becomes
    "resolves to server". The platform `/mcp?profile=<id>` outlet exposes
    exactly the server-dialed set (+ future platform-hosted tools); the shim
-  merges its locally-dialed set with the outlet's namespaced tools into one
-  stdio view. Each upstream is dialed by exactly one side — no duplication.
+   merges its locally-dialed set with the outlet's namespaced tools into one
+   stdio view. Each upstream is dialed by exactly one side — no duplication.
 
 ### Config fetch & secret flow
 
@@ -348,7 +349,7 @@ same code, different trigger.
   adapters write (CC `~/.claude` plugins/skills/agents/`mcpServers`; Codex
   `~/.codex`; Hermes plugin dirs) and report a **normalized** snapshot:
   `{ target, agents: [{ name, directory, profileApplied?, items:
-  [{ kind, name, source-ish descriptor }] }] }` via `inventory:report`
+[{ kind, name, source-ish descriptor }] }] }` via `inventory:report`
   (triggered by a `scan` job or daemon start).
 - The server stores the latest snapshot and computes **diffs against a
   profile** (`GET /api/machines/:id/inventory/diff?profile=<id>`): profile

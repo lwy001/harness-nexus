@@ -59,6 +59,11 @@ export interface ServerConfig {
    * `github,well-known,url` to search marketplace-only against a fixture).
    */
   skillDisabledSources?: string;
+  /**
+   * Phase 8 — max realtime (Socket.IO) message size in bytes. Bounds ACP
+   * payloads and job envelopes; see docs/design/phase-8-client.md.
+   */
+  socketMaxHttpBufferSize: number;
 }
 
 export class ConfigError extends Error {
@@ -101,5 +106,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       env.SKILL_GITHUB_TAPS ?? 'openai/skills,anthropics/skills,huggingface/skills,NVIDIA/skills',
     skillSearchTimeoutMs: Number(env.SKILL_SEARCH_TIMEOUT_MS ?? '30000'),
     ...(env.SKILL_DISABLED_SOURCES ? { skillDisabledSources: env.SKILL_DISABLED_SOURCES } : {}),
+    socketMaxHttpBufferSize: Number(env.SOCKET_MAX_HTTP_BUFFER ?? String(8 * 1024 * 1024)),
   };
 }

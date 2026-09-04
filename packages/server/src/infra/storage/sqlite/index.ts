@@ -11,6 +11,7 @@ import {
   sqliteMcpServerRepository,
   sqliteProfileRepository,
   sqliteResourceRepository,
+  sqliteMachineRepository,
 } from './repos.js';
 
 /**
@@ -36,5 +37,6 @@ export function createSqliteUnitOfWork(dbPath: string): UnitOfWork {
     mcpServers: sqliteMcpServerRepository(db),
     profiles: sqliteProfileRepository(db),
     resources: sqliteResourceRepository(db),
+    machines: sqliteMachineRepository(db),
   };
 }

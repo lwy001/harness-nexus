@@ -8,6 +8,7 @@ import type { ServerConfig } from './config.js';
 import { createStorage } from './infra/storage/index.js';
 import { createJwtService } from './infra/jwt.js';
 import { registerAuthHook, requireAuth, requireAdmin } from './plugins/auth.js';
+import { registerRealtime } from './plugins/realtime.js';
 import { healthRoutes } from './modules/health.js';
 import { authRoutes } from './modules/auth.js';
 import { usersRoutes } from './modules/users.js';
@@ -18,6 +19,7 @@ import { mcpServersRoutes } from './modules/mcp-servers.js';
 import { profilesRoutes } from './modules/profiles.js';
 import { resourcesRoutes } from './modules/resources.js';
 import { skillsRoutes } from './modules/skills.js';
+import { machinesRoutes } from './modules/machines.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
 import { MarketplaceEmitter } from './marketplace/emitter.js';
@@ -159,6 +161,10 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   // plugin context) so it applies to all routes. See plugins/auth.ts.
   registerAuthHook(app);
 
+  // Realtime channel (Socket.IO /ctl + /app) — after storage/jwt decorations,
+  // before routes (routes read app.realtime for presence).
+  await registerRealtime(app, { maxHttpBufferSize: config.socketMaxHttpBufferSize });
+
   // Error handler: AppError → its status/code; zod → 400; else 500.
   app.setErrorHandler((err, req, reply) => {
     if (isAppError(err)) {
@@ -188,6 +194,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await profilesRoutes(api);
     await resourcesRoutes(api);
     await skillsRoutes(api);
+    await machinesRoutes(api);
     await marketplaceRoutes(api);
   });
 

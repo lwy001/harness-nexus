@@ -1,8 +1,11 @@
 # Design: Phase 8 C1 — daemon + machine registration
 
-> Status: in development (branch `phase-8-c1`). Parent design:
+> Status: **implemented** (branch `phase-8-c1`). Parent design:
 > `docs/design/phase-8-client.md` (protocol, isolation model, decisions) —
 > this doc is the concrete C1 development plan. PRD: `docs/prd/phase-8-client.md`.
+> Verification: shared 12 realtime-schema tests, server 18 tests (presence,
+> machines REST, realtime integration against a live socket), smoke block
+> `[8 C1]` (14 assertions, E2E enroll → online → revoke).
 
 ## Scope
 
@@ -32,8 +35,8 @@ handler exists yet.
    `UnitOfWork.machines`.
 2. **shared** — `schemas/machine.ts` (createMachineSchema, updateMachineSchema)
    and `src/realtime.ts`: handshake auth schemas + `machine:hello` payload/ack
-   + `machine:status` push + v0 `job:dispatch`/`jobView` shapes. Export both
-   from index. Unit tests for parse/reject.
+   - `machine:status` push + v0 `job:dispatch`/`jobView` shapes. Export both
+     from index. Unit tests for parse/reject.
 3. **server storage** — SQLite migration `0006` (`machines` table +
    owner/pat indexes), `sqliteMachineRepository` in `repos.ts`, memory driver
    repo, both wired into the returned `UnitOfWork`.
@@ -77,13 +80,13 @@ handler exists yet.
 
 ## REST surface (C1)
 
-| Method   | Path                | Who                    | Notes                                              |
-| -------- | ------------------- | ---------------------- | -------------------------------------------------- |
-| `POST`   | `/api/machines`     | authenticated user     | body `{ name }` → `201 { machine, token }` (once)  |
-| `GET`    | `/api/machines`     | own; admin sees all    | `{ machines: MachineView[] }` incl. derived online |
-| `GET`    | `/api/machines/:id` | owner or admin (404)   | `MachineView`                                      |
-| `PATCH`  | `/api/machines/:id` | owner or admin         | `{ name? , remoteChatEnabled? }`                   |
-| `DELETE` | `/api/machines/:id` | owner or admin         | revokes enrollment PAT + drops the live socket     |
+| Method   | Path                | Who                  | Notes                                              |
+| -------- | ------------------- | -------------------- | -------------------------------------------------- |
+| `POST`   | `/api/machines`     | authenticated user   | body `{ name }` → `201 { machine, token }` (once)  |
+| `GET`    | `/api/machines`     | own; admin sees all  | `{ machines: MachineView[] }` incl. derived online |
+| `GET`    | `/api/machines/:id` | owner or admin (404) | `MachineView`                                      |
+| `PATCH`  | `/api/machines/:id` | owner or admin       | `{ name? , remoteChatEnabled? }`                   |
+| `DELETE` | `/api/machines/:id` | owner or admin       | revokes enrollment PAT + drops the live socket     |
 
 Errors: `404 MACHINE_NOT_FOUND` (existence-hiding), `400 VALIDATION_ERROR`.
 

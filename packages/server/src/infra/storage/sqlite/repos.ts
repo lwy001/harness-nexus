@@ -12,6 +12,7 @@ import type {
   Resource,
   ResourceSource,
   AgentTarget,
+  Machine,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -19,6 +20,7 @@ import type {
   CredentialRepository,
   ProfileRepository,
   ResourceRepository,
+  MachineRepository,
 } from '@harness-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS as DEFAULTS } from '@harness-nexus/core';
 
@@ -594,6 +596,103 @@ export function sqliteResourceRepository(db: Database): ResourceRepository {
     },
     async delete(id) {
       db.prepare('DELETE FROM resources WHERE id = ?').run(id);
+    },
+  };
+}
+
+// ---- machine repository (Phase 8 C1) ----
+
+interface MachineRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  hostname: string | null;
+  os: string | null;
+  arch: string | null;
+  daemon_version: string | null;
+  capabilities: string;
+  remote_chat_enabled: number;
+  enrollment_pat_id: string;
+  enrolled_at: string;
+  last_seen_at: string | null;
+}
+
+function mapMachine(row: MachineRow): Machine {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    name: row.name,
+    hostname: row.hostname,
+    os: row.os,
+    arch: row.arch,
+    daemonVersion: row.daemon_version,
+    capabilities: JSON.parse(row.capabilities) as string[],
+    remoteChatEnabled: row.remote_chat_enabled === 1,
+    enrollmentPatId: row.enrollment_pat_id,
+    enrolledAt: row.enrolled_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+export function sqliteMachineRepository(db: Database): MachineRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM machines WHERE id = ?').get(id) as
+        MachineRow | undefined;
+      return row ? mapMachine(row) : null;
+    },
+    async findByEnrollmentPatId(patId) {
+      const row = db.prepare('SELECT * FROM machines WHERE enrollment_pat_id = ?').get(patId) as
+        MachineRow | undefined;
+      return row ? mapMachine(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, string> = {};
+      if (filter?.ownerId !== undefined) {
+        where.push('owner_id = @owner_id');
+        params.owner_id = filter.ownerId;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM machines ${clause} ORDER BY enrolled_at`)
+        .all(params) as MachineRow[];
+      return rows.map(mapMachine);
+    },
+    async save(machine) {
+      db.prepare(
+        `INSERT INTO machines
+           (id, owner_id, name, hostname, os, arch, daemon_version, capabilities,
+            remote_chat_enabled, enrollment_pat_id, enrolled_at, last_seen_at)
+         VALUES (@id, @owner_id, @name, @hostname, @os, @arch, @daemon_version, @capabilities,
+                 @remote_chat_enabled, @enrollment_pat_id, @enrolled_at, @last_seen_at)
+         ON CONFLICT(id) DO UPDATE SET
+           name                = excluded.name,
+           hostname            = excluded.hostname,
+           os                  = excluded.os,
+           arch                = excluded.arch,
+           daemon_version      = excluded.daemon_version,
+           capabilities        = excluded.capabilities,
+           remote_chat_enabled = excluded.remote_chat_enabled,
+           last_seen_at        = excluded.last_seen_at`,
+      ).run({
+        id: machine.id,
+        owner_id: machine.ownerId,
+        name: machine.name,
+        hostname: machine.hostname,
+        os: machine.os,
+        arch: machine.arch,
+        daemon_version: machine.daemonVersion,
+        capabilities: JSON.stringify(machine.capabilities),
+        remote_chat_enabled: machine.remoteChatEnabled ? 1 : 0,
+        enrollment_pat_id: machine.enrollmentPatId,
+        enrolled_at: machine.enrolledAt,
+        last_seen_at: machine.lastSeenAt,
+      });
+      return machine;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM machines WHERE id = ?').run(id);
     },
   };
 }

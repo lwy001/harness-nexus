@@ -8,6 +8,7 @@ import type {
   McpServer,
   Profile,
   Resource,
+  Machine,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -15,6 +16,7 @@ import type {
   McpServerRepository,
   ProfileRepository,
   ResourceRepository,
+  MachineRepository,
 } from '@harness-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@harness-nexus/core';
 
@@ -32,6 +34,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const mcpServers = new Map<string, McpServer>();
   const profiles = new Map<string, Profile>();
   const resources = new Map<string, Resource>();
+  const machines = new Map<string, Machine>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -205,6 +208,27 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const machineRepo: MachineRepository = {
+    async findById(id) {
+      return machines.get(id) ?? null;
+    },
+    async findByEnrollmentPatId(patId) {
+      return [...machines.values()].find((m) => m.enrollmentPatId === patId) ?? null;
+    },
+    async list(filter) {
+      return [...machines.values()]
+        .filter((m) => (filter?.ownerId ? m.ownerId === filter.ownerId : true))
+        .sort((a, b) => a.enrolledAt.localeCompare(b.enrolledAt));
+    },
+    async save(machine) {
+      machines.set(machine.id, machine);
+      return machine;
+    },
+    async delete(id) {
+      machines.delete(id);
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -213,5 +237,6 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     mcpServers: mcpServerRepo,
     profiles: profileRepo,
     resources: resourceRepo,
+    machines: machineRepo,
   };
 }

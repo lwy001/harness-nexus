@@ -925,5 +925,89 @@ expect('search finds 42crunch', r.status, 200);
 const crunch = r.json.results.find((m) => m.name.includes('42crunch'));
 expect('42crunch is community trust', crunch.trustLevel, 'community');
 
+log('\n--- [8 C1] enroll a machine ---');
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'smoke-laptop' } });
+expect('enroll status', r.status, 201);
+expect('machine starts offline', r.json.machine.online, false);
+const machineId = r.json.machine.id;
+const machineToken = r.json.token;
+
+log('\n--- [8 C1] machine token is rejected by the REST API ---');
+r = await req('GET', '/api/machines', { token: machineToken });
+expect('machine token REST status', r.status, 401);
+
+log('\n--- [8 C1] daemon connects over /ctl, says hello, comes online ---');
+const { io } = await import('socket.io-client');
+const ctl = io(`${B}/ctl`, {
+  auth: { token: machineToken, machineId },
+  transports: ['websocket'],
+});
+await new Promise((resolve, reject) => {
+  ctl.on('connect', resolve);
+  ctl.on('connect_error', reject);
+  setTimeout(() => reject(new Error('connect timeout')), 5000);
+});
+const helloAck = await new Promise((resolve, reject) => {
+  ctl.emit(
+    'machine:hello',
+    {
+      daemonVersion: '0.1.0-smoke',
+      os: 'linux',
+      arch: 'x64',
+      hostname: 'smokebox',
+      capabilities: [],
+    },
+    resolve,
+  );
+  setTimeout(() => reject(new Error('hello ack timeout')), 5000);
+});
+expect('hello ack proto', helloAck.proto, 1);
+expect('hello ack machineId', helloAck.machineId, machineId);
+let online = false;
+let meta = null;
+for (let i = 0; i < 50 && !online; i++) {
+  r = await req('GET', `/api/machines/${machineId}`, { token: userToken });
+  online = r.json.machine.online;
+  meta = r.json.machine;
+  if (!online) await new Promise((s) => setTimeout(s, 100));
+}
+expect('machine online after daemon connect', online, true);
+expect('daemon metadata persisted', meta.daemonVersion, '0.1.0-smoke');
+expect('hostname persisted', meta.hostname, 'smokebox');
+
+log('\n--- [8 C1] malformed hello is rejected with proto:invalid ---');
+const badAck = await new Promise((resolve) => {
+  ctl.emit('machine:hello', { daemonVersion: '' }, resolve);
+  setTimeout(() => resolve(null), 5000);
+});
+expect('proto:invalid ack', badAck && badAck.error, 'proto:invalid');
+
+log('\n--- [8 C1] daemon disconnect → machine offline ---');
+ctl.close();
+let offline = false;
+for (let i = 0; i < 50 && !offline; i++) {
+  r = await req('GET', `/api/machines/${machineId}`, { token: userToken });
+  offline = !r.json.machine.online;
+  if (!offline) await new Promise((s) => setTimeout(s, 100));
+}
+expect('machine offline after daemon disconnect', offline, true);
+
+log('\n--- [8 C1] removing the machine revokes its token ---');
+r = await req('DELETE', `/api/machines/${machineId}`, { token: userToken });
+expect('revoke status', r.status, 200);
+r = await req('GET', `/api/machines/${machineId}`, { token: userToken });
+expect('machine gone (404)', r.status, 404);
+const revoked = io(`${B}/ctl`, {
+  auth: { token: machineToken, machineId },
+  transports: ['websocket'],
+});
+const refused = await new Promise((resolve) => {
+  revoked.on('connect_error', () => resolve(true));
+  revoked.on('connect', () => resolve(false));
+  setTimeout(() => resolve(false), 5000);
+});
+expect('revoked token cannot reconnect', refused, true);
+revoked.close();
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

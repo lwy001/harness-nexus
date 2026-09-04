@@ -1,4 +1,4 @@
-import type { User, Credential, Resource } from '@harness-nexus/core';
+import type { User, Credential, Resource, Machine } from '@harness-nexus/core';
 
 /** Strip secrets from a user for API responses. */
 export function publicUser(u: User): Omit<User, 'passwordHash'> {
@@ -35,4 +35,13 @@ export function credentialView(c: Credential, secretPreview: string): Credential
  */
 export function resourceView(r: Resource): Resource {
   return r;
+}
+
+/** Machine API view (Phase 8) — the domain row plus DERIVED presence. */
+export interface MachineView extends Machine {
+  online: boolean;
+}
+
+export function machineView(m: Machine, online: boolean): MachineView {
+  return { ...m, online };
 }

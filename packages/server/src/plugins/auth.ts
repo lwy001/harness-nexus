@@ -35,9 +35,12 @@ export function registerAuthHook(app: FastifyInstance): void {
     if (raw.startsWith(PAT_PREFIX)) {
       const record = await uow.tokens.findByTokenHash(hashToken(raw));
       if (record && (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())) {
-        // Marketplace (emit) tokens are URL-capability tokens for the 3.5
-        // emitter only — they must not authenticate REST API calls.
-        if (record.scopes.includes('marketplace')) {
+        // Capability-scoped tokens are rejected by the REST API:
+        // - marketplace (emit) tokens are URL-capability tokens for the 3.5
+        //   emitter only.
+        // - machine tokens (Phase 8 C1) authenticate only the realtime /ctl
+        //   channel; a leaked one must not read user data.
+        if (record.scopes.includes('marketplace') || record.scopes.includes('machine-ctl')) {
           req.user = null;
           return;
         }

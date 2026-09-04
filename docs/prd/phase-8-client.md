@@ -36,14 +36,14 @@ enrolled machine is the **data plane** (MCP serving, deploy execution, inventory
 scanning, ACP bridging). Everything before orchestration is substrate
 engineering for it:
 
-| Sub-phase | Delivers                                                                                                       | Absorbs / impacts                            |
-| --------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| **C1**    | Client unification + machine registration: `hnx daemon`, `Machine` entity + enrollment, WSS control channel      | Phase 5 (half), deletes `packages/acp-bridge` |
-| **C2**    | Client MCP serving: stdio shims, credential-distribution policy, dial-site routing, platform `/mcp` narrowing    | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6     |
-| **C3**    | Inventory reporting + profile diff + one-click import                                                          | 3.7                                          |
-| **C4**    | Platform-driven remote deploy (job abstraction over the 3.3 pipeline) + Agent instances                         | reuses 3.3                                   |
-| **C5**    | ACP chat: bridge sessions + web chat UI                                                                        | Phase 5 (other half)                         |
-| **C6**    | Orchestration — deliberately undesigned; C1–C5 are its substrate                                               | Phase 6 Channels (adjacent)                  |
+| Sub-phase | Delivers                                                                                                      | Absorbs / impacts                             |
+| --------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **C1**    | Client unification + machine registration: `hnx daemon`, `Machine` entity + enrollment, WSS control channel   | Phase 5 (half), deletes `packages/acp-bridge` |
+| **C2**    | Client MCP serving: stdio shims, credential-distribution policy, dial-site routing, platform `/mcp` narrowing | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6     |
+| **C3**    | Inventory reporting + profile diff + one-click import                                                         | 3.7                                           |
+| **C4**    | Platform-driven remote deploy (job abstraction over the 3.3 pipeline) + Agent instances                       | reuses 3.3                                    |
+| **C5**    | ACP chat: bridge sessions + web chat UI                                                                       | Phase 5 (other half)                          |
+| **C6**    | Orchestration — deliberately undesigned; C1–C5 are its substrate                                              | Phase 6 Channels (adjacent)                   |
 
 Four decisions are **locked** from the design discussion (rationale in the
 design doc):

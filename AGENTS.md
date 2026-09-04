@@ -186,7 +186,7 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 - **Client daemon, machines, realtime protocol, MCP shim, ACP chat (Phase 8)**
-  → `docs/design/phase-8-client.md`
+  → `docs/design/phase-8-client.md` · C1: `docs/design/phase-8-c1.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -551,17 +551,30 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   below). Channels, LLM-WIKI, memory/notes remain unplanned.
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
-  **Phase 8 — the Harness Nexus client & agent orchestration — is scoped and
-  direction-locked (2026-09), implementation starting at C1:** machines +
-  on-demand daemon over Socket.IO/WSS, client-side MCP serving via per-session
-  stdio shims (proxy/direct deleted; dial site derived from credential
-  distributability + admin override; global creds non-distributable by default
-  with server `/mcp` as their sole outlet), inventory/diff/import, remote
-  deploy jobs, gated ACP chat, then orchestration (C6, undesigned). Read
-  `docs/prd/phase-8-client.md` + `docs/design/phase-8-client.md` first.
-  **Phase 2.3
-  (callable-function scripts) is on hold** — not currently planned. When you
-  add real logic for a pillar, also add tests and update the relevant `docs/`
-  file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
-  (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
-  throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.
+  **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
+  direction-locked, and C1 is shipped (2026-09):** machines + on-demand daemon
+  over Socket.IO/WSS, client-side MCP serving via per-session stdio shims
+  (proxy/direct deleted; dial site derived from credential distributability +
+  admin override; global creds non-distributable by default with server `/mcp`
+  as their sole outlet), inventory/diff/import, remote deploy jobs, gated ACP
+  chat, then orchestration (C6, undesigned). Read `docs/prd/phase-8-client.md`
+  - `docs/design/phase-8-client.md` first, then `docs/design/phase-8-c1.md`
+    for the shipped C1 details: `Machine` + `MachineRepository` (migration
+    `0006`), machine PATs (`scopes: ['machine-ctl']`, rejected by the REST auth
+    hook — realtime-only blast radius), realtime v0 in `packages/server/src/
+plugins/realtime.ts` (fastify-socket.io; `/ctl` daemon auth + `machine:hello`
+  - `machine:<id>` rooms, `/app` browser push with `user:<id>`/`admins` rooms
+  - `machine:status`; pure `MachinePresence` in `src/realtime/presence.ts`;
+    decorated as `app.realtime`), `/api/machines` CRUD in `modules/machines.ts`
+    (enroll returns the machine token ONCE; delete force-drops sockets + revokes
+    the PAT), SDK machines methods, `hnx enroll`/`hnx daemon` (config at
+    `~/.hnx/config.json`, 0600), the web Machines page + `/app` singleton in
+    `apps/web/src/realtime.ts` (vite proxies `/socket.io` with `ws: true`).
+    `packages/acp-bridge` is DELETED. Remaining: C2 (client MCP serving) → C3
+    (inventory/import) → C4 (jobs/deploy) → C5 (ACP chat) → C6.
+    **Phase 2.3
+    (callable-function scripts) is on hold** — not currently planned. When you
+    add real logic for a pillar, also add tests and update the relevant `docs/`
+    file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
+    (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
+    throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.

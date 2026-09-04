@@ -9,6 +9,7 @@
 
 import type {
   Credential,
+  Machine,
   McpServer,
   PersonalAccessToken,
   Profile,
@@ -87,6 +88,15 @@ export interface CredentialRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface MachineRepository {
+  findById(id: string): Promise<Machine | null>;
+  /** Resolve a machine from its enrollment PAT — used by the /ctl auth middleware. */
+  findByEnrollmentPatId(patId: string): Promise<Machine | null>;
+  list(filter?: { ownerId?: string }): Promise<Machine[]>;
+  save(machine: Machine): Promise<Machine>;
+  delete(id: string): Promise<void>;
+}
+
 /**
  * Aggregate of all repositories. A storage driver provides one of these; the
  * server composes it into its modules via dependency injection.
@@ -99,4 +109,5 @@ export interface UnitOfWork {
   settings: SystemSettingsRepository;
   mcpServers: McpServerRepository;
   credentials: CredentialRepository;
+  machines: MachineRepository;
 }

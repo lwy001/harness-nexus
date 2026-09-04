@@ -12,10 +12,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Proxy API + MCP endpoints to the Fastify server during development.
+    // Proxy API + MCP + realtime (Socket.IO, ws upgrade) endpoints to the
+    // Fastify server during development.
     proxy: {
       '/api': 'http://127.0.0.1:8080',
       '/mcp': 'http://127.0.0.1:8080',
+      '/socket.io': { target: 'http://127.0.0.1:8080', ws: true },
     },
   },
 });

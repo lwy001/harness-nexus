@@ -11,6 +11,7 @@ import {
   TicketIcon,
   BoxesIcon,
   StoreIcon,
+  LaptopIcon,
 } from 'lucide-react';
 import { useAuth } from '@/auth';
 import { Button } from '@/components/ui/button';
@@ -130,6 +131,7 @@ function NavItem({ to, icon, label, end }: NavItemProps) {
 function navItems(isAdmin: boolean): NavItemProps[] {
   const items: NavItemProps[] = [
     { to: '/', icon: <HomeIcon className="size-4" />, label: 'Home', end: true },
+    { to: '/machines', icon: <LaptopIcon className="size-4" />, label: 'Machines' },
     { to: '/mcp-servers', icon: <ServerIcon className="size-4" />, label: 'MCP management' },
     { to: '/profiles', icon: <LayersIcon className="size-4" />, label: 'Profiles' },
     { to: '/resources', icon: <BoxesIcon className="size-4" />, label: 'Resources' },

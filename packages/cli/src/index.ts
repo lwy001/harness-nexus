@@ -17,6 +17,7 @@
  * Design: `docs/design/phase-3-install.md`. Adapter pattern:
  * `docs/research/phase-3-ecc-install-patterns.md`.
  */
+import { hostname } from 'node:os';
 import { InstallError } from './errors.js';
 import { applyInstall } from './install/installer.js';
 import { planInstall } from './install/planner.js';
@@ -24,6 +25,9 @@ import { resolveProfile } from './install/resolver.js';
 import { supportedTargets } from './install/registry.js';
 import { getHermesPlanWarnings } from './install/adapters/hermes.js';
 import { applyUninstall, planUninstall } from './install/uninstaller.js';
+import { daemonConfigPath, loadDaemonConfig, saveDaemonConfig } from './config.js';
+import { runDaemon } from './daemon/client.js';
+import { HarnessNexusClient } from '@harness-nexus/sdk';
 import type { InstallPlan } from './install/types.js';
 import type { AgentTarget } from '@harness-nexus/core';
 
@@ -32,6 +36,8 @@ const HELP = `harness-nexus (hnx) — install profiles into Agent tools
 Usage:
   hnx install --profile <id> --server <url> --token <pat> [options]
   hnx uninstall --target <t> [--out <dir>] [--apply]
+  hnx enroll --server <url> --token <pat> [--name <name>]
+  hnx daemon [--server <url>] [--token <machine-pat>] [--machine-id <id>]
 
 Install options:
   --profile <id>     Profile to install (required)
@@ -46,6 +52,19 @@ Uninstall options:
   --out <dir>        Same install-root override used at install time
   --apply            Actually remove/restore (default: dry-run, prints steps)
                       Files you edited after install are kept as *.hnx.bak
+
+Enroll options (Phase 8 — machine registration):
+  --server <url>     Harness Nexus server base URL (required)
+  --token <pat>      A user PAT for the enrollment call (required)
+  --name <name>      Machine display name (default: this host's hostname)
+                      Creates the machine + its dedicated machine token and
+                      saves them to ~/.hnx/config.json (0600).
+
+Daemon options (Phase 8 — bring the machine online):
+  (all optional; defaults come from ~/.hnx/config.json written by 'hnx enroll')
+  --server <url>     Override the server base URL
+  --token <pat>      Override the machine token
+  --machine-id <id>  Override the machine id
 
 To upgrade an install, run the same 'hnx install --apply' again — the plan
 rewrites its own entries (idempotent) and the ledger is refreshed.
@@ -250,6 +269,111 @@ function runUninstall(args: { target?: string; apply: boolean; out?: string }): 
   return 0;
 }
 
+// ---- enroll / daemon (Phase 8 C1) ----
+
+interface EnrollArgs {
+  server: string;
+  token: string;
+  name?: string;
+}
+
+function parseEnrollArgs(argv: string[]): EnrollArgs {
+  const args: EnrollArgs = { server: '', token: '' };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const next = (): string => {
+      const v = argv[++i];
+      if (v === undefined) throw new InstallError(`Missing value for ${a}`, 'VALIDATION_FAILED');
+      return v;
+    };
+    switch (a) {
+      case '--server':
+        args.server = next();
+        break;
+      case '--token':
+        args.token = next();
+        break;
+      case '--name':
+        args.name = next();
+        break;
+      default:
+        throw new InstallError(`Unknown argument: ${a}`, 'VALIDATION_FAILED');
+    }
+  }
+  for (const [k, v] of [
+    ['--server', args.server],
+    ['--token', args.token],
+  ] as const) {
+    if (!v) throw new InstallError(`Missing required argument ${k}`, 'VALIDATION_FAILED');
+  }
+  return args;
+}
+
+async function runEnroll(args: EnrollArgs): Promise<void> {
+  const client = new HarnessNexusClient({ baseUrl: args.server, token: args.token });
+  const { machine, token } = await client.createMachine({
+    name: args.name ?? hostname(),
+  });
+  saveDaemonConfig({
+    server: args.server,
+    token,
+    machineId: machine.id,
+    ...(machine.name !== undefined ? { machineName: machine.name } : {}),
+  });
+  // eslint-disable-next-line no-console
+  console.log(`Enrolled machine '${machine.name}' (${machine.id}).`);
+  // eslint-disable-next-line no-console
+  console.log(`Machine token saved to ${daemonConfigPath()} (0600) — never shown again.`);
+  // eslint-disable-next-line no-console
+  console.log('Bring it online with: hnx daemon');
+}
+
+interface DaemonArgs {
+  server?: string;
+  token?: string;
+  machineId?: string;
+}
+
+function parseDaemonArgs(argv: string[]): DaemonArgs {
+  const args: DaemonArgs = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const next = (): string => {
+      const v = argv[++i];
+      if (v === undefined) throw new InstallError(`Missing value for ${a}`, 'VALIDATION_FAILED');
+      return v;
+    };
+    switch (a) {
+      case '--server':
+        args.server = next();
+        break;
+      case '--token':
+        args.token = next();
+        break;
+      case '--machine-id':
+        args.machineId = next();
+        break;
+      default:
+        throw new InstallError(`Unknown argument: ${a}`, 'VALIDATION_FAILED');
+    }
+  }
+  return args;
+}
+
+async function runDaemonCommand(args: DaemonArgs): Promise<void> {
+  const config = loadDaemonConfig();
+  const server = args.server ?? config?.server;
+  const token = args.token ?? config?.token;
+  const machineId = args.machineId ?? config?.machineId;
+  if (!server || !token || !machineId) {
+    throw new InstallError(
+      'No daemon configuration found. Run "hnx enroll" first, or pass --server/--token/--machine-id.',
+      'VALIDATION_FAILED',
+    );
+  }
+  await runDaemon({ server, token, machineId });
+}
+
 async function main(argv: string[]): Promise<number> {
   const [, , subcommand, ...rest] = argv;
 
@@ -272,6 +396,31 @@ async function main(argv: string[]): Promise<number> {
         return 0;
       }
       return runUninstall(parseArgs(rest, /* loose */ true));
+    } catch (e) {
+      if (e instanceof InstallError) {
+        // eslint-disable-next-line no-console
+        console.error(`hnx: ${e.code}: ${e.message}`);
+        return 1;
+      }
+      // eslint-disable-next-line no-console
+      console.error(`hnx: unexpected error: ${e instanceof Error ? e.message : String(e)}`);
+      return 2;
+    }
+  }
+
+  if (subcommand === 'enroll' || subcommand === 'daemon') {
+    if (rest.includes('-h') || rest.includes('--help')) {
+      // eslint-disable-next-line no-console
+      console.log(HELP);
+      return 0;
+    }
+    try {
+      if (subcommand === 'enroll') {
+        await runEnroll(parseEnrollArgs(rest));
+        return 0;
+      }
+      await runDaemonCommand(parseDaemonArgs(rest));
+      return 0;
     } catch (e) {
       if (e instanceof InstallError) {
         // eslint-disable-next-line no-console

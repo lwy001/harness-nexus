@@ -132,6 +132,28 @@ CREATE INDEX IF NOT EXISTS idx_resources_kind  ON resources(kind);
 ALTER TABLE profiles ADD COLUMN target TEXT NOT NULL DEFAULT 'generic';
     `,
   },
+  {
+    version: 6,
+    description: 'phase 8 C1 — machines (enrolled via the Harness Nexus client)',
+    sql: `
+CREATE TABLE IF NOT EXISTS machines (
+  id                 TEXT PRIMARY KEY,
+  owner_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name               TEXT NOT NULL,
+  hostname           TEXT,
+  os                 TEXT,
+  arch               TEXT,
+  daemon_version     TEXT,
+  capabilities       TEXT NOT NULL DEFAULT '[]',
+  remote_chat_enabled INTEGER NOT NULL DEFAULT 0,
+  enrollment_pat_id  TEXT NOT NULL,
+  enrolled_at        TEXT NOT NULL,
+  last_seen_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_machines_owner ON machines(owner_id);
+CREATE INDEX IF NOT EXISTS idx_machines_pat   ON machines(enrollment_pat_id);
+    `,
+  },
 ] as const;
 
 /**

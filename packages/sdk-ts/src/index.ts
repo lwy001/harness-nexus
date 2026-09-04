@@ -19,6 +19,7 @@ import type {
   TrustTier,
   SkillMeta,
   SkillBundle,
+  Machine,
 } from '@harness-nexus/core';
 import type {
   MarketplaceCatalog,
@@ -60,6 +61,10 @@ export interface PatView {
   expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
+}
+/** Machine API view (Phase 8) — the domain Machine plus derived presence. */
+export interface MachineView extends Machine {
+  online: boolean;
 }
 export interface CredentialView {
   id: string;
@@ -224,6 +229,33 @@ export class HarnessNexusClient {
 
   async revokePat(id: string): Promise<void> {
     await this.request('DELETE', `/api/pats/${id}`);
+  }
+
+  // ---- machines (Phase 8 C1) ----
+  async createMachine(input: { name: string }): Promise<{ machine: MachineView; token: string }> {
+    return this.request('POST', '/api/machines', input);
+  }
+
+  async listMachines(): Promise<MachineView[]> {
+    const res = await this.request('GET', '/api/machines');
+    return res.machines;
+  }
+
+  async getMachine(id: string): Promise<MachineView> {
+    const res = await this.request('GET', `/api/machines/${id}`);
+    return res.machine;
+  }
+
+  async updateMachine(
+    id: string,
+    input: { name?: string; remoteChatEnabled?: boolean },
+  ): Promise<MachineView> {
+    const res = await this.request('PATCH', `/api/machines/${id}`, input);
+    return res.machine;
+  }
+
+  async deleteMachine(id: string): Promise<void> {
+    await this.request('DELETE', `/api/machines/${id}`);
   }
 
   // ---- settings ----

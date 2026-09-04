@@ -14,6 +14,7 @@ import { McpManagementPage } from '@/pages/McpManagement';
 import { ProfilesPage } from '@/pages/Profiles';
 import { ResourcesPage } from '@/pages/Resources';
 import { SkillHubPage } from '@/pages/SkillHub';
+import { MachinesPage } from '@/pages/Machines';
 
 export function App() {
   return (
@@ -28,6 +29,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <DashboardPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/machines"
+              element={
+                <RequireAuth>
+                  <MachinesPage />
                 </RequireAuth>
               }
             />
