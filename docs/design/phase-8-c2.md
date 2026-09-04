@@ -1,9 +1,14 @@
 # Design: Phase 8 C2 — client MCP serving (shims, dial-site routing, `/mcp` outlet narrowing)
 
-> Status: in development (branch `phase-8-c2`). Parent design:
+> Status: **implemented** (branch `phase-8-c2`). Parent design:
 > `docs/design/phase-8-client.md` § "MCP serving model (C2)". PRD:
 > `docs/prd/phase-8-client.md` (locked decisions #1/#2/#4). C1:
 > `docs/design/phase-8-c1.md` (shipped — machines, realtime v0).
+> Verification: shared 33 (dial-site matrix), server 23 (client-config contract
+> incl. secret-leak assertions + 409 matrix), shim E2E
+> `scripts/test-hnx-mcp-serve.mjs` 5/5 (config fetch → stdio dial → namespaced
+> serving → call round-trip with the resolved secret), smoke `[8 C2]` block —
+> 192/192 overall.
 
 ## Scope
 
@@ -69,11 +74,11 @@ C2 moves MCP serving to the client and deletes the proxy/direct split:
 
 ## Dial-site × distributability matrix (normative)
 
-| Transport creds referenced | `auto` | `client` | `server` |
-| -------------------------- | ------ | -------- | -------- |
-| none                       | client | client   | server   |
-| all distributable          | client | client   | server   |
-| any non-distributable      | server | **409 at use\*** | server |
+| Transport creds referenced | `auto` | `client`         | `server` |
+| -------------------------- | ------ | ---------------- | -------- |
+| none                       | client | client           | server   |
+| all distributable          | client | client           | server   |
+| any non-distributable      | server | **409 at use\*** | server   |
 
 \* an explicit `client` + non-distributable credential is a config contradiction:
 rejected at create/update with `409 CREDENTIAL_NOT_DISTRIBUTABLE` (the server

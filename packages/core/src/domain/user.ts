@@ -40,17 +40,18 @@ export interface PersonalAccessToken {
 }
 
 /**
- * How an MCP server connection is dialed (Phase 3.1).
+ * Where an MCP server upstream is dialed (Phase 8 C2 — replaces the Phase 3.1
+ * proxy/direct `mode`).
  *
- * - `proxy`  — Harness Nexus dials the upstream and re-exposes it via `/mcp`.
- *              Only SSE / Streamable HTTP. Pooled by the registry; `proxied`
- *              drives whether it actually enters the pool.
- * - `direct` — the target tool dials the upstream itself. SSE / Streamable
- *              HTTP **and stdio**. Harness Nexus stores the connection + encrypted
- *              credentials only; it never opens the connection. stdio forces
- *              this mode, so Harness Nexus never spawns a subprocess.
+ * - `client` — the `hnx mcp serve` shim dials it on the user's machine
+ *   (stdio / SSE / Streamable HTTP; localhost + LAN upstreams reachable).
+ * - `server` — the platform dials it and serves it via the `/mcp` outlet;
+ *   the ONLY home for upstreams whose credentials must not leave the server
+ *   or that only the platform's network can reach.
+ * - `auto`  — derived at use time: client iff every referenced credential is
+ *   distributable (or none), else server. See `dial-site.ts` in shared.
  */
-export type McpMode = 'proxy' | 'direct';
+export type DialSite = 'auto' | 'client' | 'server';
 
 /** A registered MCP server that this instance consumes (as a client) or serves. */
 export interface McpServer {
@@ -59,11 +60,10 @@ export interface McpServer {
   /** Transport used to connect to the upstream MCP server. */
   transport: McpTransport;
   /**
-   * Whether this instance dials it (proxy) or the tool does (direct). The
-   * registry pools `proxy` rows only; `direct` rows are never dialed by
-   * Harness Nexus (the target tool dials them at install time).
+   * Who dials this upstream (Phase 8 C2). The registry pools exactly the rows
+   * that resolve to `server`; everything else is dialed by the client shim.
    */
-  mode: McpMode;
+  dialSite: DialSite;
   scope: 'global' | 'personal';
   ownerId: string | null;
   createdAt: string;

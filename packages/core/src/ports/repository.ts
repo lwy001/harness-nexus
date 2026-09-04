@@ -73,7 +73,7 @@ export interface McpServerRepository {
   list(filter?: {
     scope?: 'global' | 'personal';
     ownerId?: string;
-    mode?: 'proxy' | 'direct';
+    dialSite?: McpServer['dialSite'];
   }): Promise<McpServer[]>;
   save(server: McpServer): Promise<McpServer>;
   delete(id: string): Promise<void>;

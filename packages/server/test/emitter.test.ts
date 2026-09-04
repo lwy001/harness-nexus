@@ -71,7 +71,7 @@ async function seed(uow: ReturnType<typeof createMemoryUnitOfWork>) {
     id: 'm1',
     name: 'Upstream One',
     transport: { type: 'streamable-http', url: 'https://up.example/mcp' },
-    mode: 'proxy',
+    dialSite: 'auto',
     scope: 'personal',
     ownerId: 'u1',
     createdAt: now,
@@ -172,10 +172,18 @@ describe('MarketplaceEmitter.buildPluginZip', () => {
     expect(names).toContain('daily-bundle/hooks/hooks.json');
 
     const mcp = JSON.parse(await zip.file('daily-bundle/.mcp.json')!.async('string'));
-    expect(mcp.mcpServers['harness-nexus'].url).toBe('https://hn.example/mcp?profile=p1');
-    expect(mcp.mcpServers['harness-nexus'].headers.Authorization).toBe(
-      'Bearer ${HN_PAT_DAILY_BUNDLE}',
-    );
+    // C2 default (emitMode 'client'): ONE stdio shim entry — no PAT env var,
+    // no inlined credentials.
+    expect(mcp.mcpServers['harness-nexus'].type).toBe('stdio');
+    expect(mcp.mcpServers['harness-nexus'].command).toBe('hnx');
+    expect(mcp.mcpServers['harness-nexus'].args).toEqual([
+      'mcp',
+      'serve',
+      '--profile',
+      'p1',
+      '--server',
+      'https://hn.example',
+    ]);
 
     const rule = await zip.file('daily-bundle/skills/style/SKILL.md')!.async('string');
     expect(rule.startsWith('---\nname: style\ndescription: Rules: Conventions.\n---')).toBe(true);
@@ -189,7 +197,26 @@ describe('MarketplaceEmitter.buildPluginZip', () => {
     expect(plugin.name).toBe('daily-bundle');
     expect(plugin.version).toBe('2.1.0');
     // Emission limitations ride the description (the only post-install channel).
-    expect(plugin.description).toContain('HN_PAT_DAILY_BUNDLE');
+    expect(plugin.description).toContain('hnx client');
     expect(plugin.description).toContain('hook event(s)');
+  });
+
+  it("emitMode 'server' keeps the pre-C2 output (the no-hnx fallback)", async () => {
+    const uow = createMemoryUnitOfWork();
+    const emitter = new MarketplaceEmitter({
+      uow,
+      publicBaseUrl: 'https://hn.example',
+      logger: fakeLogger,
+      emitMode: 'server',
+    });
+    await seed(uow);
+    const profile = (await uow.profiles.findById('p1'))!;
+    const zip = await JSZip.loadAsync(await emitter.buildPluginZip(profile));
+
+    const mcp = JSON.parse(await zip.file('daily-bundle/.mcp.json')!.async('string'));
+    expect(mcp.mcpServers['harness-nexus'].url).toBe('https://hn.example/mcp?profile=p1');
+    expect(mcp.mcpServers['harness-nexus'].headers.Authorization).toBe(
+      'Bearer ${HN_PAT_DAILY_BUNDLE}',
+    );
   });
 });

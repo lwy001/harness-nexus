@@ -57,6 +57,7 @@ interface CredentialRow {
   secret: string;
   scope: string;
   owner_id: string | null;
+  distributable: number;
   created_at: string;
   updated_at: string;
 }
@@ -64,7 +65,7 @@ interface McpServerRow {
   id: string;
   name: string;
   transport: string;
-  mode: string;
+  dial_site: string;
   scope: string;
   owner_id: string | null;
   created_at: string;
@@ -129,6 +130,7 @@ const mapCredential = (r: CredentialRow): Credential => ({
   secret: r.secret,
   scope: r.scope as Credential['scope'],
   ownerId: r.owner_id,
+  distributable: r.distributable === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -137,7 +139,7 @@ const mapMcpServer = (r: McpServerRow): McpServer => ({
   id: r.id,
   name: r.name,
   transport: JSON.parse(r.transport) as McpTransport,
-  mode: r.mode as McpServer['mode'],
+  dialSite: r.dial_site as McpServer['dialSite'],
   scope: r.scope as McpServer['scope'],
   ownerId: r.owner_id,
   createdAt: r.created_at,
@@ -359,20 +361,22 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
     },
     async save(credential) {
       db.prepare(
-        `INSERT INTO credentials (id, name, secret, scope, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @secret, @scope, @owner_id, @created_at, @updated_at)
+        `INSERT INTO credentials (id, name, secret, scope, owner_id, distributable, created_at, updated_at)
+         VALUES (@id, @name, @secret, @scope, @owner_id, @distributable, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
-           name       = excluded.name,
-           secret     = excluded.secret,
-           scope      = excluded.scope,
-           owner_id   = excluded.owner_id,
-           updated_at = excluded.updated_at`,
+           name          = excluded.name,
+           secret        = excluded.secret,
+           scope         = excluded.scope,
+           owner_id      = excluded.owner_id,
+           distributable = excluded.distributable,
+           updated_at    = excluded.updated_at`,
       ).run({
         id: credential.id,
         name: credential.name,
         secret: credential.secret,
         scope: credential.scope,
         owner_id: credential.ownerId,
+        distributable: credential.distributable ? 1 : 0,
         created_at: credential.createdAt,
         updated_at: credential.updatedAt,
       });
@@ -403,9 +407,9 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         where.push('owner_id = @ownerId');
         params.ownerId = filter.ownerId;
       }
-      if (filter?.mode) {
-        where.push('mode = @mode');
-        params.mode = filter.mode;
+      if (filter?.dialSite) {
+        where.push('dial_site = @dialSite');
+        params.dialSite = filter.dialSite;
       }
       const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const rows = db
@@ -415,12 +419,12 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
     },
     async save(server) {
       db.prepare(
-        `INSERT INTO mcp_servers (id, name, transport, mode, scope, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @transport, @mode, @scope, @owner_id, @created_at, @updated_at)
+        `INSERT INTO mcp_servers (id, name, transport, dial_site, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @transport, @dial_site, @scope, @owner_id, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            name       = excluded.name,
            transport  = excluded.transport,
-           mode       = excluded.mode,
+           dial_site  = excluded.dial_site,
            scope      = excluded.scope,
            owner_id   = excluded.owner_id,
            updated_at = excluded.updated_at`,
@@ -428,7 +432,7 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         id: server.id,
         name: server.name,
         transport: JSON.stringify(server.transport),
-        mode: server.mode,
+        dial_site: server.dialSite,
         scope: server.scope,
         owner_id: server.ownerId,
         created_at: server.createdAt,

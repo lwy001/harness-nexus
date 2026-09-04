@@ -21,6 +21,7 @@
     "@fastify/helmet": "^13.1.0",
     "@fastify/sensible": "^6.0.4",
     "@harness-nexus/core": "workspace:*",
+    "@harness-nexus/mcp-runtime": "workspace:^",
     "@harness-nexus/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@node-rs/argon2": "^2.0.2",

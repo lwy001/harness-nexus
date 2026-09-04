@@ -31,6 +31,14 @@ export interface MarketplaceEmitterOptions {
   /** Absolute origin the Agent tool reaches this server at (no trailing slash). */
   publicBaseUrl: string;
   logger: FastifyBaseLogger;
+  /**
+   * Phase 8 C2 — how `.mcp.json` entries are emitted:
+   *   client (default) — ONE stdio entry invoking the `hnx mcp serve` shim
+   *     (no PAT env var; requires `hnx` enrolled on the machine).
+   *   server — the pre-C2 shape: the aggregated `/mcp` endpoint + a
+   *     `${HN_PAT_*}` env placeholder; the no-`hnx` fallback.
+   */
+  emitMode?: 'client' | 'server';
 }
 
 /** A plugin name / directory segment, sanitized to claude's expectations. */
@@ -58,11 +66,13 @@ export class MarketplaceEmitter {
   private readonly uow: UnitOfWork;
   private readonly base: string;
   private readonly log: FastifyBaseLogger;
+  private readonly emitMode: 'client' | 'server';
 
   constructor(opts: MarketplaceEmitterOptions) {
     this.uow = opts.uow;
     this.base = opts.publicBaseUrl;
     this.log = opts.logger;
+    this.emitMode = opts.emitMode ?? 'client';
   }
 
   /**
@@ -144,39 +154,27 @@ export class MarketplaceEmitter {
     }
 
     // ---- .mcp.json ----
-    const proxyMcp = mcpServers.filter((s) => s.mode === 'proxy');
-    const directMcp = mcpServers.filter((s) => s.mode === 'direct');
     if (mcpServers.length > 0) {
       const block: Record<string, unknown> = {};
-      if (proxyMcp.length > 0) {
-        // All proxy entries collapse into the single aggregated endpoint.
+      if (this.emitMode === 'client') {
+        // Phase 8 C2: one stdio shim entry per profile — no PAT env var, no
+        // inlined credentials. The shim (spawned by claude per session) fetches
+        // its resolved config from the server with hnx's own enrollment token.
+        block['harness-nexus'] = {
+          type: 'stdio',
+          command: 'hnx',
+          args: ['mcp', 'serve', '--profile', profile.id, '--server', this.base],
+        };
+        warnings.push('MCP requires the hnx client on PATH (hnx enroll) on this machine');
+      } else {
+        // 'server' mode — the pre-C2 output: everything through the aggregated
+        // `/mcp` endpoint with a PAT env placeholder (the no-`hnx` fallback).
         block['harness-nexus'] = {
           type: 'http',
           url: `${this.base}/mcp?profile=${profile.id}`,
           headers: { Authorization: `Bearer \${${patEnvKeyFor(slug)}}` },
         };
         warnings.push(`export ${patEnvKeyFor(slug)} with a Harness Nexus PAT before use`);
-      }
-      for (const server of directMcp) {
-        const t = server.transport;
-        if (t.type === 'stdio') {
-          block[slugify(server.name)] = {
-            command: t.command,
-            ...(t.args ? { args: t.args } : {}),
-            ...(t.env ? { env: t.env } : {}),
-          };
-        } else {
-          block[slugify(server.name)] = {
-            type: 'http',
-            url: t.url,
-            ...(t.headers ? { headers: t.headers } : {}),
-          };
-        }
-      }
-      if (directMcp.length > 0) {
-        warnings.push(
-          'direct-mode MCP entries keep their ${cred:NAME} placeholders — fill them in manually',
-        );
       }
       dir.file('.mcp.json', JSON.stringify({ mcpServers: block }, null, 2));
     }

@@ -138,7 +138,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
       return [...mcpServers.values()]
         .filter((s) => (filter?.scope ? s.scope === filter.scope : true))
         .filter((s) => (filter?.ownerId ? s.ownerId === filter.ownerId : true))
-        .filter((s) => (filter?.mode ? s.mode === filter.mode : true))
+        .filter((s) => (filter?.dialSite ? s.dialSite === filter.dialSite : true))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async save(server) {

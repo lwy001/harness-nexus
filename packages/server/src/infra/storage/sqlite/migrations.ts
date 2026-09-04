@@ -154,6 +154,18 @@ CREATE INDEX IF NOT EXISTS idx_machines_owner ON machines(owner_id);
 CREATE INDEX IF NOT EXISTS idx_machines_pat   ON machines(enrollment_pat_id);
     `,
   },
+  {
+    version: 7,
+    description:
+      'phase 8 C2 — mcp_servers.mode → dial_site (proxy→auto, direct→client); credentials.distributable',
+    sql: `
+ALTER TABLE mcp_servers ADD COLUMN dial_site TEXT NOT NULL DEFAULT 'auto';
+UPDATE mcp_servers SET dial_site = CASE WHEN mode = 'direct' THEN 'client' ELSE 'auto' END;
+ALTER TABLE mcp_servers DROP COLUMN mode;
+
+ALTER TABLE credentials ADD COLUMN distributable INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ] as const;
 
 /**

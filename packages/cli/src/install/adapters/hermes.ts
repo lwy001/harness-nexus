@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { createTargetAdapter } from '../adapter-factory.js';
+import { hnxExecutablePath } from '../../config.js';
 import type {
   InstallPlan,
   Operation,
@@ -123,15 +124,19 @@ function configYamlPath(root: string): string {
 
 /**
  * Plan the MCP merge into config.yaml. Reads the existing config (if any),
- * adds/overwrites the profile's MCP entries under `mcp_servers:`, preserves all
- * other user content, and returns a single `write-file` op with the full merged
- * YAML. The ledger records this op so uninstall can roll it back.
+ * adds/overwrites the profile's stdio shim entry under `mcp_servers:`,
+ * preserves all other user content, and returns a single `write-file` op with
+ * the full merged YAML. The ledger records this op so uninstall can roll it
+ * back.
+ *
+ * Phase 8 C2: every profile collapses into ONE stdio shim entry —
+ * `hnx mcp serve --profile <id> --server <base>` — regardless of dial sites.
+ * The shim dials client-dialed upstreams itself and reaches server-dialed
+ * ones through the platform outlet, so no credential ever lands in config.yaml
+ * (the pre-C2 direct-mode inlining and the `${HN_PAT_*}` env placeholder are
+ * gone).
  */
-function planMcpMerge(
-  resolved: ResolvedProfile,
-  root: string,
-  serverBase: string,
-): { op: Operation; hasDirect: boolean; patEnvKey: string } {
+function planMcpMerge(resolved: ResolvedProfile, root: string, serverBase: string): Operation {
   const cfgPath = configYamlPath(root);
   let config: Record<string, unknown> = {};
   if (fs.existsSync(cfgPath)) {
@@ -147,44 +152,17 @@ function planMcpMerge(
 
   const mcpServers = (config['mcp_servers'] as Record<string, unknown> | undefined) ?? {};
   const slug = slugify(resolved.profile.name);
-  const patEnvKey = `HN_PAT_${slug.replace(/-/g, '_').toUpperCase()}`;
-  let hasDirect = false;
-
-  // proxy entries collapse into one aggregated endpoint.
-  const proxyEntries = resolved.artifacts.filter(
-    (a) => a.kind === 'mcp' && a.mcpServer.mode === 'proxy',
-  );
-  if (proxyEntries.length > 0) {
+  const mcpCount = resolved.artifacts.filter((a) => a.kind === 'mcp').length;
+  if (mcpCount > 0) {
     mcpServers[`harness-nexus-${slug}`] = {
-      url: `${serverBase.replace(/\/$/, '')}/mcp?profile=${resolved.profile.id}`,
-      headers: { Authorization: `Bearer \${${patEnvKey}}` },
+      command: hnxExecutablePath(),
+      args: ['mcp', 'serve', '--profile', resolved.profile.id, '--server', serverBase],
     };
-  }
-
-  // direct entries written verbatim (stdio command/args/env or HTTP url/headers).
-  for (const a of resolved.artifacts) {
-    if (a.kind !== 'mcp' || a.mcpServer.mode !== 'direct') continue;
-    hasDirect = true;
-    const t = a.mcpServer.transport;
-    const entry: Record<string, unknown> = {};
-    if (t.type === 'stdio') {
-      entry.command = t.command;
-      if (t.args) entry.args = t.args;
-      if (t.env) entry.env = t.env;
-    } else {
-      entry.url = t.url;
-      if (t.headers) entry.headers = t.headers;
-    }
-    mcpServers[a.mcpServer.name] = entry;
   }
 
   config['mcp_servers'] = mcpServers;
   const dumped = yaml.dump(config, { lineWidth: 100 });
-  return {
-    op: { kind: 'write-file', content: dumped, destinationPath: cfgPath },
-    hasDirect,
-    patEnvKey,
-  };
+  return { kind: 'write-file', content: dumped, destinationPath: cfgPath };
 }
 
 /**
@@ -246,20 +224,14 @@ export const hermesAdapter: TargetAdapter = createTargetAdapter({
     }
 
     // ---- B. MCP merge into config.yaml ----
-    // The server base is needed to build the proxy URL. We derive it from the
-    // resolved profile's first proxy MCP entry — but the CLI knows the server
-    // URL from the resolver. Since the adapter doesn't receive it directly,
-    // we encode the proxy URL with a placeholder resolved at apply time via the
-    // environment. For 3.4 we use the HN_SERVER env var fallback.
+    // The shim entry needs the server base URL. The adapter doesn't receive
+    // the resolver's server directly, so the CLI sets HN_SERVER before
+    // planning (see runInstall); a sensible fallback covers direct
+    // planInstall() use in tests.
     const serverBase = process.env.HN_SERVER ?? 'https://harness-nexus.example.com';
     const hasMcp = resolved.artifacts.some((a) => a.kind === 'mcp');
-    let patEnvKey = '';
-    let hasDirect = false;
     if (hasMcp) {
-      const merge = planMcpMerge(resolved, root, serverBase);
-      operations.push(merge.op);
-      patEnvKey = merge.patEnvKey;
-      hasDirect = merge.hasDirect;
+      operations.push(planMcpMerge(resolved, root, serverBase));
     }
 
     // ---- C. Rules → AGENTS.md (auto-loaded by Hermes) ----
@@ -303,7 +275,7 @@ export const hermesAdapter: TargetAdapter = createTargetAdapter({
     // can read (kept simple: module-level last-warnings for 3.4).
     lastPlanWarnings = {
       skipped,
-      patEnvKey,
+      needsHnx: hasMcp,
       pluginSlug: slug,
       needsPluginEnable: skillArtifacts.length > 0,
     };
@@ -313,7 +285,7 @@ export const hermesAdapter: TargetAdapter = createTargetAdapter({
       targetRoot: root,
       installStatePath: path.join(root, INSTALL_STATE_FILENAME),
       operations,
-      sensitive: hasDirect,
+      sensitive: false,
     };
   },
 });
@@ -321,13 +293,14 @@ export const hermesAdapter: TargetAdapter = createTargetAdapter({
 /** Warnings from the most recent hermes planInstall (read by the CLI for output). */
 export interface HermesPlanWarnings {
   skipped: string[];
-  patEnvKey: string;
+  /** True when the plan carries a `hnx mcp serve` shim entry. */
+  needsHnx: boolean;
   pluginSlug: string;
   needsPluginEnable: boolean;
 }
 let lastPlanWarnings: HermesPlanWarnings = {
   skipped: [],
-  patEnvKey: '',
+  needsHnx: false,
   pluginSlug: '',
   needsPluginEnable: false,
 };

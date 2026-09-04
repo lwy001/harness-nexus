@@ -38,6 +38,9 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       secret: encryptSecret(input.secret, key),
       scope: input.scope,
       ownerId: input.scope === 'global' ? null : req.user!.id,
+      // Phase 8 C2: personal secrets belong to the owner and may reach their
+      // own machines; global secrets stay on the server unless an admin opts in.
+      distributable: input.scope === 'personal' ? true : (input.distributable ?? false),
       createdAt: now,
       updatedAt: now,
     };
@@ -70,6 +73,11 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       ...existing,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.secret !== undefined ? { secret: encryptSecret(input.secret, key) } : {}),
+      // `distributable` is only meaningful for global credentials (personal
+      // ones are always distributable); ignore attempts to flip it otherwise.
+      ...(input.distributable !== undefined && existing.scope === 'global'
+        ? { distributable: input.distributable }
+        : {}),
       updatedAt: new Date().toISOString(),
     };
     await app.uow.credentials.save(next);

@@ -9,7 +9,7 @@ import type {
   Role,
   User,
   McpServer,
-  McpMode,
+  DialSite,
   McpTransport,
   Profile,
   Resource,
@@ -27,11 +27,13 @@ import type {
   MarketplaceSource,
   PluginResourceSource,
   McpToolInfo,
+  ClientMcpConfig,
 } from '@harness-nexus/shared';
 export {
   HOOK_EVENTS,
   HOOK_SUPPORT,
   resolveTrustTier,
+  resolveDialSite,
   marketplacePluginToResourceSource,
   skillMetaToResourceSource,
   type HookEvent,
@@ -42,6 +44,7 @@ export type {
   MarketplaceSource,
   PluginResourceSource,
   McpToolInfo,
+  ClientMcpConfig,
 };
 
 export interface SdkOptions {
@@ -72,6 +75,8 @@ export interface CredentialView {
   secretPreview: string;
   scope: 'global' | 'personal';
   ownerId: string | null;
+  /** Phase 8 C2 — may the plaintext reach a client shim (always true for personal). */
+  distributable: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -272,6 +277,7 @@ export class HarnessNexusClient {
     name: string;
     secret: string;
     scope: 'global' | 'personal';
+    distributable?: boolean;
   }): Promise<{ credential: CredentialView }> {
     return this.request('POST', '/api/credentials', input);
   }
@@ -296,7 +302,7 @@ export class HarnessNexusClient {
   async createMcpServer(input: {
     name: string;
     transport: McpTransport;
-    mode?: McpMode;
+    dialSite?: DialSite;
     scope: 'global' | 'personal';
   }): Promise<{ mcpServer: McpServer }> {
     return this.request('POST', '/api/mcp-servers', input);
@@ -309,13 +315,22 @@ export class HarnessNexusClient {
 
   async updateMcpServer(
     id: string,
-    input: { name?: string; transport?: McpTransport; mode?: McpMode },
+    input: { name?: string; transport?: McpTransport; dialSite?: DialSite },
   ): Promise<{ mcpServer: McpServer }> {
     return this.request('PATCH', `/api/mcp-servers/${id}`, input);
   }
 
   async deleteMcpServer(id: string): Promise<void> {
     await this.request('DELETE', `/api/mcp-servers/${id}`);
+  }
+
+  /**
+   * Client config fetch (Phase 8 C2) — the `hnx mcp serve` shim's world model.
+   * Accepts an api PAT/JWT or a machine PAT; resolved transports (plaintext
+   * included) appear for CLIENT-dialed servers only.
+   */
+  async getClientMcpConfig(profileId: string): Promise<ClientMcpConfig> {
+    return this.request('GET', `/api/client/mcp-config?profile=${encodeURIComponent(profileId)}`);
   }
 
   // ---- mcp server status (live registry) ----
@@ -504,7 +519,7 @@ export class HarnessNexusClient {
 export type {
   Role,
   McpServer,
-  McpMode,
+  DialSite,
   McpTransport,
   Profile,
   Resource,

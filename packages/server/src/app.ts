@@ -20,6 +20,7 @@ import { profilesRoutes } from './modules/profiles.js';
 import { resourcesRoutes } from './modules/resources.js';
 import { skillsRoutes } from './modules/skills.js';
 import { machinesRoutes } from './modules/machines.js';
+import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
 import { MarketplaceEmitter } from './marketplace/emitter.js';
@@ -150,10 +151,12 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
 
   // Phase 3.5 — marketplace emitter (read-only Claude Code plugin catalog +
   // per-profile archive zips). PAT-in-path routes; see modules/marketplace.ts.
+  // C2: emitMode picks the .mcp.json shape (client stdio shim by default).
   const marketplaceEmitter = new MarketplaceEmitter({
     uow,
     publicBaseUrl: config.publicBaseUrl,
     logger: app.log,
+    emitMode: config.emitterMode,
   });
   app.decorate('marketplaceEmitter', marketplaceEmitter);
 
@@ -195,6 +198,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await resourcesRoutes(api);
     await skillsRoutes(api);
     await machinesRoutes(api);
+    await clientConfigRoutes(api);
     await marketplaceRoutes(api);
   });
 

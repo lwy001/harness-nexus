@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 /**
  * Daemon configuration (~/.hnx/config.json, 0600). Written by `hnx enroll`,
@@ -39,4 +39,14 @@ export function saveDaemonConfig(config: HnxDaemonConfig): void {
   } catch {
     // best-effort on filesystems that ignore modes
   }
+}
+
+/**
+ * Absolute path of the running `hnx` executable — baked into the stdio shim
+ * entries target adapters emit (GUI-launched Agent tools often lack PATH).
+ * `HNX_BIN` overrides (tests / wrapper scripts); dev-mode `tsx` runs resolve
+ * to the loader path, which is fine for local experimentation.
+ */
+export function hnxExecutablePath(): string {
+  return process.env.HNX_BIN ?? (process.argv[1] ? resolve(process.argv[1]) : 'hnx');
 }

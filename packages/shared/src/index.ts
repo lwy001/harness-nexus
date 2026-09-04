@@ -7,5 +7,6 @@ export * from './schemas/machine.js';
 export * from './hooks.js';
 export * from './trust.js';
 export * from './realtime.js';
+export * from './dial-site.js';
 export * from './utils/errors.js';
 export * from './utils/placeholders.js';

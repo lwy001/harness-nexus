@@ -24,9 +24,11 @@ import { planInstall } from './install/planner.js';
 import { resolveProfile } from './install/resolver.js';
 import { supportedTargets } from './install/registry.js';
 import { getHermesPlanWarnings } from './install/adapters/hermes.js';
+import { getCodexPlanWarnings } from './install/adapters/codex.js';
 import { applyUninstall, planUninstall } from './install/uninstaller.js';
 import { daemonConfigPath, loadDaemonConfig, saveDaemonConfig } from './config.js';
 import { runDaemon } from './daemon/client.js';
+import { runMcpServe } from './mcp/serve.js';
 import { HarnessNexusClient } from '@harness-nexus/sdk';
 import type { InstallPlan } from './install/types.js';
 import type { AgentTarget } from '@harness-nexus/core';
@@ -38,6 +40,7 @@ Usage:
   hnx uninstall --target <t> [--out <dir>] [--apply]
   hnx enroll --server <url> --token <pat> [--name <name>]
   hnx daemon [--server <url>] [--token <machine-pat>] [--machine-id <id>]
+  hnx mcp serve --profile <id> [--server <url>] [--token <pat>]
 
 Install options:
   --profile <id>     Profile to install (required)
@@ -65,6 +68,11 @@ Daemon options (Phase 8 — bring the machine online):
   --server <url>     Override the server base URL
   --token <pat>      Override the machine token
   --machine-id <id>  Override the machine id
+
+MCP serve options (Phase 8 C2 — the stdio shim; spawned by Agent tools):
+  --profile <id>     Profile to serve (required)
+  --server <url>     Server base URL (default: ~/.hnx/config.json)
+  --token <pat>      Machine PAT or user PAT (default: ~/.hnx/config.json)
 
 To upgrade an install, run the same 'hnx install --apply' again — the plan
 rewrites its own entries (idempotent) and the ledger is refreshed.
@@ -132,7 +140,7 @@ function parseArgs(argv: string[], loose = false): InstallArgs {
   return args;
 }
 
-/** Print Hermes-specific post-install hints the adapter cannot perform itself. */
+/** Print target-specific post-install hints the adapters cannot perform themselves. */
 function printHermesHints(_plan: InstallPlan): void {
   const w = getHermesPlanWarnings();
   const lines = ['\nHermes post-install steps:'];
@@ -141,11 +149,30 @@ function printHermesHints(_plan: InstallPlan): void {
       `  • Enable the plugin: add '${w.pluginSlug}' to the 'plugins.enabled' list in config.yaml`,
     );
   }
-  if (w.patEnvKey) {
-    lines.push(`  • Set the proxy MCP token: add '${w.patEnvKey}=<your-hn-pat>' to ~/.hermes/.env`);
+  if (w.needsHnx) {
+    lines.push(
+      `  • MCP runs through the hnx stdio shim — run 'hnx enroll' on this machine if you haven't`,
+    );
   }
   if (w.skipped.length > 0) {
     lines.push(`  • Skipped (Hermes model incompatibility):`);
+    for (const s of w.skipped) lines.push(`      - ${s}`);
+  }
+  // eslint-disable-next-line no-console
+  console.log(lines.join('\n'));
+}
+
+/** Print Codex post-install hints. */
+function printCodexHints(): void {
+  const w = getCodexPlanWarnings();
+  const lines = ['\nCodex post-install steps:'];
+  if (w.needsHnx) {
+    lines.push(
+      `  • MCP runs through the hnx stdio shim — run 'hnx enroll' on this machine if you haven't`,
+    );
+  }
+  if (w.skipped.length > 0) {
+    lines.push(`  • Skipped (no verified Codex home-install format):`);
     for (const s of w.skipped) lines.push(`      - ${s}`);
   }
   // eslint-disable-next-line no-console
@@ -182,6 +209,10 @@ async function runInstall(args: InstallArgs): Promise<void> {
     profileId: args.profile,
   });
 
+  // Adapters read the server base from HN_SERVER when emitting `hnx mcp serve`
+  // shim entries (they don't receive the resolver's options directly).
+  process.env.HN_SERVER = args.server;
+
   const plan = planInstall(resolved, {
     ...(args.target !== undefined ? { target: args.target } : {}),
     input: args.out ? { outDir: args.out } : {},
@@ -190,9 +221,12 @@ async function runInstall(args: InstallArgs): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(formatPlan(plan));
 
-  // Target-specific install hints (Hermes needs manual steps the adapter can't do).
+  // Target-specific install hints (manual steps the adapters can't do).
   if (plan.adapter.target === 'hermes') {
     printHermesHints(plan);
+  }
+  if (plan.adapter.target === 'codex') {
+    printCodexHints();
   }
 
   if (!args.apply) {
@@ -374,6 +408,54 @@ async function runDaemonCommand(args: DaemonArgs): Promise<void> {
   await runDaemon({ server, token, machineId });
 }
 
+interface McpServeArgs {
+  profile: string;
+  server?: string;
+  token?: string;
+}
+
+function parseMcpServeArgs(argv: string[]): McpServeArgs {
+  const args: McpServeArgs = { profile: '' };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const next = (): string => {
+      const v = argv[++i];
+      if (v === undefined) throw new InstallError(`Missing value for ${a}`, 'VALIDATION_FAILED');
+      return v;
+    };
+    switch (a) {
+      case '--profile':
+        args.profile = next();
+        break;
+      case '--server':
+        args.server = next();
+        break;
+      case '--token':
+        args.token = next();
+        break;
+      default:
+        throw new InstallError(`Unknown argument: ${a}`, 'VALIDATION_FAILED');
+    }
+  }
+  if (!args.profile) {
+    throw new InstallError('Missing required argument --profile', 'VALIDATION_FAILED');
+  }
+  return args;
+}
+
+async function runMcpServeCommand(args: McpServeArgs): Promise<void> {
+  const config = loadDaemonConfig();
+  const server = args.server ?? config?.server;
+  const token = args.token ?? config?.token;
+  if (!server || !token) {
+    throw new InstallError(
+      'No server/token: run "hnx enroll" first, or pass --server/--token.',
+      'VALIDATION_FAILED',
+    );
+  }
+  await runMcpServe({ profileId: args.profile, server, token });
+}
+
 async function main(argv: string[]): Promise<number> {
   const [, , subcommand, ...rest] = argv;
 
@@ -408,7 +490,7 @@ async function main(argv: string[]): Promise<number> {
     }
   }
 
-  if (subcommand === 'enroll' || subcommand === 'daemon') {
+  if (subcommand === 'enroll' || subcommand === 'daemon' || subcommand === 'mcp') {
     if (rest.includes('-h') || rest.includes('--help')) {
       // eslint-disable-next-line no-console
       console.log(HELP);
@@ -419,7 +501,18 @@ async function main(argv: string[]): Promise<number> {
         await runEnroll(parseEnrollArgs(rest));
         return 0;
       }
-      await runDaemonCommand(parseDaemonArgs(rest));
+      if (subcommand === 'daemon') {
+        await runDaemonCommand(parseDaemonArgs(rest));
+        return 0;
+      }
+      const [serve, ...serveRest] = rest;
+      if (serve !== 'serve') {
+        throw new InstallError(
+          `Unknown 'mcp' subcommand '${String(serve)}' — expected 'hnx mcp serve'.`,
+          'VALIDATION_FAILED',
+        );
+      }
+      await runMcpServeCommand(parseMcpServeArgs(serveRest));
       return 0;
     } catch (e) {
       if (e instanceof InstallError) {

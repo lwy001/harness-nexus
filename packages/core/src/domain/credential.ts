@@ -21,6 +21,14 @@ export interface Credential {
   scope: 'global' | 'personal';
   /** null iff scope === 'global'; otherwise the owning user id. */
   ownerId: string | null;
+  /**
+   * Phase 8 C2 — may the resolved plaintext leave the server (into a client
+   * shim's memory)? Personal credentials are always distributable (the
+   * owner's own machines); global credentials carry an admin opt-in, default
+   * false — non-distributable globals are served only through the platform
+   * `/mcp` outlet. See docs/design/phase-8-c2.md.
+   */
+  distributable: boolean;
   createdAt: string;
   updatedAt: string;
 }

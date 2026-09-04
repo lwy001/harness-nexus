@@ -48,8 +48,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   HarnessNexusError,
+  resolveDialSite,
   type McpServer,
-  type McpMode,
+  type DialSite,
   type McpServerStatus,
   type McpToolInfo,
   type CredentialView,
@@ -87,11 +88,21 @@ export function McpManagementPage() {
   const { logout, user } = useAuth();
   const [items, setItems] = useState<McpServer[] | null>(null);
   const [statuses, setStatuses] = useState<Map<string, McpServerStatus>>(new Map());
+  // name → distributable, for deriving `auto` dial sites client-side (display
+  // only; the server derives authoritatively).
+  const [distributable, setDistributable] = useState<Map<string, boolean>>(new Map());
   const isAdmin = user?.role === 'admin';
 
   const refresh = useCallback(async () => {
     try {
-      setItems(await withAuthGuard(() => api.listMcpServers(), logout));
+      const [servers, creds] = await Promise.all([
+        withAuthGuard(() => api.listMcpServers(), logout),
+        api.listCredentials().catch(() => [] as CredentialView[]),
+      ]);
+      setItems(servers);
+      const map = new Map<string, boolean>();
+      for (const c of creds) if (!map.has(c.name)) map.set(c.name, c.distributable);
+      setDistributable(map);
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load MCP servers');
     }
@@ -137,10 +148,11 @@ export function McpManagementPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">MCP management</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          MCP servers this instance knows about. <span className="font-medium">Proxy</span> servers
-          are dialed by Harness Nexus and may be re-exposed to Agent tools;
-          <span className="font-medium"> direct</span> servers are dialed by the tool itself
-          (including stdio). Organize them into profiles for install.
+          MCP servers this instance knows about. <span className="font-medium">Server</span>-dialed
+          servers are pooled by Harness Nexus behind the <code className="font-mono">/mcp</code>{' '}
+          outlet; <span className="font-medium">client</span>-dialed servers are reached by the{' '}
+          <code className="font-mono">hnx mcp serve</code> shim on the user's machine (stdio
+          included). Organize them into profiles for install.
         </p>
       </div>
 
@@ -151,8 +163,8 @@ export function McpManagementPage() {
             Servers
           </CardTitle>
           <CardDescription>
-            Proxy: SSE / Streamable HTTP — connect to inspect tools. Direct: SSE / Streamable HTTP /
-            stdio (dialed by the tool itself).
+            Server-dialed rows show live connect state + tools. Client-dialed rows are dialed by the
+            shim — the platform never opens them.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
@@ -160,7 +172,7 @@ export function McpManagementPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6 w-[34%]">Name</TableHead>
-                <TableHead>Mode</TableHead>
+                <TableHead>Dial site</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Transport</TableHead>
                 <TableHead>Scope</TableHead>
@@ -185,6 +197,7 @@ export function McpManagementPage() {
                   <ServerRow
                     key={s.id}
                     server={s}
+                    site={resolveDialSite(s, (name) => distributable.get(name) === true)}
                     status={statuses.get(s.id)}
                     isAdmin={isAdmin}
                     onRemoved={remove}
@@ -213,6 +226,7 @@ export function McpManagementPage() {
  */
 function ServerRow({
   server,
+  site,
   status,
   isAdmin,
   onRemoved,
@@ -220,6 +234,8 @@ function ServerRow({
   logout,
 }: {
   server: McpServer;
+  /** The derived dial site (`auto` already resolved). */
+  site: 'client' | 'server';
   status: McpServerStatus | undefined;
   isAdmin: boolean;
   onRemoved: (s: McpServer) => void;
@@ -229,7 +245,7 @@ function ServerRow({
   const [open, setOpen] = useState(false);
   const [pendingConnect, setPendingConnect] = useState(false);
 
-  const isProxy = server.mode === 'proxy';
+  const isServerDialed = site === 'server';
   const connState = status?.status;
   const isConnected = connState === 'connected';
   const isConnecting = connState === 'connecting' || pendingConnect;
@@ -259,13 +275,10 @@ function ServerRow({
     }
   }
 
-  // Common cells shared by both proxy and direct rows (mode/transport/endpoint/scope).
-  const modeCell = (
-    <Badge
-      variant={server.mode === 'proxy' ? 'default' : 'secondary'}
-      className="font-mono text-[10px]"
-    >
-      {server.mode}
+  // Common cells shared by server-dialed and client-dialed rows.
+  const dialSiteCell = (
+    <Badge variant={isServerDialed ? 'default' : 'secondary'} className="font-mono text-[10px]">
+      {server.dialSite === 'auto' ? `auto → ${site}` : server.dialSite}
     </Badge>
   );
   const transportCell = (
@@ -286,7 +299,7 @@ function ServerRow({
   const actionsCell = (
     <TableCell className="pr-6 text-right">
       <div className="flex items-center justify-end gap-1">
-        {isProxy && isConnected ? (
+        {isServerDialed && isConnected ? (
           <Button
             variant="ghost"
             size="sm"
@@ -305,7 +318,7 @@ function ServerRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {isProxy && isConnected ? (
+            {isServerDialed && isConnected ? (
               <DropdownMenuItem onClick={disconnect}>
                 <PlugZapIcon /> Disconnect
               </DropdownMenuItem>
@@ -323,15 +336,15 @@ function ServerRow({
     </TableCell>
   );
 
-  // ---- direct row: plain, non-expandable, neutral status ----
-  if (!isProxy) {
+  // ---- client-dialed row: plain, non-expandable, neutral status ----
+  if (!isServerDialed) {
     return (
       <TableRow>
         <TableCell className="pl-6 font-medium">{server.name}</TableCell>
-        <TableCell>{modeCell}</TableCell>
+        <TableCell>{dialSiteCell}</TableCell>
         <TableCell>
           <Badge variant="outline" className="font-mono text-[10px]">
-            dialed by tool
+            dialed by hnx shim
           </Badge>
         </TableCell>
         <TableCell>{transportCell}</TableCell>
@@ -341,7 +354,7 @@ function ServerRow({
     );
   }
 
-  // ---- proxy row: expandable when connected ----
+  // ---- server-dialed row: expandable when connected ----
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
       <>
@@ -364,7 +377,7 @@ function ServerRow({
               <span>{server.name}</span>
             </div>
           </TableCell>
-          <TableCell>{modeCell}</TableCell>
+          <TableCell>{dialSiteCell}</TableCell>
           <TableCell>
             <StatusBadge status={connState} detail={status?.detail} toolCount={toolCount} />
           </TableCell>
@@ -651,7 +664,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
   const { logout, user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState('');
-  const [mode, setMode] = useState<McpMode>('proxy');
+  const [dialSite, setDialSite] = useState<DialSite>('auto');
   const [type, setType] = useState<TransportType>('streamable-http');
   const [url, setUrl] = useState('');
   // stdio fields
@@ -674,24 +687,16 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
 
   const isStdio = type === 'stdio';
 
-  // stdio can only run in direct mode. Picking stdio forces direct.
   function onTypeChange(next: TransportType) {
     setType(next);
-    if (next === 'stdio' && mode !== 'direct') setMode('direct');
-  }
-
-  function onModeChange(next: McpMode) {
-    // stdio cannot run in proxy mode; don't let the user get there.
-    if (next === 'proxy' && isStdio) return;
-    setMode(next);
   }
 
   function applyImport(entry: Record<string, unknown>, entryName: string) {
     setName(entryName);
     const hasCommand = typeof entry.command === 'string';
     if (hasCommand) {
-      // stdio / direct
-      setMode('direct');
+      // stdio — auto derives client (stdio can never be server-dialed).
+      setDialSite('auto');
       setType('stdio');
       setCommand(String(entry.command));
       setArgs(Array.isArray(entry.args) ? (entry.args as string[]).join(' ') : '');
@@ -699,9 +704,8 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
         setEnvJson(JSON.stringify(entry.env, null, 2));
       }
     } else {
-      // http — infer proxy by default
       const u = typeof entry.serverUrl === 'string' ? entry.serverUrl : entry.url;
-      setMode('proxy');
+      setDialSite('auto');
       setType('streamable-http');
       if (u) setUrl(String(u));
       if (entry.headers && typeof entry.headers === 'object') {
@@ -723,7 +727,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
           () =>
             api.createMcpServer({
               name,
-              mode: 'direct',
+              dialSite,
               scope,
               transport: {
                 type: 'stdio',
@@ -740,7 +744,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
           () =>
             api.createMcpServer({
               name,
-              mode,
+              dialSite,
               scope,
               transport: { type, url, ...(headers ? { headers } : {}) },
             }),
@@ -780,9 +784,11 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
           </Button>
         </CardTitle>
         <CardDescription>
-          {mode === 'proxy'
-            ? 'Proxy: Harness Nexus dials this server. SSE / Streamable HTTP only.'
-            : 'Direct: the Agent tool dials this server itself. SSE / Streamable HTTP / stdio.'}
+          {dialSite === 'server'
+            ? 'Server-dialed: the platform dials this upstream and serves it via /mcp (the only home for non-distributable credentials).'
+            : dialSite === 'client'
+              ? "Client-dialed: the hnx mcp serve shim dials this upstream on the user's machine — every referenced credential must be distributable."
+              : 'Auto: client-dialed when every referenced credential is distributable (or none), server-dialed otherwise.'}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -801,14 +807,15 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="mcp-mode">Mode</Label>
-              <Select value={mode} onValueChange={(v) => onModeChange(v as McpMode)}>
-                <SelectTrigger id="mcp-mode">
+              <Label htmlFor="mcp-dial-site">Dial site</Label>
+              <Select value={dialSite} onValueChange={(v) => setDialSite(v as DialSite)}>
+                <SelectTrigger id="mcp-dial-site">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="proxy">proxy</SelectItem>
-                  <SelectItem value="direct">direct</SelectItem>
+                  <SelectItem value="auto">auto (derive from credentials)</SelectItem>
+                  <SelectItem value="client">client (hnx shim dials)</SelectItem>
+                  <SelectItem value="server">server (platform dials)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -821,10 +828,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                 <SelectContent>
                   <SelectItem value="streamable-http">streamable-http</SelectItem>
                   <SelectItem value="sse">sse</SelectItem>
-                  {/* stdio is only valid in direct mode; gate it here too. */}
-                  <SelectItem value="stdio" disabled={mode !== 'direct'}>
-                    stdio{mode !== 'direct' ? ' (requires direct)' : ''}
-                  </SelectItem>
+                  <SelectItem value="stdio">stdio (client-dialed only)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

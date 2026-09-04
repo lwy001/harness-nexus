@@ -81,11 +81,12 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
 - 7.2–7.4 designs to be written before each ships.
 
-### Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1 shipped)
+### Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C2 shipped)
 
 - PRD: [`prd/phase-8-client.md`](./prd/phase-8-client.md) — the vision shift (control plane / data plane), the four locked decisions (credential distributability, `/mcp` outlet narrowing, on-demand daemon, uniform stdio MCP), and the C1–C6 scope.
 - Design: [`design/phase-8-client.md`](./design/phase-8-client.md) — data model (`Machine`/`AgentInstance`/`Job`/`AcSession`), the Socket.IO-over-WSS realtime protocol (bidirectional role namespaces `/ctl` daemon + `/app` browser, event catalog, rooms, isolation layers; daemon as protocol-adaptation edge), the MCP shim process model + dial-site routing derivation, jobs/deploy, inventory/diff/import, ACP chat, security model, and the per-phase development plan.
 - Design C1: [`design/phase-8-c1.md`](./design/phase-8-c1.md) — the shipped C1 plan: machines storage + migration `0006`, machine PATs (`machine-ctl`, REST-rejected), realtime v0 (`/ctl` handshake/hello/presence + `/app` push), `/api/machines` CRUD, `hnx enroll`/`hnx daemon`, the Machines web page, and the verification matrix (unit + integration + smoke `[8 C1]`).
+- Design C2: [`design/phase-8-c2.md`](./design/phase-8-c2.md) — the shipped C2 plan: the normative dial-site × distributability matrix, migration `0007`, the `mcp-runtime` `UpstreamPool` extraction (stdio included), the client-config API contract (machine-PAT exception + secret-leak rules), the `hnx mcp serve` stdio shim, install-adapter shim entries + the Codex adapter, and emitter `emitMode` (client default / server fallback).
 
 ### Concept notes (design/)
 

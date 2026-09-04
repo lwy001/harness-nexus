@@ -206,11 +206,20 @@ Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
   secret is referenced by name as `${cred:NAME}` inside any transport string
   field (url, command, args, env values, header values). The
   `resolvePlaceholders` helper (`packages/shared/src/utils/placeholders.ts`)
-  scans and substitutes at resolve time — proxy mode at connect time (2.2),
-  direct mode at install time (3.3). There is no `credentialBindings` map.
-- **MCP mode (`proxy` | `direct`)** (Phase 3.1): `proxy` — Harness Nexus dials;
-  SSE/HTTP only. `direct` — the tool dials; SSE/HTTP/stdio. stdio forces
-  `direct` (`409 STDIO_REQUIRES_DIRECT`). The registry only pools `proxy` rows.
+  scans and substitutes at resolve time — server-side at connect time (2.2) for
+  server-dialed rows, server-side at config-fetch time (8 C2, resolved values
+  then live in shim memory only) for client-dialed rows. There is no
+  `credentialBindings` map.
+- **MCP dial site (`auto` | `client` | `server`)** (Phase 8 C2 — replaces the
+  3.1 proxy/direct `mode`): `server` — the platform dials (SSE/HTTP) and serves
+  it via the `/mcp` outlet; `client` — the `hnx mcp serve` shim dials on the
+  user's machine (SSE/HTTP/**stdio**; every referenced credential must be
+  `distributable`); `auto` — derived by `resolveDialSite`
+  (`packages/shared/src/dial-site.ts`): client iff all referenced credentials
+  are distributable (or none), else server. stdio can never be server-dialed
+  (`409 STDIO_REQUIRES_CLIENT`); the registry pools exactly the
+  resolves-to-server rows. Credential `distributable`: personal always true;
+  global is an admin opt-in, default false (locked globals are outlet-only).
 - **Scope model (same for credentials and mcp-servers):** `global` is readable
   by any authenticated user but admin-only to mutate; `personal` is owner-only
   for all operations. The instance-level `requireAuth`/`requireAdmin` guards are
@@ -223,8 +232,12 @@ Full design in `docs/design/phase-2.1-credentials.md`. Summary for daily work:
 
 Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
 
-- **`McpRegistry`** (`packages/server/src/mcp/registry.ts`) owns a pool of live
-  `Client` connections to every `proxied: true` upstream. It is built in
+- **`McpRegistry`** (`packages/server/src/mcp/registry.ts`) owns the pool of
+  live `Client` connections to exactly the **server-dialed** upstreams (dial
+  sites derived per `shared/dial-site.ts`; Phase 8 C2 narrowed the pool from
+  "all proxy-mode rows" to this set). Transport-facing work lives in
+  **`packages/mcp-runtime`** (`UpstreamPool` — dialing, namespacing, tool
+  routing, stdio support), shared with the `hnx mcp serve` shim. It is built in
   `mountMcpProxy` and decorated on the instance as `app.mcpRegistry`.
   `reload()` re-reads the config and reconciles the pool; the mcp-servers route
   handlers call it fire-and-forget after any mutation.
@@ -235,7 +248,7 @@ Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
 - **`${cred:NAME}` placeholders are resolved at connect time**, not at config
   time. The registry calls `resolvePlaceholders` with a name→plaintext lookup
   (which decrypts via the instance's `credentialEncryptionKey`) to substitute
-  placeholders in header values and the URL when dialing a proxy upstream.
+  placeholders in header values and the URL when dialing a server-side upstream.
 - **Proxy mounts** (`packages/server/src/mcp/proxy.ts`): Streamable HTTP at
   `/mcp` and legacy SSE at `/mcp/sse` + `/mcp/sse/messages`. Both are PAT-gated
   via a `preHandler` (the root `onRequest` hook sets `req.user`) and require a
@@ -251,8 +264,9 @@ Full design in `docs/design/phase-2.2-registry.md`. Summary for daily work:
   the MCP Management row status/tool-count badges (2.4).
 - **Name clash:** the SDK's `McpServer` class is imported as `SdkMcpServer` in
   `proxy.ts` to avoid colliding with the domain `McpServer` interface.
-- **Not yet built (2.3+):** callable-function scripts, the stdio bridge entry,
-  per-PAT profile binding, tool-level authorization.
+- **Not yet built (2.3+):** callable-function scripts, per-PAT profile binding,
+  tool-level authorization. (The stdio bridge entry was RESOLVED by Phase 8 C2 —
+  the `hnx mcp serve` shim IS the stdio entry.)
 
 ## proxy MCP connect & tool inspection (Phase 2.4)
 
@@ -328,10 +342,12 @@ Summary for daily work:
   `app.marketplaceEmitter`). Only `target === 'claude-code'` + visible
   profiles appear.
 - **Zip layout is claude-native**: `.claude-plugin/plugin.json` (warnings
-  ride the description — the only post-install channel), `.mcp.json` (proxy
-  entries collapse into the aggregated `/mcp?profile=<id>` endpoint with a
-  `${HN_PAT_<SLUG>}` env placeholder; direct entries verbatim with
-  `${cred:NAME}` unresolved), `skills/` (skills + rules wrapped as skills —
+  ride the description — the only post-install channel), `.mcp.json` (Phase 8
+  C2 `emitMode: 'client'` default: ONE stdio `hnx mcp serve --profile <id>
+--server <base>` entry — no PAT env var, no inlined credentials;
+  `EMITTER_MODE=server` keeps the pre-C2 output: the aggregated
+  `/mcp?profile=<id>` endpoint + a `${HN_PAT_<SLUG>}` env placeholder — the
+  no-`hnx` fallback), `skills/` (skills + rules wrapped as skills —
   CC plugins have no always-on rules), `commands/`, `agents/`,
   `hooks/hooks.json` (filtered by `HOOK_SUPPORT['claude-code']`).
 - **Profile entries gained a second REST arm** (3.5): `{ resourceId, kind }`
@@ -552,29 +568,41 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
-  direction-locked, and C1 is shipped (2026-09):** machines + on-demand daemon
-  over Socket.IO/WSS, client-side MCP serving via per-session stdio shims
-  (proxy/direct deleted; dial site derived from credential distributability +
-  admin override; global creds non-distributable by default with server `/mcp`
-  as their sole outlet), inventory/diff/import, remote deploy jobs, gated ACP
-  chat, then orchestration (C6, undesigned). Read `docs/prd/phase-8-client.md`
-  - `docs/design/phase-8-client.md` first, then `docs/design/phase-8-c1.md`
-    for the shipped C1 details: `Machine` + `MachineRepository` (migration
-    `0006`), machine PATs (`scopes: ['machine-ctl']`, rejected by the REST auth
-    hook — realtime-only blast radius), realtime v0 in `packages/server/src/
-plugins/realtime.ts` (fastify-socket.io; `/ctl` daemon auth + `machine:hello`
-  - `machine:<id>` rooms, `/app` browser push with `user:<id>`/`admins` rooms
-  - `machine:status`; pure `MachinePresence` in `src/realtime/presence.ts`;
-    decorated as `app.realtime`), `/api/machines` CRUD in `modules/machines.ts`
-    (enroll returns the machine token ONCE; delete force-drops sockets + revokes
-    the PAT), SDK machines methods, `hnx enroll`/`hnx daemon` (config at
-    `~/.hnx/config.json`, 0600), the web Machines page + `/app` singleton in
-    `apps/web/src/realtime.ts` (vite proxies `/socket.io` with `ws: true`).
-    `packages/acp-bridge` is DELETED. Remaining: C2 (client MCP serving) → C3
-    (inventory/import) → C4 (jobs/deploy) → C5 (ACP chat) → C6.
-    **Phase 2.3
-    (callable-function scripts) is on hold** — not currently planned. When you
-    add real logic for a pillar, also add tests and update the relevant `docs/`
-    file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
-    (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
-    throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.
+  direction-locked, and C1–C2 are shipped (2026-09):** machines + on-demand
+  daemon over Socket.IO/WSS, client-side MCP serving via per-session stdio
+  shims (proxy/direct deleted; dial site derived from credential
+  distributability + admin override; global creds non-distributable by default
+  with server `/mcp` as their sole outlet), inventory/diff/import, remote
+  deploy jobs, gated ACP chat, then orchestration (C6, undesigned). Read
+  `docs/prd/phase-8-client.md` + `docs/design/phase-8-client.md` first, then
+  `docs/design/phase-8-c1.md` for the shipped C1 details: `Machine` +
+  `MachineRepository` (migration `0006`), machine PATs (`scopes:
+['machine-ctl']`, rejected by the REST auth hook — realtime-only blast
+  radius), realtime v0 in `packages/server/src/plugins/realtime.ts`
+  (fastify-socket.io; `/ctl` daemon auth + `machine:hello` + `machine:<id>`
+  rooms, `/app` browser push with `user:<id>`/`admins` rooms +
+  `machine:status`; pure `MachinePresence` in `src/realtime/presence.ts`;
+  decorated as `app.realtime`), `/api/machines` CRUD in `modules/machines.ts`
+  (enroll returns the machine token ONCE; delete force-drops sockets + revokes
+  the PAT), SDK machines methods, `hnx enroll`/`hnx daemon` (config at
+  `~/.hnx/config.json`, 0600), the web Machines page + `/app` singleton in
+  `apps/web/src/realtime.ts` (vite proxies `/socket.io` with `ws: true`).
+  `packages/acp-bridge` is DELETED. C2 (`docs/design/phase-8-c2.md`):
+  `McpServer.mode` → `dialSite` + `Credential.distributable` (migration
+  `0007`), pure derivation in `shared/src/dial-site.ts`, NEW
+  `packages/mcp-runtime` (`UpstreamPool`, stdio included, shared by the
+  server registry and the shim), `GET /api/client/mcp-config` in
+  `modules/client-config.ts` (the ONE REST surface a machine PAT unlocks;
+  resolved transports for client-dialed only — secret-leak tested),
+  `hnx mcp serve` (cli `src/mcp/serve.ts`, low-level `Server`, JSON schemas
+  pass through, outlet dialed as a passthrough upstream), install adapters
+  emit one baked-path shim entry (Hermes simplified; **Codex adapter shipped**
+  — skills/prompts + TOML `[mcp_servers]` merge), emitter `EMITTER_MODE`
+  (`client` default / `server` fallback). Remaining: C3 (inventory/import) →
+  C4 (jobs/deploy) → C5 (ACP chat) → C6.
+  **Phase 2.3
+  (callable-function scripts) is on hold** — not currently planned. When you
+  add real logic for a pillar, also add tests and update the relevant `docs/`
+  file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
+  (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
+  throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.

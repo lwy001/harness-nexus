@@ -13,6 +13,8 @@ export interface CredentialView {
   secretPreview: string;
   scope: 'global' | 'personal';
   ownerId: string | null;
+  /** Phase 8 C2 — may the plaintext reach a client shim (see the dial-site model). */
+  distributable: boolean;
   createdAt: string;
   updatedAt: string;
 }

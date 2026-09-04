@@ -98,12 +98,18 @@ importers:
       '@harness-nexus/core':
         specifier: workspace:*
         version: link:../core
+      '@harness-nexus/mcp-runtime':
+        specifier: workspace:^
+        version: link:../mcp-runtime
       '@harness-nexus/sdk':
         specifier: workspace:*
         version: link:../sdk-ts
       '@harness-nexus/shared':
         specifier: workspace:*
         version: link:../shared
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
       js-yaml:
         specifier: ^4.1.0
         version: 4.3.0
@@ -126,6 +132,25 @@ importers:
 
   packages/core:
     devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/mcp-runtime:
+    dependencies:
+      '@harness-nexus/core':
+        specifier: workspace:*
+        version: link:../core
+      '@harness-nexus/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.8.6
+        version: 22.20.1
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -160,6 +185,9 @@ importers:
       '@harness-nexus/core':
         specifier: workspace:*
         version: link:../core
+      '@harness-nexus/mcp-runtime':
+        specifier: workspace:^
+        version: link:../mcp-runtime
       '@harness-nexus/shared':
         specifier: workspace:*
         version: link:../shared

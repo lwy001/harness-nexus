@@ -64,6 +64,12 @@ export interface ServerConfig {
    * payloads and job envelopes; see docs/design/phase-8-client.md.
    */
   socketMaxHttpBufferSize: number;
+  /**
+   * Phase 8 C2 — marketplace emitter `.mcp.json` shape. `client` (default):
+   * one stdio `hnx mcp serve` entry per profile. `server`: the pre-C2
+   * aggregated-endpoint + PAT-env output (the no-`hnx` fallback).
+   */
+  emitterMode: 'client' | 'server';
 }
 
 export class ConfigError extends Error {
@@ -107,5 +113,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     skillSearchTimeoutMs: Number(env.SKILL_SEARCH_TIMEOUT_MS ?? '30000'),
     ...(env.SKILL_DISABLED_SOURCES ? { skillDisabledSources: env.SKILL_DISABLED_SOURCES } : {}),
     socketMaxHttpBufferSize: Number(env.SOCKET_MAX_HTTP_BUFFER ?? String(8 * 1024 * 1024)),
+    emitterMode: (env.EMITTER_MODE as ServerConfig['emitterMode']) ?? 'client',
   };
 }

@@ -177,20 +177,20 @@ r = await req('POST', '/api/mcp-servers', {
 expect('mcp-server created with placeholder in headers', r.status, 201);
 const acmeId = r.json.mcpServer.id;
 
-log('\n--- [3.1] stdio + proxy rejected — STDIO_REQUIRES_DIRECT (409) ---');
+log('\n--- [8 C2] stdio + explicit server dial rejected — STDIO_REQUIRES_CLIENT (409) ---');
 r = await req('POST', '/api/mcp-servers', {
   token: userToken,
   body: {
     name: 'stdio-nope',
     transport: { type: 'stdio', command: 'echo' },
-    mode: 'proxy',
+    dialSite: 'server',
     scope: 'personal',
   },
 });
-expect('stdio + proxy rejected (409)', r.status, 409);
-expect('error code STDIO_REQUIRES_DIRECT', r.json.error, 'STDIO_REQUIRES_DIRECT');
+expect('stdio + server dial rejected (409)', r.status, 409);
+expect('error code STDIO_REQUIRES_CLIENT', r.json.error, 'STDIO_REQUIRES_CLIENT');
 
-log('\n--- [3.1] stdio + direct accepted (201) ---');
+log('\n--- [8 C2] stdio accepted (dial site derives client — the unification win) ---');
 r = await req('POST', '/api/mcp-servers', {
   token: userToken,
   body: {
@@ -200,12 +200,12 @@ r = await req('POST', '/api/mcp-servers', {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'],
     },
-    mode: 'direct',
+    dialSite: 'auto',
     scope: 'personal',
   },
 });
-expect('stdio + direct created', r.status, 201);
-expect('mode is direct', r.json.mcpServer.mode, 'direct');
+expect('stdio + auto created', r.status, 201);
+expect('dialSite stored', r.json.mcpServer.dialSite, 'auto');
 
 log('\n--- [2.1] non-admin cannot create global mcp-server (403) ---');
 r = await req('POST', '/api/mcp-servers', {
@@ -234,6 +234,10 @@ r = await req('POST', '/api/mcp-servers', {
   body: {
     name: 'demo-upstream',
     transport: { type: 'streamable-http', url: 'https://mcp.example.com/mcp' },
+    // Explicit server dial: pre-C2 this row was `mode: 'proxy'`. Under the
+    // dial-site model a no-credential upstream derives CLIENT by default, so
+    // these 2.2/2.4 blocks (which exercise the SERVER pool) pin it to 'server'.
+    dialSite: 'server',
     scope: 'personal',
   },
 });
@@ -382,13 +386,13 @@ if (demoStatus.status !== 'connected') {
   expect('error code NOT_CONNECTED', r.json.error, 'NOT_CONNECTED');
 }
 
-log('\n--- [2.4] connect on a direct server → 409 NOT_PROXY_MODE ---');
-// 'local-fs' is the stdio+direct server created in the 3.1 block.
+log('\n--- [2.4] connect on a client-dialed server → 409 NOT_SERVER_DIALED ---');
+// 'local-fs' is the stdio+auto server created in the 8 C2 block (auto → client).
 r = await req('GET', '/api/mcp-servers', { token: userToken });
-const directServer = r.json.mcpServers.find((s) => s.mode === 'direct');
-r = await req('POST', `/api/mcp-servers/${directServer.id}/connect`, { token: userToken });
-expect('connect on direct → 409', r.status, 409);
-expect('error code NOT_PROXY_MODE', r.json.error, 'NOT_PROXY_MODE');
+const clientDialed = r.json.mcpServers.find((s) => s.name === 'local-fs');
+r = await req('POST', `/api/mcp-servers/${clientDialed.id}/connect`, { token: userToken });
+expect('connect on client-dialed → 409', r.status, 409);
+expect('error code NOT_SERVER_DIALED', r.json.error, 'NOT_SERVER_DIALED');
 
 log('\n--- [2.4] connect on unknown id → 404 (leak prevention) ---');
 r = await req('POST', '/api/mcp-servers/mcp_no_such/connect', { token: userToken });
@@ -1008,6 +1012,103 @@ const refused = await new Promise((resolve) => {
 });
 expect('revoked token cannot reconnect', refused, true);
 revoked.close();
+
+// ============================ Phase 8 C2: client MCP serving ============================
+
+log('\n--- [8 C2] credentials: personal + locked global + distributable global ---');
+r = await req('POST', '/api/credentials', {
+  token: userToken,
+  body: { name: 'smoke-mine', secret: 'mine-plaintext', scope: 'personal' },
+});
+expect('personal cred created', r.status, 201);
+expect('personal is distributable', r.json.credential.distributable, true);
+r = await req('POST', '/api/credentials', {
+  token: adminToken,
+  body: { name: 'smoke-corp', secret: 'corp-locked-plaintext', scope: 'global' },
+});
+expect('locked global created', r.status, 201);
+expect('locked global NOT distributable (default)', r.json.credential.distributable, false);
+r = await req('POST', '/api/credentials', {
+  token: adminToken,
+  body: { name: 'smoke-shared', secret: 'shared-plaintext', scope: 'global', distributable: true },
+});
+expect('distributable global created', r.json.credential.distributable, true);
+
+log('\n--- [8 C2] mcp servers across the dial-site matrix ---');
+const mkServer = (body, token = userToken) => req('POST', '/api/mcp-servers', { token, body });
+r = await mkServer({
+  name: 'smoke-api-mine',
+  transport: { type: 'streamable-http', url: 'https://api.example/mcp?k=${cred:smoke-mine}' },
+  dialSite: 'auto',
+  scope: 'personal',
+});
+expect('personal-cred server created', r.status, 201);
+const apiMineId = r.json.mcpServer.id;
+r = await mkServer({
+  name: 'smoke-api-corp',
+  transport: {
+    type: 'streamable-http',
+    url: 'https://corp.example/mcp',
+    headers: { Authorization: 'Bearer ${cred:smoke-corp}' },
+  },
+  dialSite: 'auto',
+  scope: 'personal',
+});
+expect('locked-cred server created', r.status, 201);
+const apiCorpId = r.json.mcpServer.id;
+r = await mkServer({
+  name: 'smoke-stdio-mine',
+  transport: { type: 'stdio', command: 'echo-bin', args: ['${cred:smoke-mine}'] },
+  dialSite: 'auto',
+  scope: 'personal',
+});
+expect('stdio server created (no direct-mode forcing anymore)', r.status, 201);
+const stdioMineId = r.json.mcpServer.id;
+r = await mkServer({
+  name: 'smoke-bad-client',
+  transport: { type: 'streamable-http', url: 'https://x.example/${cred:smoke-corp}' },
+  dialSite: 'client',
+  scope: 'personal',
+});
+expect('client dial + locked cred → 409', r.status, 409);
+expect('error code CREDENTIAL_NOT_DISTRIBUTABLE', r.json.error, 'CREDENTIAL_NOT_DISTRIBUTABLE');
+
+log('\n--- [8 C2] profile + config fetch contract ---');
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: {
+    name: 'smoke-mixed',
+    target: 'claude-code',
+    scope: 'personal',
+    entries: [
+      { mcpServerId: apiMineId },
+      { mcpServerId: apiCorpId },
+      { mcpServerId: stdioMineId },
+    ],
+  },
+});
+expect('profile created', r.status, 201);
+const mixedProfileId = r.json.profile.id;
+
+r = await req('GET', `/api/client/mcp-config?profile=${mixedProfileId}`, { token: userToken });
+expect('config fetch 200', r.status, 200);
+const cfg = r.json;
+const byName = new Map(cfg.servers.map((s) => [s.name, s]));
+expect('client-dialed http resolved', byName.get('smoke-api-mine').transport.url, 'https://api.example/mcp?k=mine-plaintext');
+expect('stdio resolved', byName.get('smoke-stdio-mine').transport.args[0], 'mine-plaintext');
+expect('server-dialed has NO transport', byName.get('smoke-api-corp').transport, undefined);
+expect('platform block present', cfg.platform !== null, true);
+expect('locked plaintext NEVER in response', JSON.stringify(cfg).includes('corp-locked-plaintext'), false);
+
+log('\n--- [8 C2] machine PAT is accepted by the config fetch (the one REST exception) ---');
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c2-laptop' } });
+const c2MachineToken = r.json.token;
+r = await req('GET', `/api/client/mcp-config?profile=${mixedProfileId}`, { token: c2MachineToken });
+expect('machine PAT config fetch 200', r.status, 200);
+r = await req('GET', `/api/client/mcp-config?profile=${mixedProfileId}`);
+expect('anonymous config fetch 401', r.status, 401);
+r = await req('GET', '/api/client/mcp-config', { token: userToken });
+expect('missing profile param 400', r.status, 400);
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -171,13 +172,26 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState('');
   const [secret, setSecret] = useState('');
   const [scope, setScope] = useState<Scope>('personal');
+  // Phase 8 C2 — only meaningful for global scope (personal is always
+  // distributable); off by default: non-distributable globals are served only
+  // through the platform /mcp outlet.
+  const [distributable, setDistributable] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      await withAuthGuard(() => api.createCredential({ name, secret, scope }), logout);
+      await withAuthGuard(
+        () =>
+          api.createCredential({
+            name,
+            secret,
+            scope,
+            ...(scope === 'global' ? { distributable } : {}),
+          }),
+        logout,
+      );
       toast.success('Credential created');
       setName('');
       setSecret('');
@@ -242,6 +256,22 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
               </Select>
             </div>
           </div>
+          {scope === 'global' && isAdmin ? (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="cred-distributable"
+                checked={distributable}
+                onCheckedChange={setDistributable}
+                aria-label="Allow the plaintext to reach client shims"
+              />
+              <Label htmlFor="cred-distributable" className="font-normal">
+                Distributable — allow the plaintext to reach{' '}
+                <code className="font-mono">hnx mcp serve</code> shims on users&apos; machines. Off
+                (default): the secret never leaves the server; upstreams using it are served via the{' '}
+                <code className="font-mono">/mcp</code> outlet only.
+              </Label>
+            </div>
+          ) : null}
           <div>
             <Button type="submit" disabled={busy}>
               {busy ? 'Creating…' : 'Create credential'}
