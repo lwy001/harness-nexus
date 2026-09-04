@@ -177,6 +177,7 @@ large, least-certain multi-source block (can stop partway).
   (server `/mcp` is their sole outlet); daemon is on-demand and MCP **never**
   depends on it; agents consume MCP uniformly as stdio shims (proxy/direct
   deleted, dial site derived + admin override); realtime = Socket.IO over WSS
-  with `/ctl` vs `/acp` namespaces, `domain:verb` event names, room addressing,
-  and session-per-channel isolation.
+  for BOTH daemon and web frontend, with `/ctl` (daemon control) / `/app`
+  (browser UI push) / `/acp` (agent chat) namespaces, `domain:verb` event
+  names, room addressing, and session-per-channel isolation.
 - PRD: `docs/prd/phase-8-client.md` · Design: `docs/design/phase-8-client.md`

@@ -69,12 +69,16 @@ design doc):
    first-class, and resolved secrets exist only in process memory — never on
    disk.
 
-**Realtime channel requirement.** Client ↔ platform communication is
-**Socket.IO over WSS**, with management traffic and ACP traffic separated by
-namespace, a strict event-name convention, room-based addressing, and
-per-session channel isolation for agents with multiple concurrent channels.
-The protocol is specified ahead of implementation in the design doc so client,
-server, and web UI share one schema set from day one.
+**Realtime channel requirement.** Both the client daemon AND the web frontend
+talk to the platform over **Socket.IO/WSS** — the frontend needs its own
+channel for live machine status, job progress, and above all agent chat.
+Traffic is separated by namespace (`/ctl` daemon control, `/app` browser UI
+push, `/acp` agent chat shared by both roles), with a strict event-name
+convention, room-based addressing, and per-session channel isolation for
+agents with multiple concurrent channels. Browsers only ever connect to the
+platform (never to a daemon); durable mutations stay on REST. The protocol is
+specified ahead of implementation in the design doc so server, daemon, and web
+share one schema set from day one.
 
 ## User Stories
 

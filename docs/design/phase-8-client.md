@@ -11,18 +11,19 @@ a single client program (`hnx`, growing the existing CLI package) on each
 enrolled machine is the data plane:
 
 ```
-                         CONTROL PLANE                        DATA PLANE (per machine)
-                ┌──────────────────────────────┐     WSS (Socket.IO)   ┌────────────────────────────┐
- browser ──JWT──►  Fastify  │  /api/*  REST    │◄────────────────────► │ hnx daemon (on-demand)     │
- browser ──JWT──►           │  /mcp    outlet  │   ns /ctl  +  /acp    │  • heartbeat / jobs        │
-                │           │  socket.io /ctl  │                      │  • inventory scans         │
-                │           │  socket.io /acp  │                      │  • ACP session manager     │
-                │           │  Machine/Job/... │                      ├────────────────────────────┤
-                │           │  mcp-runtime     │                      │ hnx mcp serve (per process)│
-                └──────────────────────────────┘                      │  ← stdio → agent tools     │
-                          ▲   platform tools +                       │  → dials distributable     │
-                          └── non-distributable creds                    upstreams (memory creds)  │
-                              pooled & exposed at /mcp                     + platform /mcp (PAT)    │
+                       CONTROL PLANE                        DATA PLANE (per machine)
+             ┌────────────────────────────────┐   WSS (Socket.IO)   ┌────────────────────────────┐
+ browser ────►│ Fastify │  /api/*  REST        │◄──────────────────►│ hnx daemon (on-demand)     │
+ (JWT/PAT;    │         │  /mcp    outlet      │ daemon → /ctl,/acp │  • heartbeat / jobs        │
+  mutations)  │         │  socket.io /ctl      │ browser → /app,/acp│  • inventory scans         │
+ browser ────►│         │  socket.io /app      │                    │  • ACP session manager     │
+ (JWT/PAT;    │         │  socket.io /acp      │                    ├────────────────────────────┤
+  live+chat)  │         │  Machine/Job/…       │                    │ hnx mcp serve (per process)│
+             │         │  mcp-runtime         │                    │  ← stdio → agent tools     │
+             └────────────────────────────────┘                    │  → dials distributable     │
+                       ▲ platform tools +                         │    upstreams (memory creds)│
+                       └─ non-distributable creds                     + platform /mcp (PAT)     │
+                           pooled & exposed at /mcp                    (never touches the daemon)│
 ```
 
 Layering rules are unchanged: `core` stays pure (new domain types + ports),
@@ -101,22 +102,27 @@ radius = realtime only), exactly as it rejects `marketplace` tokens.
 
 ### Connections & auth
 
-| Client  | Namespace(s)      | Handshake `auth`                        | Verified by                                                   |
-| ------- | ----------------- | --------------------------------------- | ------------------------------------------------------------- |
-| daemon  | `/ctl` and `/acp` | `{ token: <machine PAT>, machineId }`   | PAT valid + kind `machine` + `machineId` matches the PAT's machine + not revoked |
-| browser | `/acp` (v1)       | `{ token: <JWT or PAT> }`               | existing bearer logic; then per-event ownership checks         |
+| Client  | Namespaces      | Handshake `auth`                      | Verified by                                                                |
+| ------- | --------------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| daemon  | `/ctl` + `/acp` | `{ token: <machine PAT>, machineId }` | PAT valid + kind `machine` + `machineId` matches the PAT's machine + not revoked |
+| browser | `/app` + `/acp` | `{ token: <JWT or PAT> }`             | existing bearer logic (same channel set as REST); per-event ownership checks |
 
-Both daemon namespaces multiplex over **one** engine.io/WSS connection.
+A client's namespaces multiplex over **one** engine.io/WSS connection. `/acp`
+is the only namespace both roles join; its middleware accepts either auth kind
+and binds `{ role: 'daemon' | 'browser', …identity }` to the socket — every
+`/acp` handler re-checks role + ownership.
 Protocol version rides the `machine:hello` ack (`proto: 1`); breaking changes
 bump namespace names (`/v2/ctl`), never silently mutate events.
 
 ### Isolation model (the four layers)
 
-1. **Namespace = traffic domain + policy boundary.** `/ctl` (management:
-   heartbeat, jobs, inventory) and `/acp` (interactive agent traffic) have
-   separate middleware chains — `/acp` additionally checks
-   `machine.remoteChatEnabled` and owner-only access; future rate limits attach
-   per namespace without touching the other.
+1. **Namespace = traffic class + client role + policy boundary.** Three
+   namespaces: `/ctl` (machine management — daemon-only, machine PAT), `/app`
+   (browser UI live data — browser-only, JWT/PAT), and `/acp` (interactive
+   agent traffic — the one namespace both roles join). Each has its own
+   middleware chain: `/acp` additionally checks `machine.remoteChatEnabled` and
+   owner-only access; future rate limits attach per namespace without touching
+   the others.
 2. **Event names are namespaced by domain prefix**, `<domain>:<verb>` —
    `machine:hello`, `job:dispatch`, `acp:rpc`. Only whitelisted handlers are
    registered; anything else gets no handler (and thus no ack → sender timeout).
@@ -151,6 +157,16 @@ touch the daemon or the socket (MCP and ACP share only the PAT and server URL).
 | `inventory:report` | C → S  | `{ target, snapshot }` (C3)                         | ack = stored              |
 | `config:invalidate`| S → C  | `{ profileId? }` (advisory cache push, optional)    | —                         |
 
+`/app` (server → browser UI push; browsers join `user:<userId>` on connect —
+admins additionally join `admins` for fleet-wide presence; **pure push in v1**,
+no browser→server events):
+
+| Event            | Dir   | Payload                                            | Notes                                                       |
+| ---------------- | ----- | -------------------------------------------------- | ----------------------------------------------------------- |
+| `machine:status` | S → B | `{ machineId, online, lastSeenAt, daemonVersion? }` | on daemon connect/disconnect (`online` = socket presence)   |
+| `job:update`     | S → B | `{ job: Job }`                                     | on dispatch / progress (coalesced ~1s) / terminal           |
+| `agent:update`   | S → B | `{ machineId, agent: AgentInstance }`              | on registration/changes (C4)                                |
+
 `/acp` (browser + daemon ↔ server; server routes, never originates content):
 
 | Event               | Dir           | Payload                                          | Notes                                                        |
@@ -168,6 +184,18 @@ not require platform changes. The browser renders method-aware UI
 (`session/request_permission` etc.) from the method name. Semantic
 interception (platform-side tool approval) remains possible later — translate
 specific methods into dedicated events — without changing the framing.
+
+### Division of labor: REST vs sockets, and the browser's boundary
+
+Durable mutations (enroll/revoke machines, create jobs, profiles, resources)
+stay on **REST** — one auth/validation/audit surface. Sockets carry what REST
+cannot: **server push** (`/app`) and **streams** (`/acp`). The browser
+**never connects to a daemon** — the platform is the sole routing point
+between `/app`/`/acp` and `machine:<id>` rooms, which is also what keeps
+ownership checks and session audit centralized. Browser JWT expiry
+mid-connection: the server drops the socket on auth failure, and the web
+client re-reads its token on every Socket.IO reconnect attempt (fresh JWT
+after re-login) — a token refresh needs no extra protocol support in v1.
 
 ### Reliability & limits
 
@@ -325,13 +353,14 @@ cap concurrent sessions per machine).
 
 ## Web UI
 
-- **Machines** page: list with honest online/offline (online → `bg-ok` per the
-  2.4 mesh precedent; never faked), daemon version, capabilities, remote-chat
-  toggle (confirm-first), revoke.
+- **Machines** page: list with honest online/offline via `/app`
+  `machine:status` push (online → `bg-ok` per the 2.4 mesh precedent; never
+  faked), daemon version, capabilities, remote-chat toggle (confirm-first),
+  revoke.
 - **Machine detail**: agent instances, latest inventory per target,
   profile diff view, "import to platform" flow.
 - **Create agent**: target + profile + machine wizard → deploy job with live
-  progress (jobs socket or poll).
+  progress via `/app` `job:update` push.
 - **Jobs**: per-machine job list with status/progress.
 - **Chat** (C5): session list + conversation view; permission prompts render
   from ACP method names. All new routes register in `navItems()`.
@@ -344,9 +373,10 @@ chain, and each phase's docs update (this file + roadmap) happens with it.
 
 **C1 — daemon + machine registration.**
 core (Machine, ports) → shared (PAT kind, `realtime.ts` v0: hello/dispatch
-shapes) → server (`realtime.ts` plugin with `/ctl`, `modules/machines.ts`,
+shapes) → server (`realtime.ts` plugin with `/ctl` + `/app`, `modules/machines.ts`,
 repos + migration, REST-hook machine-token rejection) → cli (`hnx enroll`,
-`hnx daemon`, socket client) → web (Machines page). Delete `acp-bridge`.
+`hnx daemon`, socket client) → web (socket.io-client `/app` feed + Machines
+page). Delete `acp-bridge`.
 Verify: schema unit tests, presence tests, smoke enroll → online → revoke →
 offline.
 
