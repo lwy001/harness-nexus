@@ -69,6 +69,12 @@ export interface ServerConfig {
   jobAckTimeoutMs: number;
   jobSweepIntervalMs: number;
   jobMaxAttempts: number;
+  /** C5 — max concurrently OPEN chat sessions per machine (concurrency cap). */
+  chatMaxSessionsPerMachine: number;
+  /** C5 — how long a permission request may wait for the user's answer. */
+  chatPermissionTimeoutMs: number;
+  /** C5 — spawn+initialize+session/new watchdog for `chat:session.start`. */
+  chatReadyTimeoutMs: number;
   /**
    * Phase 8 C2 — marketplace emitter `.mcp.json` shape. `client` (default):
    * one stdio `hnx mcp serve` entry per profile. `server`: the pre-C2
@@ -122,6 +128,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jobAckTimeoutMs: Number(env.JOB_ACK_TIMEOUT_MS ?? '60000'),
     jobSweepIntervalMs: Number(env.JOB_SWEEP_INTERVAL_MS ?? '15000'),
     jobMaxAttempts: Number(env.JOB_MAX_ATTEMPTS ?? '3'),
+    chatMaxSessionsPerMachine: Number(env.CHAT_MAX_SESSIONS_PER_MACHINE ?? '3'),
+    chatPermissionTimeoutMs: Number(env.CHAT_PERMISSION_TIMEOUT_MS ?? '60000'),
+    chatReadyTimeoutMs: Number(env.CHAT_READY_TIMEOUT_MS ?? '30000'),
     emitterMode: (env.EMITTER_MODE as ServerConfig['emitterMode']) ?? 'client',
   };
 }

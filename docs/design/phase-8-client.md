@@ -435,12 +435,13 @@ shared (snapshot schema) → server (inventory storage + diff endpoint + import
 job handler) → cli (scanners) → web (machine detail + import wizard). Verify:
 diff unit tests (pure), report→diff→import smoke.
 
-**C4 — remote deploy.**
+**C4 — remote deploy.** ✅ shipped — see `docs/design/phase-8-c4.md`.
 server (job dispatch/replay, AgentInstance registration) → cli (job executor
 wrapping the 3.3 pipeline) → web (create-agent wizard + jobs view). Verify:
 dispatch→progress→result smoke incl. offline-queue replay.
 
-**C5 — ACP chat.**
+**C5 — ACP chat.** ✅ shipped — see `docs/design/phase-8-c5.md` (the plan as
+implemented; `agent:control.*` was deferred with rationale there).
 research (adapter matrix) → shared (`chat:*` / `agent:control.*` schemas) →
 server (`/app`↔`/ctl` routing + gating + session persistence) → cli (session
 manager, subprocess spawn, semantic↔ACP adapter) → web (chat UI). Verify:

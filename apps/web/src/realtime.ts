@@ -43,3 +43,66 @@ export function closeAppSocket(): void {
     socket = null;
   }
 }
+
+// ---- chat (Phase 8 C5) — mirrors shared/realtime.ts ----
+
+/** One semantic chat event (`chat:event` → `{ sessionId, event }`). */
+export type ChatStreamEvent =
+  | { kind: 'message_delta'; delta: string }
+  | { kind: 'thought_delta'; delta: string }
+  | {
+      kind: 'tool_call';
+      call: {
+        toolCallId: string;
+        title?: string;
+        kind?: string;
+        status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+        locations?: { path: string; line?: number }[];
+      };
+    }
+  | { kind: 'usage'; inputTokens?: number; outputTokens?: number }
+  | {
+      kind: 'permission_request';
+      requestId: string;
+      toolCall: { toolCallId: string; title?: string; kind?: string };
+      options: { optionId: string; name: string; kind: string }[];
+    }
+  | {
+      kind: 'permission_resolved';
+      requestId: string;
+      outcome: 'selected' | 'cancelled' | 'timeout';
+      optionId?: string;
+    }
+  | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
+  | { kind: 'session_status'; state: 'active' | 'idle' }
+  | { kind: 'raw'; method: string; params: unknown };
+
+export interface ChatEventEnvelope {
+  sessionId: string;
+  event: ChatStreamEvent;
+}
+
+export interface ChatSessionReadyPush {
+  sessionId: string;
+  agentName?: string;
+  agentVersion?: string;
+}
+export interface ChatSessionFailedPush {
+  sessionId: string;
+  error: string;
+}
+export interface ChatSessionClosedPush {
+  sessionId: string;
+  reason: string;
+}
+
+/** Emit with an ack callback; resolves the ack object (rejects on timeout). */
+export function emitWithAck<T>(event: string, payload: unknown, timeoutMs = 10000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no ack for '${event}'`)), timeoutMs);
+    appSocket().emit(event, payload, (res: T) => {
+      clearTimeout(timer);
+      resolve(res);
+    });
+  });
+}

@@ -263,7 +263,12 @@ const profileId = r.json.profile.id;
 log('\n--- [2.2] create profile referencing a non-existent server (409) ---');
 r = await req('POST', '/api/profiles', {
   token: userToken,
-  body: { name: 'bad', target: 'claude-code', scope: 'personal', entries: [{ mcpServerId: 'mcp_no_such' }] },
+  body: {
+    name: 'bad',
+    target: 'claude-code',
+    scope: 'personal',
+    entries: [{ mcpServerId: 'mcp_no_such' }],
+  },
 });
 expect('profile with bad entry rejected', r.status, 409);
 
@@ -1080,11 +1085,7 @@ r = await req('POST', '/api/profiles', {
     name: 'smoke-mixed',
     target: 'claude-code',
     scope: 'personal',
-    entries: [
-      { mcpServerId: apiMineId },
-      { mcpServerId: apiCorpId },
-      { mcpServerId: stdioMineId },
-    ],
+    entries: [{ mcpServerId: apiMineId }, { mcpServerId: apiCorpId }, { mcpServerId: stdioMineId }],
   },
 });
 expect('profile created', r.status, 201);
@@ -1094,11 +1095,19 @@ r = await req('GET', `/api/client/mcp-config?profile=${mixedProfileId}`, { token
 expect('config fetch 200', r.status, 200);
 const cfg = r.json;
 const byName = new Map(cfg.servers.map((s) => [s.name, s]));
-expect('client-dialed http resolved', byName.get('smoke-api-mine').transport.url, 'https://api.example/mcp?k=mine-plaintext');
+expect(
+  'client-dialed http resolved',
+  byName.get('smoke-api-mine').transport.url,
+  'https://api.example/mcp?k=mine-plaintext',
+);
 expect('stdio resolved', byName.get('smoke-stdio-mine').transport.args[0], 'mine-plaintext');
 expect('server-dialed has NO transport', byName.get('smoke-api-corp').transport, undefined);
 expect('platform block present', cfg.platform !== null, true);
-expect('locked plaintext NEVER in response', JSON.stringify(cfg).includes('corp-locked-plaintext'), false);
+expect(
+  'locked plaintext NEVER in response',
+  JSON.stringify(cfg).includes('corp-locked-plaintext'),
+  false,
+);
 
 log('\n--- [8 C2] machine PAT is accepted by the config fetch (the one REST exception) ---');
 r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c2-laptop' } });
@@ -1123,18 +1132,24 @@ const fw = (rel, content) => {
   mkdirSync(pathMod.dirname(file), { recursive: true });
   writeFileSync(file, content, 'utf8');
 };
-fw('.claude/skills/smoke-skill/SKILL.md', '---\nname: smoke-skill\ndescription: Smoke skill\n---\n\nSmoke skill body.\n');
+fw(
+  '.claude/skills/smoke-skill/SKILL.md',
+  '---\nname: smoke-skill\ndescription: Smoke skill\n---\n\nSmoke skill body.\n',
+);
 fw('.claude/commands/smoke-command.md', 'A smoke command body.\n');
 fw('.claude/skills/huge-skill/SKILL.md', 'x'.repeat(300 * 1024)); // over the 256 KiB cap
-fw('.claude.json', JSON.stringify({
-  mcpServers: {
-    'smoke-mcp-local': {
-      command: 'npx',
-      args: ['-y', 'smoke-mcp'],
-      env: { SMOKE_KEY: 'ghp-SMOKE-SECRET-VALUE' },
+fw(
+  '.claude.json',
+  JSON.stringify({
+    mcpServers: {
+      'smoke-mcp-local': {
+        command: 'npx',
+        args: ['-y', 'smoke-mcp'],
+        env: { SMOKE_KEY: 'ghp-SMOKE-SECRET-VALUE' },
+      },
     },
-  },
-}));
+  }),
+);
 fw('.codex/skills/codex-skill/SKILL.md', 'Codex skill body.\n');
 fw('.codex/prompts/smoke-prompt.md', 'Codex prompt body.\n');
 
@@ -1145,11 +1160,22 @@ const c3Token = r.json.token;
 
 const daemonProc = spawn(
   process.execPath,
-  ['packages/cli/dist/index.js', 'daemon', '--server', B, '--token', c3Token, '--machine-id', c3MachineId],
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    c3Token,
+    '--machine-id',
+    c3MachineId,
+  ],
   { env: { ...process.env, HOME: fixtureHome }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
 let daemonErr = '';
-daemonProc.stderr.on('data', (d) => { daemonErr += d.toString(); });
+daemonProc.stderr.on('data', (d) => {
+  daemonErr += d.toString();
+});
 let c3online = false;
 for (let i = 0; i < 100 && !c3online; i++) {
   r = await req('GET', `/api/machines/${c3MachineId}`, { token: userToken });
@@ -1158,21 +1184,48 @@ for (let i = 0; i < 100 && !c3online; i++) {
 }
 expect('real daemon online', c3online, true);
 r = await req('GET', `/api/machines/${c3MachineId}`, { token: userToken });
-expect('daemon advertises inventory capability', r.json.machine.capabilities.includes('inventory'), true);
+expect(
+  'daemon advertises inventory capability',
+  r.json.machine.capabilities.includes('inventory'),
+  true,
+);
 
 log('\n--- [8 C3] scan via the real daemon → stored snapshots ---');
-r = await req('POST', `/api/machines/${c3MachineId}/inventory/scan`, { token: userToken, body: {} });
+r = await req('POST', `/api/machines/${c3MachineId}/inventory/scan`, {
+  token: userToken,
+  body: {},
+});
 expect('scan status', r.status, 200);
 expect('scanned 3 targets', r.json.inventory.length, 3);
 const ccSnap = r.json.inventory.find((i) => i.target === 'claude-code');
 expect('cc snapshot has an agent', ccSnap.agents.length, 1);
 const ccItems = ccSnap.agents[0].items;
-expect('skill discovered', ccItems.some((i) => i.kind === 'skill' && i.name === 'smoke-skill' && i.origin === 'local'), true);
-expect('oversized skill not importable', ccItems.find((i) => i.name === 'huge-skill').importable, false);
-expect('mcp discovered', ccItems.some((i) => i.kind === 'mcp' && i.name === 'smoke-mcp-local'), true);
-expect('command discovered', ccItems.some((i) => i.kind === 'command' && i.name === 'smoke-command'), true);
+expect(
+  'skill discovered',
+  ccItems.some((i) => i.kind === 'skill' && i.name === 'smoke-skill' && i.origin === 'local'),
+  true,
+);
+expect(
+  'oversized skill not importable',
+  ccItems.find((i) => i.name === 'huge-skill').importable,
+  false,
+);
+expect(
+  'mcp discovered',
+  ccItems.some((i) => i.kind === 'mcp' && i.name === 'smoke-mcp-local'),
+  true,
+);
+expect(
+  'command discovered',
+  ccItems.some((i) => i.kind === 'command' && i.name === 'smoke-command'),
+  true,
+);
 const codexSnap = r.json.inventory.find((i) => i.target === 'codex');
-expect('codex prompt discovered', codexSnap.agents[0].items.some((i) => i.name === 'smoke-prompt'), true);
+expect(
+  'codex prompt discovered',
+  codexSnap.agents[0].items.some((i) => i.name === 'smoke-prompt'),
+  true,
+);
 const hermesSnap = r.json.inventory.find((i) => i.target === 'hermes');
 expect('absent hermes home is an empty snapshot', hermesSnap.agents[0].items.length, 0);
 
@@ -1192,8 +1245,16 @@ r = await req('POST', `/api/machines/${c3MachineId}/inventory/import`, {
 expect('import status', r.status, 200);
 expect('created 3', r.json.created.length, 3);
 expect('reused 0', r.json.reused.length, 0);
-expect('env plaintext NEVER crosses to the server', JSON.stringify(r.json).includes('ghp-SMOKE-SECRET-VALUE'), false);
-expect('missing-credential warning present', r.json.warnings.some((w) => w.includes('SMOKE_KEY')), true);
+expect(
+  'env plaintext NEVER crosses to the server',
+  JSON.stringify(r.json).includes('ghp-SMOKE-SECRET-VALUE'),
+  false,
+);
+expect(
+  'missing-credential warning present',
+  r.json.warnings.some((w) => w.includes('SMOKE_KEY')),
+  true,
+);
 const c3ProfileId = r.json.profile.id;
 r = await req('GET', '/api/mcp-servers', { token: userToken });
 const imported = r.json.mcpServers.find((m) => m.name === 'smoke-mcp-local');
@@ -1218,10 +1279,20 @@ expect('nothing new created', r.json.created.length, 0);
 expect('all three reused', r.json.reused.length, 3);
 
 log('\n--- [8 C3] diff: name-matched entries applied, mcp arm missing until installed ---');
-r = await req('GET', `/api/machines/${c3MachineId}/inventory/diff?profile=${c3ProfileId}`, { token: userToken });
+r = await req('GET', `/api/machines/${c3MachineId}/inventory/diff?profile=${c3ProfileId}`, {
+  token: userToken,
+});
 expect('diff status', r.status, 200);
-expect('skill applied by name', r.json.diff.upToDate.some((u) => u.name === 'smoke-skill'), true);
-expect('mcp arm missing (no shim installed)', r.json.diff.missingOnMachine.map((m) => m.name).join(','), 'smoke-mcp-local');
+expect(
+  'skill applied by name',
+  r.json.diff.upToDate.some((u) => u.name === 'smoke-skill'),
+  true,
+);
+expect(
+  'mcp arm missing (no shim installed)',
+  r.json.diff.missingOnMachine.map((m) => m.name).join(','),
+  'smoke-mcp-local',
+);
 
 log('\n--- [8 C3] import of an unimportable item is refused ---');
 r = await req('POST', `/api/machines/${c3MachineId}/inventory/import`, {
@@ -1237,12 +1308,21 @@ expect('unimportable code', r.json.error, 'INVENTORY_ITEM_NOT_IMPORTABLE');
 
 log('\n--- [8 C3] machine removal cascades inventory rows ---');
 daemonProc.kill('SIGTERM');
-await new Promise((resolve) => { daemonProc.once('exit', resolve); setTimeout(resolve, 3000); });
+await new Promise((resolve) => {
+  daemonProc.once('exit', resolve);
+  setTimeout(resolve, 3000);
+});
 r = await req('DELETE', `/api/machines/${c3MachineId}`, { token: userToken });
 expect('c3 machine removed', r.status, 200);
 rmSync(fixtureHome, { recursive: true, force: true });
 if (daemonErr.includes('Error:')) {
-  log(`(daemon stderr note): ${daemonErr.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
+  log(
+    `(daemon stderr note): ${daemonErr
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
 }
 
 // ============================ Phase 8 C4: jobs + remote deploy ============================
@@ -1299,11 +1379,22 @@ const c4Job2 = r.json.job.id;
 
 const c4Daemon = spawn(
   process.execPath,
-  ['packages/cli/dist/index.js', 'daemon', '--server', B, '--token', c4LiveToken, '--machine-id', c4LiveId],
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    c4LiveToken,
+    '--machine-id',
+    c4LiveId,
+  ],
   { env: { ...process.env, HOME: c4Home }, stdio: ['ignore', 'pipe', 'pipe'] },
 );
 let c4Err = '';
-c4Daemon.stderr.on('data', (d) => { c4Err += d.toString(); });
+c4Daemon.stderr.on('data', (d) => {
+  c4Err += d.toString();
+});
 
 let c4job = null;
 for (let i = 0; i < 150; i++) {
@@ -1317,15 +1408,34 @@ expect('deploy error empty', c4job?.error ?? null, null);
 
 r = await req('GET', `/api/machines/${c4LiveId}/agents`, { token: userToken });
 expect('one agent instance registered', r.json.agents.length, 1);
-expect('instance directory is the fixture hermes home', r.json.agents[0].directory, pathMod.join(c4Home, '.hermes'));
+expect(
+  'instance directory is the fixture hermes home',
+  r.json.agents[0].directory,
+  pathMod.join(c4Home, '.hermes'),
+);
 expect('instance carries profile version', r.json.agents[0].profileVersion, '1.0.0');
 expect('deploy-bundle secret-free (machine PAT path worked — job succeeded)', true, true);
 
 const pluginDir = pathMod.join(c4Home, '.hermes', 'plugins', 'c4-deploy');
-const exists = (p) => { try { accessSync(p); return true; } catch { return false; } };
+const exists = (p) => {
+  try {
+    accessSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
 expect('plugin.yaml written by the pipeline', exists(pathMod.join(pluginDir, 'plugin.yaml')), true);
-expect('skill file written', exists(pathMod.join(pluginDir, 'skills', 'smoke-deploy', 'SKILL.md')), true);
-expect('install-state ledger written', exists(pathMod.join(c4Home, '.hermes', 'harness-nexus-install-state.json')), true);
+expect(
+  'skill file written',
+  exists(pathMod.join(pluginDir, 'skills', 'smoke-deploy', 'SKILL.md')),
+  true,
+);
+expect(
+  'install-state ledger written',
+  exists(pathMod.join(c4Home, '.hermes', 'harness-nexus-install-state.json')),
+  true,
+);
 
 log('\n--- [8 C4] redeploy upgrades the same instance ---');
 r = await req('POST', `/api/machines/${c4LiveId}/jobs`, {
@@ -1358,12 +1468,243 @@ expect('claude-code deploy refused', r.status, 409);
 expect('refusal code', r.json.error, 'TARGET_NOT_DEPLOYABLE');
 
 c4Daemon.kill('SIGTERM');
-await new Promise((resolve) => { c4Daemon.once('exit', resolve); setTimeout(resolve, 3000); });
+await new Promise((resolve) => {
+  c4Daemon.once('exit', resolve);
+  setTimeout(resolve, 3000);
+});
 await req('DELETE', `/api/machines/${c4LiveId}`, { token: userToken });
 await req('DELETE', `/api/machines/${c4MachineId}`, { token: userToken });
 rmSync(c4Home, { recursive: true, force: true });
 if (c4Err.includes('Error:')) {
-  log(`(c4 daemon stderr note): ${c4Err.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
+  log(
+    `(c4 daemon stderr note): ${c4Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
+// ============================ Phase 8 C5: ACP chat ============================
+// REAL daemon dist + the fixture ACP agent (via HN_ACP_COMMAND_HERMES):
+// enroll → gating (chat off ⇒ refused) → enable → deploy → browser socket
+// round-trip (open → ready → prompt → permission → respond → turn_result)
+// → close → audit rows.
+
+log('\n--- [8 C5] chat gating: refused while remote chat is disabled ---');
+const c5Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-c5-'));
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c5-box' } });
+const c5MachineId = r.json.machine.id;
+const c5MachineToken = r.json.token;
+
+const c5Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    c5MachineToken,
+    '--machine-id',
+    c5MachineId,
+  ],
+  {
+    env: {
+      ...process.env,
+      HOME: c5Home,
+      HN_ACP_COMMAND_HERMES: `node ${pathMod.resolve('packages/cli/test/fixtures/acp-agent.mjs')}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  },
+);
+let c5Err = '';
+c5Daemon.stderr.on('data', (d) => {
+  c5Err += d.toString();
+});
+
+// A browser socket on /app for the whole block.
+const c5App = io(`${B}/app`, { auth: { token: userToken }, transports: ['websocket'] });
+await new Promise((resolve, reject) => {
+  c5App.on('connect', resolve);
+  c5App.on('connect_error', reject);
+  setTimeout(() => reject(new Error('app socket connect timeout')), 5000);
+});
+const c5EmitAck = (event, payload) =>
+  new Promise((resolve, reject) => {
+    c5App.emit(event, payload, resolve);
+    setTimeout(() => reject(new Error(`ack timeout: ${event}`)), 10000);
+  });
+const c5Events = [];
+c5App.on('chat:event', (e) => c5Events.push(e));
+const c5WaitEvent = async (pred, label, budgetMs = 15000) => {
+  const start = Date.now();
+  for (;;) {
+    const hit = c5Events.find(pred);
+    if (hit !== undefined) return hit;
+    if (Date.now() - start > budgetMs) throw new Error(`timeout waiting for chat event: ${label}`);
+    await new Promise((s2) => setTimeout(s2, 100));
+  }
+};
+const c5Once = (event) =>
+  new Promise((resolve, reject) => {
+    c5App.once(event, resolve);
+    setTimeout(() => reject(new Error(`timeout waiting for ${event}`)), 15000);
+  });
+
+// Wait for the daemon to be online + capable.
+let c5Online = false;
+for (let i = 0; i < 50 && !c5Online; i++) {
+  r = await req('GET', `/api/machines/${c5MachineId}`, { token: userToken });
+  c5Online = r.json.machine.online && (r.json.machine.daemonVersion ?? '').includes('c5');
+  await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('c5 daemon online (0.4.0-c5, chat capability)', c5Online, true);
+
+// Deploy the C4 profile to get an AgentInstance (chat's addressable unit).
+r = await req('POST', `/api/machines/${c5MachineId}/jobs`, {
+  token: userToken,
+  body: { profileId: deployProfileId },
+});
+expect('c5 deploy job created', r.status, 201);
+const c5JobId = r.json.job.id;
+let c5job = null;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${c5MachineId}/jobs`, { token: userToken });
+  c5job = r.json.jobs.find((j) => j.id === c5JobId);
+  if (c5job && (c5job.status === 'succeeded' || c5job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('c5 deploy succeeded', c5job?.status, 'succeeded');
+r = await req('GET', `/api/machines/${c5MachineId}/agents`, { token: userToken });
+const c5AgentId = r.json.agents[0]?.id;
+expect('c5 agent instance exists', Boolean(c5AgentId), true);
+
+// Chat disabled by default ⇒ refused.
+let openAck = await c5EmitAck('chat:session.open', { agentInstanceId: c5AgentId });
+expect('chat open refused while disabled', openAck.error, 'REMOTE_CHAT_DISABLED');
+
+log('\n--- [8 C5] full round-trip: open → ready → permission → turn → close ---');
+r = await req('PATCH', `/api/machines/${c5MachineId}`, {
+  token: userToken,
+  body: { remoteChatEnabled: true },
+});
+expect('remote chat enabled', r.json.machine.remoteChatEnabled, true);
+
+const readyP = c5Once('chat:session.ready');
+openAck = await c5EmitAck('chat:session.open', { agentInstanceId: c5AgentId });
+expect('chat open acked with sessionId', typeof openAck.sessionId, 'string');
+const c5SessionId = openAck.sessionId;
+const readyEvt = await readyP;
+expect('session ready carries agentInfo', readyEvt.agentName, 'fixture-agent');
+expect('ready for the opened session', readyEvt.sessionId, c5SessionId);
+
+// Turn 1: asks permission; we allow.
+let sendAck = await c5EmitAck('chat:message.send', {
+  sessionId: c5SessionId,
+  content: 'fixture, please ask-permission to run the echo tool',
+});
+expect('message accepted', sendAck.accepted, true);
+let permEvt = await c5WaitEvent(
+  (e) => e.sessionId === c5SessionId && e.event?.kind === 'permission_request',
+  'permission_request',
+);
+expect(
+  'permission options carry verbatim optionIds',
+  permEvt.event.options.map((o) => o.optionId).join(','),
+  'allow_always,reject_once',
+);
+let respondAck = await c5EmitAck('chat:permission.respond', {
+  sessionId: c5SessionId,
+  requestId: permEvt.event.requestId,
+  optionId: 'allow_always',
+});
+expect('permission respond accepted', respondAck.accepted, true);
+const grantedEvt = await c5WaitEvent(
+  (e) =>
+    e.sessionId === c5SessionId &&
+    e.event?.kind === 'message_delta' &&
+    e.event.delta.includes('permission granted: allow_always'),
+  'granted message',
+);
+expect('agent acknowledged the granted permission', Boolean(grantedEvt), true);
+const turn1 = await c5WaitEvent(
+  (e) => e.sessionId === c5SessionId && e.event?.kind === 'turn_result',
+  'turn_result 1',
+);
+expect('turn 1 ended cleanly', turn1.event.stopReason, 'end_turn');
+
+// Turn 2: plain echo + usage.
+sendAck = await c5EmitAck('chat:message.send', {
+  sessionId: c5SessionId,
+  content: 'echo me twice',
+});
+expect('second message accepted', sendAck.accepted, true);
+const echoEvt = await c5WaitEvent(
+  (e) =>
+    e.sessionId === c5SessionId &&
+    e.event?.kind === 'message_delta' &&
+    e.event.delta === 'echo: echo me twice',
+  'echo message',
+);
+expect('fixture echoed the prompt', Boolean(echoEvt), true);
+const usageEvt = await c5WaitEvent(
+  (e) => e.sessionId === c5SessionId && e.event?.kind === 'usage',
+  'usage_update',
+);
+expect('usage mapped', usageEvt.event.inputTokens, 11);
+const turn2 = await c5WaitEvent(
+  (e) => e.sessionId === c5SessionId && e.event?.kind === 'turn_result' && e !== turn1,
+  'turn_result 2',
+);
+expect('turn 2 ended cleanly', turn2.event.stopReason, 'end_turn');
+
+// Busy gate: session_status active arrived during turns and idled after.
+const statuses = c5Events
+  .filter((e) => e.sessionId === c5SessionId && e.event?.kind === 'session_status')
+  .map((e) => e.event.state);
+expect(
+  'turn activity observed (active + idle)',
+  statuses.includes('active') && statuses.includes('idle'),
+  true,
+);
+
+// Close: the daemon gets chat:session.close, viewers get chat:session.closed.
+const closedP = c5Once('chat:session.closed');
+const closeAck = await c5EmitAck('chat:session.close', { sessionId: c5SessionId, reason: 'user' });
+expect('close acked', closeAck.closed, true);
+const closedEvt = await closedP;
+expect('closed push reason', closedEvt.reason, 'user');
+
+log('\n--- [8 C5] audit rows + teardown ---');
+r = await req('GET', `/api/agent-instances/${c5AgentId}/sessions`, { token: userToken });
+expect('audit rows listed', r.status, 200);
+const c5Row = r.json.sessions.find((s) => s.id === c5SessionId);
+expect('audit row closed with reason', c5Row?.closeReason, 'user');
+expect('audit row has machine binding', c5Row?.machineId, c5MachineId);
+
+// Daemon death closes any open channel — open one, kill the daemon.
+openAck = await c5EmitAck('chat:session.open', { agentInstanceId: c5AgentId });
+const closedP2 = c5Once('chat:session.closed');
+c5Daemon.kill('SIGTERM');
+const closedEvt2 = await closedP2;
+expect('daemon disconnect closes the channel (no resume)', closedEvt2.reason, 'connection-lost');
+
+c5App.close();
+await req('DELETE', `/api/machines/${c5MachineId}`, { token: userToken });
+// Audit rows SURVIVE machine deletion (closed with machine-deleted).
+r = await req('GET', `/api/agent-instances/${c5AgentId}/sessions`, { token: userToken });
+const surviving = (r.json.sessions ?? []).filter((s) => s.closedAt === null);
+expect('open audit rows closed by machine deletion', surviving.length, 0);
+rmSync(c5Home, { recursive: true, force: true });
+if (c5Err.includes('Error:')) {
+  log(
+    `(c5 daemon stderr note): ${c5Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
 }
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);

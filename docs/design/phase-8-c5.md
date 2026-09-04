@@ -1,12 +1,18 @@
 # Design: Phase 8 C5 — ACP chat (remote conversation with a deployed agent)
 
-> Status: **planned** (branch `phase-8-c5`). Parent design:
+> Status: **implemented** (branch `phase-8-c5`). Parent design:
 > `docs/design/phase-8-client.md` § "ACP chat (C5)" + § "Realtime protocol"
 > (the `/app`↔`/ctl` interactive rows). Research:
 > `docs/research/phase-8-c5-acp-web-demo.md` — the web-demo study (permission
 > round-trip, session-op pitfalls, fold/StreamBuffer) **and the completed
 > adapter matrix** (claude-code/codex via official Zed ACP adapters, hermes
 > native `acp_adapter`, zcode deferred).
+> Verification: shared 49 / cli 13 / server 53 tests (chat integration 11:
+> full round-trip incl. permission respond + timeout watchdog, busy gate,
+> re-join, spawn-failed, ready-timeout, session cap, disconnect teardown,
+> user/daemon close, gating matrix, existence hiding); smoke `[8 C5]` with
+> the REAL daemon dist + fixture ACP agent — 266/266 overall; SQLite
+> migration `0010` + audit rows retained past machine deletion verified.
 
 ## Scope
 
@@ -61,7 +67,7 @@ audit rows, and the permission-request timeout.
 | Event                     | Dir | Payload                                                 | Ack                                                                                                                                                          |
 | ------------------------- | --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `chat:session.open`       | B→S | `{agentInstanceId, sessionId?}`                         | `{sessionId}`; errors: `AGENT_INSTANCE_NOT_FOUND`, `SESSION_NOT_FOUND`, `REMOTE_CHAT_DISABLED`, `MACHINE_OFFLINE`, `DAEMON_NO_CHAT`, `SESSION_LIMIT_REACHED` |
-| `chat:message.send`       | B→S | `{sessionId, content: string \| PromptBlock[]}`         | `{accepted}`; errors: `SESSION_NOT_FOUND`, `SESSION_CLOSED`, `SESSION_BUSY`                                                                                  |
+| `chat:message.send`       | B→S | `{sessionId, content: string \| PromptBlock[]}`         | `{accepted}`; errors: `SESSION_NOT_FOUND`, `SESSION_NOT_READY` (pre-ready), `SESSION_BUSY`                                                                   |
 | `chat:turn.cancel`        | B→S | `{sessionId}`                                           | `{accepted}` (idempotent — cancelling an idle turn is a no-op)                                                                                               |
 | `chat:permission.respond` | B→S | `{sessionId, requestId, optionId?}`                     | `{accepted}`; absent `optionId` = cancelled                                                                                                                  |
 | `chat:session.close`      | B→S | `{sessionId, reason?}`                                  | `{closed: true}`                                                                                                                                             |
@@ -120,14 +126,16 @@ mapping: stable UI kinds, protocol churn confined to the edge.
   machine exists + `remoteChatEnabled` (else `REMOTE_CHAT_DISABLED`) → online
   (else `MACHINE_OFFLINE`) → daemon capability `chat` (else `DAEMON_NO_CHAT`)
   → open-session count < cap (else `SESSION_LIMIT_REACHED`). Then: persist the
-  AcSession row (`closedAt: null`), track it as `starting`, emit
-  `chat:session.start` to `machine:<id>`, arm the **ready watchdog**
+  AcSession row (`closedAt: null`), track it as `starting`, **join the opener's
+  socket to `chan:<sid>` immediately** (implementation refinement of the plan:
+  failure pushes must reach the browser even though the agent never came up),
+  emit `chat:session.start` to `machine:<id>`, arm the **ready watchdog**
   (`CHAT_READY_TIMEOUT_MS` ⇒ close `spawn-timeout` + notify room).
 - **`onReady`**: clears the watchdog; `error` ⇒ close `spawn-failed` +
-  `chat:session.failed` to the room; success ⇒ mark `ready`, join the opener's
-  socket to `chan:<sid>`, emit `chat:session.ready`. (The socket joins the
-  room only here — a room with listeners before the agent exists would just
-  get the failed event.)
+  `chat:session.failed` to the room; success ⇒ mark `ready`, verify the opener
+  socket is still connected (if the opener left before the agent came up,
+  nobody is watching — close `connection-lost` instead of running a subprocess
+  unattended), emit `chat:session.ready`.
 - **`onChatEvent`**: session must belong to the reporting daemon's machine and
   be open → relay to `chan:<sid>`. `permission_request` additionally arms the
   **permission watchdog** (`CHAT_PERMISSION_TIMEOUT_MS`): on fire, forward a
@@ -145,7 +153,10 @@ mapping: stable UI kinds, protocol churn confined to the edge.
   daemon is already gone).
 - **Audit**: every open/close writes the AcSession row; `closeReason` ∈
   `user | spawn-failed | spawn-timeout | connection-lost | machine-deleted |
-agent-exited | server-shutdown`.
+agent-exited | server-shutdown`. Rows survive machine deletion (no FKs);
+  note the listing route (`GET /api/agent-instances/:id/sessions`) 404s once
+  the agent row itself is cascade-deleted — retention is for the record, and
+  the rows remain queryable at the storage layer.
 
 ## Daemon behavior
 

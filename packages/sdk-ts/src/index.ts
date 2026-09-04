@@ -77,6 +77,17 @@ export interface PatView {
 export interface MachineView extends Machine {
   online: boolean;
 }
+/** Audit row for one chat channel (GET /api/agent-instances/:id/sessions). */
+export interface AcSessionView {
+  id: string;
+  agentInstanceId: string;
+  machineId: string;
+  ownerId: string;
+  openedAt: string;
+  closedAt: string | null;
+  closeReason: string | null;
+}
+
 /** A deployed agent on a machine (Phase 8 C4) — one per (machine, profile). */
 export interface AgentInstanceView {
   id: string;
@@ -360,6 +371,14 @@ export class HarnessNexusClient {
   async listMachineAgents(machineId: string): Promise<AgentInstanceView[]> {
     const res = await this.request('GET', `/api/machines/${machineId}/agents`);
     return res.agents;
+  }
+
+  /** Chat-channel audit rows for one agent instance (C5). */
+  async listAgentSessions(agentInstanceId: string): Promise<{
+    agent: AgentInstanceView;
+    sessions: AcSessionView[];
+  }> {
+    return this.request('GET', `/api/agent-instances/${agentInstanceId}/sessions`);
   }
 
   /** The resolved profile bundle a deploy fetches (machine PAT exception #2). */

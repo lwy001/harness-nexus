@@ -568,7 +568,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
-  direction-locked, and C1–C4 are shipped (2026-09):** machines + on-demand
+  direction-locked, and C1–C5 are shipped (2026-09):** machines + on-demand
   daemon over Socket.IO/WSS, client-side MCP serving via per-session stdio
   shims (proxy/direct deleted; dial site derived from credential
   distributability + admin override; global creds non-distributable by default
@@ -631,8 +631,29 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   exception #2 (the resolved `ResolvedProfile` bundle); the daemon's
   `job:dispatch` handler (`cli/src/daemon/jobs.ts`) reuses the UNCHANGED 3.3
   pipeline with `job:progress`/`job:result` reporting; `/app` `job:update`
-  push; MachineDetail Deployments card. Remaining: C5 (ACP chat — start from
-  `docs/research/phase-8-c5-acp-web-demo.md`) → C6.
+  push; MachineDetail Deployments card. C5
+  (`docs/design/phase-8-c5.md`) — ACP chat: `AcSession` audit rows (migration
+  `0010`, NO FKs — rows survive machine deletion), the `chat:*` protocol + ACP
+  dialect schemas in `shared/realtime.ts` (semantic `ChatStreamEvent` stream +
+  verbatim `optionId`), `ChatService` (`server/src/realtime/chat.ts`,
+  `app.realtime.chat`) — gating order AgentInstance→remoteChatEnabled→online→
+  capability→cap, opener joined to `chan:<sid>` AT OPEN (failure pushes must
+  reach the browser), ready/permission watchdogs (`CHAT_READY_TIMEOUT_MS`,
+  `CHAT_PERMISSION_TIMEOUT_MS`), busy gate, teardown on disconnect/delete/
+  shutdown ("no resume"); the daemon's session manager
+  (`cli/src/daemon/chat.ts` + `daemon/acp/`) — per-target ACP adapter
+  subprocess table (`@zed-industries/claude-agent-acp` / `codex-acp` /
+  hermes `acp_adapter`; env override `HN_ACP_COMMAND_<TARGET>` — also how
+  tests point at `packages/cli/test/fixtures/acp-agent.mjs`), a hand-rolled
+  JSON-RPC/stdio client (no new dep), ACP↔semantic mapping (`user_message_chunk`
+  dropped — the browser echoes), one prompt in flight (races resync via
+  `session_status`), SIGTERM→SIGKILL on close/disconnect; `/app` browser
+  handlers (`chat:session.open|message.send|turn.cancel|permission.respond|
+session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
+  (fold-style reducer, permission cards render from payload options,
+  `--signal` marks the live turn only) + MachineDetail remote-chat toggle
+  (confirm-first). Chat is owner-ONLY (admins excluded by design). Remaining:
+  C6 (orchestration).
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`

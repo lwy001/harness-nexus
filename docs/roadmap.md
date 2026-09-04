@@ -157,21 +157,21 @@ large, least-certain multi-source block (can stop partway).
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
   Harness Nexus stores references, the target tool executes.
 
-## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C4 shipped)
+## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped)
 
 > Repositioning: from asset-integration platform to **agent orchestration
 > platform**. Control plane (server + web) / data plane (one `hnx` client
 > program per enrolled machine). Decisions locked in the PRD; protocol, data
 > model, and per-phase plan in the design doc.
 
-| #         | Sub-phase                     | Delivers                                                                                                                            | Absorbs / impacts                         |
-| --------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **C1** ✅ | daemon + machine registration | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)                                 | Phase 5 (half); deletes `acp-bridge`      |
-| **C2** ✅ | client MCP serving            | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode        | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
-| **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                           | 3.7                                       |
-| **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                     | reuses 3.3                                |
-| C5        | ACP chat                      | chat + agent control over `/app`↔`/ctl` routing, daemon-side semantic↔ACP adapters, web chat UI (remote chat gated, off by default) | Phase 5 (other half)                      |
-| C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                            | Phase 6 Channels (adjacent)               |
+| #         | Sub-phase                     | Delivers                                                                                                                                                                                                           | Absorbs / impacts                         |
+| --------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| **C1** ✅ | daemon + machine registration | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)                                                                                                                | Phase 5 (half); deletes `acp-bridge`      |
+| **C2** ✅ | client MCP serving            | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode                                                                                       | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
+| **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                                                                                                          | 3.7                                       |
+| **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                                                                                                    | reuses 3.3                                |
+| **C5** ✅ | ACP chat                      | `chat:*` over `/app`↔`/ctl` (semantic stream + ACP payload dialect), daemon ACP adapter subprocesses (claude-code/codex/hermes), permission watchdog, AcSession audit, web `/chat` UI (owner-only, off by default) | Phase 5 (other half)                      |
+| C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                                                                                                           | Phase 6 Channels (adjacent)               |
 
 - Key locked decisions: global-scope credentials non-distributable by default
   (server `/mcp` is their sole outlet); daemon is on-demand and MCP **never**

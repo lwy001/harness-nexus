@@ -7,12 +7,13 @@ import {
 } from '@harness-nexus/shared';
 import { collectItems, scanAllTargets, scanTarget } from '../inventory/scan.js';
 import { attachJobHandlers } from './jobs.js';
+import { attachChatHandlers } from './chat.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.3.0-c4';
+export const DAEMON_VERSION = '0.4.0-c5';
 
-/** Capabilities this daemon build carries (C3: inventory; C4: deploy jobs). */
-export const DAEMON_CAPABILITIES = ['inventory', 'deploy'];
+/** Capabilities this daemon build carries (C3: inventory; C4: deploy; C5: chat). */
+export const DAEMON_CAPABILITIES = ['inventory', 'deploy', 'chat'];
 
 export interface DaemonOptions {
   server: string;
@@ -39,6 +40,7 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
   });
 
   attachJobHandlers(socket, { server: options.server, token: options.token });
+  attachChatHandlers(socket);
 
   const reportAll = (requestId?: string): void => {
     void (async () => {

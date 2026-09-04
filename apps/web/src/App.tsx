@@ -16,6 +16,7 @@ import { ResourcesPage } from '@/pages/Resources';
 import { SkillHubPage } from '@/pages/SkillHub';
 import { MachinesPage } from '@/pages/Machines';
 import { MachineDetailPage } from '@/pages/MachineDetail';
+import { ChatPage } from '@/pages/Chat';
 
 export function App() {
   return (
@@ -46,6 +47,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <MachineDetailPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/chat"
+              element={
+                <RequireAuth>
+                  <ChatPage />
                 </RequireAuth>
               }
             />

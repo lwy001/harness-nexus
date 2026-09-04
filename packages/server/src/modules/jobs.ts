@@ -102,4 +102,15 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     const agents = await app.uow.agentInstances.listByMachine(machine.id);
     return { agents };
   });
+
+  // ---- GET /api/agent-instances/:id/sessions — AcSession audit rows (C5) ----
+  // Listing is owner-or-admin like every machine-scoped read; CHATTING is
+  // owner-only (enforced in the chat service, not here).
+  app.get<{ Params: { id: string } }>('/api/agent-instances/:id/sessions', guard, async (req) => {
+    const agent = await app.uow.agentInstances.findById(req.params.id);
+    if (!agent) throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
+    await visibleMachine(agent.machineId, req.user!);
+    const sessions = await app.uow.acSessions.listByAgentInstance(agent.id);
+    return { agent, sessions };
+  });
 }

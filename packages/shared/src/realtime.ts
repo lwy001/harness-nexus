@@ -179,6 +179,193 @@ export const inventoryUpdatedEventSchema = z.object({
   reportedAt: z.string().datetime(),
 });
 
+// ---- chat events / ACP dialect (C5) ----
+//
+// The browser speaks platform-semantic chat events; the daemon adapts them to
+// each agent's protocol (ACP over stdio today — the adapter matrix lives in
+// docs/research/phase-8-c5-acp-web-demo.md). These schemas are the SINGLE
+// source for server, daemon, and web: every handler on either side validates
+// with them (whitelisted-handler isolation rule).
+
+export const acpToolKindSchema = z.enum([
+  'read',
+  'edit',
+  'delete',
+  'move',
+  'search',
+  'execute',
+  'think',
+  'fetch',
+  'switch_mode',
+  'other',
+]);
+
+export const acpToolStatusSchema = z.enum(['pending', 'in_progress', 'completed', 'failed']);
+
+export const acpLocationSchema = z.object({
+  path: z.string().min(1).max(1024),
+  line: z.number().int().min(0).optional(),
+  lineEnd: z.number().int().min(0).optional(),
+});
+
+/** Bounded view of an ACP ToolCallUpdate — enough for tool rows and permission cards. */
+export const acpToolCallViewSchema = z.object({
+  toolCallId: z.string().min(1).max(128),
+  title: z.string().max(512).optional(),
+  kind: acpToolKindSchema.optional(),
+  status: acpToolStatusSchema.optional(),
+  locations: z.array(acpLocationSchema).max(16).optional(),
+});
+
+/** ACP permission option — `optionId` is passed through VERBATIM in both directions. */
+export const acpPermissionOptionSchema = z.object({
+  optionId: z.string().min(1).max(128),
+  name: z.string().min(1).max(128),
+  kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']),
+});
+
+/** Prompt content blocks the browser may send (text + file references in v1). */
+export const promptBlockSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string().min(1).max(32000) }),
+  z.object({
+    type: z.literal('resource_link'),
+    name: z.string().min(1).max(256),
+    uri: z.string().min(1).max(2048),
+  }),
+]);
+
+/**
+ * The semantic chat stream (`chat:event` → `{ sessionId, event }`). Produced by
+ * the daemon (mapped from ACP `session/update` etc.) plus `permission_resolved`
+ * which the SERVER emits so every viewer's permission card settles. `raw` is
+ * the escape hatch for unmapped protocol frames.
+ */
+export const chatStreamEventSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('message_delta'), delta: z.string().min(0).max(100000) }),
+  z.object({ kind: z.literal('thought_delta'), delta: z.string().min(0).max(100000) }),
+  z.object({ kind: z.literal('tool_call'), call: acpToolCallViewSchema }),
+  z.object({
+    kind: z.literal('usage'),
+    inputTokens: z.number().int().min(0).optional(),
+    outputTokens: z.number().int().min(0).optional(),
+  }),
+  z.object({
+    kind: z.literal('permission_request'),
+    requestId: z.string().min(1).max(128),
+    toolCall: acpToolCallViewSchema,
+    options: z.array(acpPermissionOptionSchema).min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal('permission_resolved'),
+    requestId: z.string().min(1).max(128),
+    outcome: z.enum(['selected', 'cancelled', 'timeout']),
+    optionId: z.string().min(1).max(128).optional(),
+  }),
+  z.object({
+    kind: z.literal('turn_result'),
+    stopReason: z.enum(['end_turn', 'cancelled', 'max_tokens', 'refusal']),
+  }),
+  z.object({ kind: z.literal('session_status'), state: z.enum(['active', 'idle']) }),
+  z.object({ kind: z.literal('raw'), method: z.string().min(1).max(64), params: z.unknown() }),
+]);
+
+/** `chat:event` envelope — daemon→server and (relayed) server→browser share it. */
+export const chatStreamEventEnvelopeSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  event: chatStreamEventSchema,
+});
+
+/** browser → server: create a channel (no `sessionId`) or idempotently re-join an open one. */
+export const chatSessionOpenRequestSchema = z.object({
+  agentInstanceId: z.string().min(1).max(64),
+  sessionId: z.string().min(1).max(64).optional(),
+});
+
+/** server → daemon: spawn the agent subprocess for this channel. `cwd` defaults to the agent home. */
+export const chatSessionStartEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  agentInstanceId: z.string().min(1).max(64),
+  target: agentTargetSchema,
+  cwd: z.string().min(1).max(1024),
+});
+
+/** daemon → server: subprocess + ACP handshake done (`error` ⇒ spawn/initialize failed). */
+export const chatSessionReadyEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  agentName: z.string().max(128).optional(),
+  agentVersion: z.string().max(64).optional(),
+  error: z.string().max(512).optional(),
+});
+
+/** browser → server: send a turn prompt. */
+export const chatMessageSendRequestSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  content: z.union([z.string().min(1).max(32000), z.array(promptBlockSchema).min(1).max(16)]),
+});
+
+/** server → daemon: the normalized prompt blocks for `session/prompt`. */
+export const chatPromptEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  prompt: z.array(promptBlockSchema).min(1).max(16),
+});
+
+/** browser → server and server → daemon: cancel the running turn (idempotent). */
+export const chatTurnCancelEventSchema = z.object({ sessionId: z.string().min(1).max(64) });
+
+/** browser → server: answer a permission request; absent `optionId` = cancelled. */
+export const chatPermissionRespondRequestSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  requestId: z.string().min(1).max(128),
+  optionId: z.string().min(1).max(128).optional(),
+});
+
+/** server → daemon: forwarded permission decision (or timeout/user cancel). */
+export const chatPermissionRespondEventSchema = chatPermissionRespondRequestSchema;
+
+/** browser → server: close the channel. */
+export const chatSessionCloseRequestSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  reason: z.string().max(128).optional(),
+});
+
+/** server → daemon: kill the subprocess for this channel. */
+export const chatSessionCloseEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  reason: z.string().max(128).optional(),
+});
+
+/** daemon → server: the channel ended daemon-side (agent process exited / fatal). */
+export const chatSessionClosedEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  reason: z.string().max(256),
+});
+
+/** REST view of an `AcSession` audit row (`GET /api/agent-instances/:id/sessions`). */
+export const acSessionViewSchema = z.object({
+  id: z.string().min(1),
+  agentInstanceId: z.string().min(1),
+  machineId: z.string().min(1),
+  ownerId: z.string().min(1),
+  openedAt: z.string().datetime(),
+  closedAt: z.string().datetime().nullable(),
+  closeReason: z.string().nullable(),
+});
+
+/** server → browser lifecycle pushes (typed for the web client; server-constructed). */
+export const chatSessionReadyPushSchema = z.object({
+  sessionId: z.string().min(1),
+  agentName: z.string().max(128).optional(),
+  agentVersion: z.string().max(64).optional(),
+});
+export const chatSessionFailedPushSchema = z.object({
+  sessionId: z.string().min(1),
+  error: z.string().min(1).max(512),
+});
+export const chatSessionClosedPushSchema = z.object({
+  sessionId: z.string().min(1),
+  reason: z.string().min(1).max(256),
+});
+
 export type CtlHandshakeAuth = z.infer<typeof ctlHandshakeAuthSchema>;
 export type AppHandshakeAuth = z.infer<typeof appHandshakeAuthSchema>;
 export type MachineHello = z.infer<typeof machineHelloSchema>;
@@ -197,3 +384,23 @@ export type InventoryReportEvent = z.infer<typeof inventoryReportEventSchema>;
 export type InventoryCollectRequest = z.infer<typeof inventoryCollectRequestSchema>;
 export type InventoryPayloadEvent = z.infer<typeof inventoryPayloadEventSchema>;
 export type InventoryUpdatedEvent = z.infer<typeof inventoryUpdatedEventSchema>;
+export type AcpToolKind = z.infer<typeof acpToolKindSchema>;
+export type AcpToolStatus = z.infer<typeof acpToolStatusSchema>;
+export type AcpToolCallView = z.infer<typeof acpToolCallViewSchema>;
+export type AcpPermissionOption = z.infer<typeof acpPermissionOptionSchema>;
+export type PromptBlock = z.infer<typeof promptBlockSchema>;
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatStreamEventEnvelope = z.infer<typeof chatStreamEventEnvelopeSchema>;
+export type ChatSessionOpenRequest = z.infer<typeof chatSessionOpenRequestSchema>;
+export type ChatSessionStartEvent = z.infer<typeof chatSessionStartEventSchema>;
+export type ChatSessionReadyEvent = z.infer<typeof chatSessionReadyEventSchema>;
+export type ChatMessageSendRequest = z.infer<typeof chatMessageSendRequestSchema>;
+export type ChatPromptEvent = z.infer<typeof chatPromptEventSchema>;
+export type ChatTurnCancelEvent = z.infer<typeof chatTurnCancelEventSchema>;
+export type ChatPermissionRespondRequest = z.infer<typeof chatPermissionRespondRequestSchema>;
+export type ChatSessionCloseRequest = z.infer<typeof chatSessionCloseRequestSchema>;
+export type ChatSessionClosedEvent = z.infer<typeof chatSessionClosedEventSchema>;
+export type ChatSessionReadyPush = z.infer<typeof chatSessionReadyPushSchema>;
+export type ChatSessionFailedPush = z.infer<typeof chatSessionFailedPushSchema>;
+export type ChatSessionClosedPush = z.infer<typeof chatSessionClosedPushSchema>;
+export type AcSessionView = z.infer<typeof acSessionViewSchema>;

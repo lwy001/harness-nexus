@@ -6,6 +6,7 @@ import {
   BoxesIcon,
   GitCompareArrowsIcon,
   LaptopIcon,
+  MessageSquareIcon,
   RefreshCwIcon,
   UploadIcon,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -230,7 +232,7 @@ export function MachineDetailPage() {
         </p>
       </div>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <Button onClick={() => void scan()} disabled={scanning || machine?.online !== true}>
           <RefreshCwIcon className={scanning ? 'size-4 animate-spin' : 'size-4'} />
           {scanning ? 'Scanning…' : 'Scan now'}
@@ -238,6 +240,11 @@ export function MachineDetailPage() {
         <span className="text-muted-foreground text-sm">
           Requires the daemon online{machine?.online !== true ? ' — machine is offline' : ''}.
         </span>
+        {machine !== null ? (
+          <span className="ml-auto">
+            <RemoteChatToggle machine={machine} onChanged={() => void refresh()} />
+          </span>
+        ) : null}
       </div>
 
       {inventory === null ? (
@@ -796,6 +803,12 @@ function DeploymentsCard({
                       v{a.profileVersion}
                     </span>
                   ) : null}
+                  <Button asChild variant="ghost" size="sm" className="ml-auto">
+                    <Link to="/chat">
+                      <MessageSquareIcon className="size-4" />
+                      Chat
+                    </Link>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -803,5 +816,33 @@ function DeploymentsCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Remote chat toggle — a remote-code-execution switch; confirm-first. */
+function RemoteChatToggle({ machine, onChanged }: { machine: MachineView; onChanged: () => void }) {
+  const { logout } = useAuth();
+  async function toggle(next: boolean): Promise<void> {
+    if (
+      next &&
+      !window.confirm(
+        'Enable remote chat? Chatting with agents on this machine runs tools and commands on it — only you can open channels.',
+      )
+    ) {
+      return;
+    }
+    try {
+      await withAuthGuard(() => api.updateMachine(machine.id, { remoteChatEnabled: next }), logout);
+      toast.success(next ? 'Remote chat enabled' : 'Remote chat disabled');
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
+    }
+  }
+  return (
+    <label className="text-muted-foreground flex items-center gap-2 text-sm">
+      <Switch checked={machine.remoteChatEnabled} onCheckedChange={(v) => void toggle(v)} />
+      Remote chat
+    </label>
   );
 }

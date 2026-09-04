@@ -219,6 +219,26 @@ CREATE TABLE IF NOT EXISTS agent_instances (
 );
     `,
   },
+  {
+    version: 10,
+    description: 'ac_sessions (phase 8 C5 chat audit rows; no FKs by design)',
+    sql: `
+CREATE TABLE IF NOT EXISTS ac_sessions (
+  id                TEXT PRIMARY KEY,
+  agent_instance_id TEXT NOT NULL,
+  machine_id        TEXT NOT NULL,
+  owner_id          TEXT NOT NULL,
+  opened_at         TEXT NOT NULL,
+  closed_at         TEXT,
+  close_reason      TEXT
+);
+-- Deliberately NO foreign keys: these rows are AUDIT records and must survive
+-- machine deletion (machine delete closes them with 'machine-deleted' instead
+-- of cascading — the documented asymmetry vs jobs/agent_instances).
+CREATE INDEX IF NOT EXISTS idx_ac_sessions_machine ON ac_sessions(machine_id, closed_at);
+CREATE INDEX IF NOT EXISTS idx_ac_sessions_agent ON ac_sessions(agent_instance_id, opened_at);
+    `,
+  },
 ] as const;
 
 /**

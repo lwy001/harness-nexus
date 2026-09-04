@@ -81,7 +81,7 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
 - 7.2–7.4 designs to be written before each ships.
 
-### Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C4 shipped)
+### Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped)
 
 - PRD: [`prd/phase-8-client.md`](./prd/phase-8-client.md) — the vision shift (control plane / data plane), the four locked decisions (credential distributability, `/mcp` outlet narrowing, on-demand daemon, uniform stdio MCP), and the C1–C6 scope.
 - Design: [`design/phase-8-client.md`](./design/phase-8-client.md) — data model (`Machine`/`AgentInstance`/`Job`/`AcSession`), the Socket.IO-over-WSS realtime protocol (bidirectional role namespaces `/ctl` daemon + `/app` browser, event catalog, rooms, isolation layers; daemon as protocol-adaptation edge), the MCP shim process model + dial-site routing derivation, jobs/deploy, inventory/diff/import, ACP chat, security model, and the per-phase development plan.
@@ -90,6 +90,8 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Design C4: [`design/phase-8-c4.md`](./design/phase-8-c4.md) — the shipped C4 plan: the Job state machine (queue/dispatch/ack-timeout sweep/disconnect recovery with attempt caps), remote deploy reusing the unchanged 3.3 pipeline via a machine-PAT deploy-bundle fetch, AgentInstance upserts, and the MachineDetail deployments UI.
 - Research C5: [`research/phase-8-c5-acp-web-demo.md`](./research/phase-8-c5-acp-web-demo.md) — the web-vibecoding-demo reference (browser ↔ portal ↔ acp-bridge → DSH): ACP as the chat payload dialect, permission `optionId` passthrough, session-op mutual exclusion, cancel watchdog, reconnect re-registration, the fold/StreamBuffer streaming model, and fs/terminal channel boundaries. First filled row of the C5 adapter matrix (DSH).
 - Design C2: [`design/phase-8-c2.md`](./design/phase-8-c2.md) — the shipped C2 plan: the normative dial-site × distributability matrix, migration `0007`, the `mcp-runtime` `UpstreamPool` extraction (stdio included), the client-config API contract (machine-PAT exception + secret-leak rules), the `hnx mcp serve` stdio shim, install-adapter shim entries + the Codex adapter, and emitter `emitMode` (client default / server fallback).
+- Research C5: [`research/phase-8-c5-acp-web-demo.md`](./research/phase-8-c5-acp-web-demo.md) — the ACP web-demo reference study (chat dialect, permission/session pitfalls, fold/StreamBuffer) + the completed per-target ACP adapter matrix (claude-code/codex via official Zed adapters, hermes native, zcode deferred).
+- Design C5: [`design/phase-8-c5.md`](./design/phase-8-c5.md) — the shipped C5 plan: the `chat:*` wire protocol + ACP dialect schemas, the semantic `ChatStreamEvent` stream, `AcSession` audit rows (migration `0010`, no FKs), `ChatService` gating/watchdogs/teardown, the daemon's ACP adapter subprocess table + JSON-RPC/stdio client, and the `/chat` web UI.
 
 ### Concept notes (design/)
 

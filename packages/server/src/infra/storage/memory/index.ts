@@ -13,8 +13,10 @@ import type {
   InventoryRepository,
   Job,
   AgentInstance,
+  AcSession,
   JobRepository,
   AgentInstanceRepository,
+  AcSessionRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -46,6 +48,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   const jobs = new Map<string, Job>();
   // key: `${machineId}\u0000${profileId}` — one deployed instance per pair
   const agentInstances = new Map<string, AgentInstance>();
+  const acSessions = new Map<string, AcSession>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -306,6 +309,26 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const acSessionRepo: AcSessionRepository = {
+    async findById(id) {
+      return acSessions.get(id) ?? null;
+    },
+    async listByAgentInstance(agentInstanceId) {
+      return [...acSessions.values()]
+        .filter((s) => s.agentInstanceId === agentInstanceId)
+        .sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
+    },
+    async listOpenByMachine(machineId) {
+      return [...acSessions.values()].filter(
+        (s) => s.machineId === machineId && s.closedAt === null,
+      );
+    },
+    async save(session) {
+      acSessions.set(session.id, session);
+      return session;
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -318,5 +341,6 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     inventories: inventoryRepo,
     jobs: jobRepo,
     agentInstances: agentInstanceRepo,
+    acSessions: acSessionRepo,
   };
 }

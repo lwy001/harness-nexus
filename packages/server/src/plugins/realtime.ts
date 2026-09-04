@@ -13,9 +13,20 @@ import {
   type MachineStatusEvent,
 } from '@harness-nexus/shared';
 import { jobProgressEventSchema, jobResultEventSchema, type JobView } from '@harness-nexus/shared';
+import {
+  chatMessageSendRequestSchema,
+  chatPermissionRespondRequestSchema,
+  chatSessionCloseRequestSchema,
+  chatSessionClosedEventSchema,
+  chatSessionOpenRequestSchema,
+  chatSessionReadyEventSchema,
+  chatStreamEventEnvelopeSchema,
+  chatTurnCancelEventSchema,
+} from '@harness-nexus/shared';
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
+import { ChatService } from '../realtime/chat.js';
 import { JobService } from '../jobs/service.js';
 
 /**
@@ -37,6 +48,8 @@ export interface RealtimeService {
   inventory: InventoryCoordinator;
   /** Job state machine (C4) — dispatch/recover driven by presence below. */
   jobs: JobService;
+  /** Chat routing/gating/audit (C5) — /app ↔ /ctl with permission watchdogs. */
+  chat: ChatService;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -51,6 +64,9 @@ export async function registerRealtime(
     jobAckTimeoutMs: number;
     jobSweepIntervalMs: number;
     jobMaxAttempts: number;
+    chatMaxSessionsPerMachine: number;
+    chatPermissionTimeoutMs: number;
+    chatReadyTimeoutMs: number;
   },
 ): Promise<void> {
   await app.register(socketIOPlugin, {
@@ -58,8 +74,35 @@ export async function registerRealtime(
     maxHttpBufferSize: opts.maxHttpBufferSize,
   });
 
+  const ctl = app.io.of('/ctl');
+  const appNs = app.io.of('/app');
+
   const presence = new MachinePresence();
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
+  const chat = new ChatService(
+    {
+      uow: app.uow,
+      isOnline: (machineId) => presence.isOnline(machineId),
+      io: {
+        toCtl: (machineId, event, payload) => {
+          ctl.to(`machine:${machineId}`).emit(event, payload);
+        },
+        toChannel: (sessionId, event, payload) => {
+          appNs.to(`chan:${sessionId}`).emit(event, payload);
+        },
+        joinChannel: (socketId, sessionId) => {
+          const socket = appNs.sockets.get(socketId);
+          if (socket) void socket.join(`chan:${sessionId}`);
+        },
+        isAppSocketLive: (socketId) => appNs.sockets.has(socketId),
+      },
+    },
+    {
+      maxSessionsPerMachine: opts.chatMaxSessionsPerMachine,
+      permissionTimeoutMs: opts.chatPermissionTimeoutMs,
+      readyTimeoutMs: opts.chatReadyTimeoutMs,
+    },
+  );
   const jobs = new JobService(
     {
       uow: app.uow,
@@ -68,10 +111,7 @@ export async function registerRealtime(
         app.io.of('/ctl').to(`machine:${job.machineId}`).emit('job:dispatch', { job });
       },
       update: (job: JobView) => {
-        app.io
-          .of('/app')
-          .to([`user:${job.ownerId}`, 'admins'])
-          .emit('job:update', { job });
+        appNs.to([`user:${job.ownerId}`, 'admins']).emit('job:update', { job });
       },
     },
     {
@@ -92,15 +132,16 @@ export async function registerRealtime(
     presence,
     inventory,
     jobs,
+    chat,
     broadcastStatus(machine, online) {
-      app.io
-        .of('/app')
+      appNs
         .to([`user:${machine.ownerId}`, 'admins'])
         .emit('machine:status', statusEvent(machine, online));
     },
     disconnectMachine(machine) {
       const wasOnline = presence.forceOffline(machine.id);
       app.io.of('/ctl').in(`machine:${machine.id}`).disconnectSockets(true);
+      void chat.onMachineDeleted(machine.id);
       if (wasOnline) realtime.broadcastStatus(machine, false);
     },
   };
@@ -254,11 +295,47 @@ export async function registerRealtime(
       void realtime.jobs.onResult(machineId, parsed.data);
     });
 
+    // C5 — daemon chat reporting. Ready closes the starting phase (or the
+    // channel on spawn failure); events fan out to the channel room; a
+    // daemon-side close settles the AcSession row.
+    socket.on('chat:session.ready', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatSessionReadyEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      ack?.({ accepted: true });
+      void realtime.chat.onReady(machineId, parsed.data);
+    });
+
+    socket.on('chat:event', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatStreamEventEnvelopeSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const accepted = realtime.chat.onStream(machineId, parsed.data.sessionId, parsed.data.event);
+      ack?.(accepted.ok ? { accepted: true } : { error: 'unknown-session' });
+    });
+
+    socket.on('chat:session.closed', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatSessionClosedEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      ack?.({ closed: true });
+      void realtime.chat.onDaemonClosed(machineId, parsed.data.sessionId, parsed.data.reason);
+    });
+
     socket.on('disconnect', () => {
       const wentOffline = presence.disconnected(socket.id);
       if (wentOffline === null) return;
       inventory.failMachine(wentOffline);
       void realtime.jobs.recoverMachine(wentOffline);
+      // ACP has no resume in v1 — every open channel of the machine dies with
+      // its daemon; viewers are notified via chat:session.closed.
+      void realtime.chat.onMachineOffline(wentOffline);
       void (async () => {
         const machine = await app.uow.machines.findById(wentOffline);
         if (machine) {
@@ -307,8 +384,93 @@ export async function registerRealtime(
   app.io.of('/app').on('connection', (socket: Socket) => {
     void socket.join(`user:${socket.data.userId as string}`);
     if (socket.data.role === 'admin') void socket.join('admins');
-    // C1: push-only — no browser→server handlers registered. Unknown events
-    // get no handler and no ack (sender times out), per the isolation model.
+
+    // C5 — interactive chat handlers. Every handler validates its payload and
+    // re-verifies ownership against `socket.data.userId` (envelope identity
+    // binding — a browser may only touch sessions it owns).
+    socket.on('chat:session.open', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatSessionOpenRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const userId = socket.data.userId as string;
+      void (async () => {
+        const result = await realtime.chat.open(
+          userId,
+          parsed.data.agentInstanceId,
+          parsed.data.sessionId,
+          socket.id,
+        );
+        if (!result.ok) {
+          ack?.({ error: result.code });
+          return;
+        }
+        // Re-joining an already-ready channel: join immediately. A fresh
+        // channel joins on `chat:session.ready` (the opener would otherwise
+        // sit in a room for an agent that may fail to spawn).
+        if (result.joined) void socket.join(`chan:${result.sessionId}`);
+        ack?.({ sessionId: result.sessionId });
+      })();
+    });
+
+    socket.on('chat:message.send', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatMessageSendRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const result = realtime.chat.onMessageSend(
+        socket.data.userId as string,
+        parsed.data.sessionId,
+        parsed.data.content,
+      );
+      ack?.(result.ok ? { accepted: true } : { error: result.code });
+    });
+
+    socket.on('chat:turn.cancel', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatTurnCancelEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const result = realtime.chat.onTurnCancel(
+        socket.data.userId as string,
+        parsed.data.sessionId,
+      );
+      ack?.(result.ok ? { accepted: true } : { error: result.code });
+    });
+
+    socket.on('chat:permission.respond', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatPermissionRespondRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const result = realtime.chat.onPermissionRespond(
+        socket.data.userId as string,
+        parsed.data.sessionId,
+        parsed.data.requestId,
+        parsed.data.optionId,
+      );
+      ack?.(result.ok ? { accepted: true } : { error: result.code });
+    });
+
+    socket.on('chat:session.close', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatSessionCloseRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      void (async () => {
+        const result = await realtime.chat.close(
+          socket.data.userId as string,
+          parsed.data.sessionId,
+          parsed.data.reason,
+        );
+        ack?.(result.ok ? { closed: true } : { error: result.code });
+      })();
+    });
   });
 }
 
