@@ -207,7 +207,11 @@ function formatUninstallPlan(plan: import('./install/uninstaller.js').UninstallP
     '',
   ];
   for (const [i, s] of plan.steps.entries()) {
-    const flag = s.conflicts ? ' [modified since install → .hnx.bak]' : s.exists ? '' : ' [already gone]';
+    const flag = s.conflicts
+      ? ' [modified since install → .hnx.bak]'
+      : s.exists
+        ? ''
+        : ' [already gone]';
     lines.push(`  [${i + 1}] ${s.action.padEnd(7)} ${s.destinationPath}${flag}`);
   }
   return lines.join('\n');
@@ -240,7 +244,9 @@ function runUninstall(args: { target?: string; apply: boolean; out?: string }): 
   // eslint-disable-next-line no-console
   console.log(`\nUninstalled: ${touched} file(s) restored or removed.`);
   // eslint-disable-next-line no-console
-  console.log('Reminder: manual steps from install (e.g. plugins.enabled, env vars) are yours to undo.');
+  console.log(
+    'Reminder: manual steps from install (e.g. plugins.enabled, env vars) are yours to undo.',
+  );
   return 0;
 }
 

@@ -34,9 +34,10 @@ export async function patsRoutes(app: FastifyInstance): Promise<void> {
     // The raw token is returned exactly once. For marketplace tokens, also
     // return the ready-to-paste `claude plugin marketplace add` command — the
     // server is the only side that knows PUBLIC_BASE_URL.
-    const marketplaceUrl = input.kind === 'marketplace'
-      ? `${app.publicBaseUrl}/api/marketplace/${rawToken}/marketplace.json`
-      : undefined;
+    const marketplaceUrl =
+      input.kind === 'marketplace'
+        ? `${app.publicBaseUrl}/api/marketplace/${rawToken}/marketplace.json`
+        : undefined;
     return reply.code(201).send({
       pat: stripSecret(pat),
       token: rawToken,

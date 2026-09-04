@@ -71,7 +71,7 @@ Profile  ──▶  PluginWriter (claude-code)  ──▶  also-valid-for-zcode
 | Bundle commands      | `commands/*.md`                                                      | same                                                             | dynamic, from skill dirs + "quick commands"                                              |
 | Bundle hooks         | `hooks/hooks.json` (rich events)                                     | `hooks/hooks.json` (**7 events only**)                           | 3 hook systems; event hooks via config/code                                              |
 | Bundle MCP servers   | `.mcp.json` / manifest `mcpServers`                                  | same                                                             | `mcp_servers:` in `config.yaml` (**YAML**, not JSON)                                     |
-| Bundle sub-agents    | `agents/*.md` (frontmatter)                                          | manifest `agents` field **recorded but NOT executed**            | `delegate_task` runtime; Claude-format `.claude/agents/`                                 |
+| Bundle sub-agents    | `agents/*.md` (frontmatter)                                          | manifest `agents` field **recorded but NOT executed**            | **runtime-only** `delegate_task` (+ background); no file format (3.4-verified)           |
 | Bundle rules/memory  | **cannot** (no CLAUDE.md auto-load)                                  | **cannot** (AGENTS.md is not a plugin field)                     | drop `AGENTS.md`/`.hermes.md` at project root                                            |
 | Memory file          | `CLAUDE.md`                                                          | `AGENTS.md`                                                      | `.hermes.md` / `AGENTS.md` / `CLAUDE.md` (all auto-injected)                             |
 | Variables            | `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${user_config.*}` | `${ZCODE_*}` **(still expands `${CLAUDE_*}`)**                   | n/a (Python)                                                                             |
@@ -229,22 +229,32 @@ CC/ZCode.
 2. **Skill Bundle** (newer, mid-2026) — a lighter, **non-Python** set of skills
    - a triggering slash command. **This is the closer analog to our profile.**
 
-### Manifest — `plugin.yaml` (inferred; verify in-repo)
+### Manifest — `plugin.yaml` (verified against `hermes_cli/plugins.py:1031+`)
 
-Observed/common fields: `name`, `version`, `description`, `kind` (routes to
-loader: `model-provider`/`web-search`/general), `entry_point` (Python). ⚠️ Full
-schema not extracted — verify.
+Fields (from `PluginManifest`): `name`, `version`, `description`, `author`,
+`requires_env`, `provides_tools`, `provides_hooks`, `source`
+(`user`/`project`/`entrypoint`), `path`, and `kind` — **`standalone`**
+(default; opt-in via `plugins.enabled`) / `backend` (pluggable backend for a
+core tool) / `exclusive` (single provider per category, e.g. memory).
+
+> Correction (2026-09, 3.4 verification): the earlier note guessed an
+> `entry_point` manifest field routing to a `model-provider`/`web-search`
+> loader — no such manifest field exists. "Entrypoint" is a _source_ value
+> (Python packaging entry-points, `plugins.py:398-427`); directory plugins are
+> discovered by folder + `plugin.yaml` and register via `register(ctx)` in
+> `__init__.py`. The Phase 3.4 adapter's manifest (`name`/`version`/
+> `description`/`author`/`kind: standalone`) matches the real schema.
 
 ### What a bundle carries, and where
 
-| Artifact     | Format                                                           | Location                    | Confidence              |
-| ------------ | ---------------------------------------------------------------- | --------------------------- | ----------------------- |
-| Skills       | `SKILL.md` (CC-compatible frontmatter)                           | `~/.hermes/skills/<name>/`  | High                    |
-| Hooks        | event hooks via config + code                                    | config + `~/.hermes/`       | Medium (format partial) |
-| MCP servers  | **YAML** `mcp_servers:` in `config.yaml`                         | `~/.hermes/config.yaml`     | High                    |
-| Sub-agents   | `delegate_task` runtime; Claude-format `.claude/agents/*.md`     | runtime + `.claude/agents/` | High                    |
-| Rules/memory | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` (**all auto-injected**) | project root / global       | High                    |
-| Commands     | dynamic from skill dirs + "quick commands"                       | user + project              | Medium                  |
+| Artifact     | Format                                                                                       | Location                   | Confidence              |
+| ------------ | -------------------------------------------------------------------------------------------- | -------------------------- | ----------------------- |
+| Skills       | `SKILL.md` (CC-compatible frontmatter)                                                       | `~/.hermes/skills/<name>/` | High                    |
+| Hooks        | event hooks via config + code                                                                | config + `~/.hermes/`      | Medium (format partial) |
+| MCP servers  | **YAML** `mcp_servers:` in `config.yaml`                                                     | `~/.hermes/config.yaml`    | High                    |
+| Sub-agents   | **runtime-only** — `delegate_task` tool (+ `delegate_task(background=true)`); no file format | runtime                    | High (3.4-verified)     |
+| Rules/memory | `AGENTS.md` / `.hermes.md` / `CLAUDE.md` (**all auto-injected**)                             | project root / global      | High                    |
+| Commands     | dynamic from skill dirs + "quick commands"                                                   | user + project             | Medium                  |
 
 ### MCP integration
 
@@ -298,14 +308,14 @@ ProfileEntry { resourceId, kind: 'skill'|'hook'|'sub_agent'|'rule'|'mcp'|'comman
 
 Each `entry.kind` maps onto a plugin component:
 
-| Our `ProfileEntry.kind` | Claude Code plugin component                 | ZCode                                                | Hermes                            |
-| ----------------------- | -------------------------------------------- | ---------------------------------------------------- | --------------------------------- |
-| `mcp`                   | `.mcp.json` / manifest `mcpServers`          | same (MCP block)                                     | `config.yaml` `mcp_servers:`      |
-| `skill`                 | `skills/<name>/SKILL.md`                     | same                                                 | `~/.hermes/skills/<name>/`        |
-| `command`               | `commands/*.md`                              | same                                                 | skill-dir command / quick command |
-| `hook`                  | `hooks/hooks.json` (event-filtered)          | `hooks/hooks.json` (**7 events**)                    | config/code hooks                 |
-| `sub_agent`             | `agents/*.md`                                | **not executable** → fall back to `~/.zcode/agents/` | `.claude/agents/*.md`             |
-| `rule`                  | **wrap as a skill** (no CLAUDE.md auto-load) | **wrap as a skill**                                  | drop `AGENTS.md`                  |
+| Our `ProfileEntry.kind` | Claude Code plugin component                 | ZCode                                                | Hermes                                                           |
+| ----------------------- | -------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------- |
+| `mcp`                   | `.mcp.json` / manifest `mcpServers`          | same (MCP block)                                     | `config.yaml` `mcp_servers:`                                     |
+| `skill`                 | `skills/<name>/SKILL.md`                     | same                                                 | `~/.hermes/skills/<name>/`                                       |
+| `command`               | `commands/*.md`                              | same                                                 | skill-dir command / quick command                                |
+| `hook`                  | `hooks/hooks.json` (event-filtered)          | `hooks/hooks.json` (**7 events**)                    | config/code hooks                                                |
+| `sub_agent`             | `agents/*.md`                                | **not executable** → fall back to `~/.zcode/agents/` | **no file format** — runtime `delegate_task` only (3.4-verified) |
+| `rule`                  | **wrap as a skill** (no CLAUDE.md auto-load) | **wrap as a skill**                                  | drop `AGENTS.md`                                                 |
 
 ### The MCP server split — the key architectural decision
 

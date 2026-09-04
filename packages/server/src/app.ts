@@ -61,7 +61,10 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: config.logLevel,
-      redact: { paths: ['req.headers.authorization', 'res.headers["set-cookie"]'], censor: '[redacted]' },
+      redact: {
+        paths: ['req.headers.authorization', 'res.headers["set-cookie"]'],
+        censor: '[redacted]',
+      },
       serializers: { req: redactingReqSerializer },
       ...(isProd
         ? {}

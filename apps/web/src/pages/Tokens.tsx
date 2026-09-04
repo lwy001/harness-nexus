@@ -81,9 +81,9 @@ export function TokensPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Access tokens</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Personal access tokens (<code className="font-mono">hnpat_…</code>) authenticate the CLI
-          or automation against this server as you. A{' '}
-          <strong>marketplace</strong> token authorizes only your Claude Code plugin-marketplace
-          URL. The full token is shown <strong>only once</strong> at creation — copy it then.
+          or automation against this server as you. A <strong>marketplace</strong> token authorizes
+          only your Claude Code plugin-marketplace URL. The full token is shown{' '}
+          <strong>only once</strong> at creation — copy it then.
         </p>
       </div>
 
@@ -271,10 +271,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="pat-kind">Purpose</Label>
-                <Select
-                  value={kind}
-                  onValueChange={(v) => setKind(v as 'api' | 'marketplace')}
-                >
+                <Select value={kind} onValueChange={(v) => setKind(v as 'api' | 'marketplace')}>
                   <SelectTrigger id="pat-kind">
                     <SelectValue />
                   </SelectTrigger>
@@ -371,7 +368,11 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
               className="shrink-0"
               onClick={() => copy('token', createdToken)}
             >
-              {copied === 'token' ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+              {copied === 'token' ? (
+                <CheckIcon className="size-4" />
+              ) : (
+                <CopyIcon className="size-4" />
+              )}
               {copied === 'token' ? 'Copied' : 'Copy'}
             </Button>
           </div>

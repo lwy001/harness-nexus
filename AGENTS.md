@@ -299,16 +299,25 @@ Summary for daily work:
 - **The preferred install path for claude-code targets.** The server EMITS a
   CC-native plugin marketplace; Claude Code owns install/update/uninstall via
   `archive` (zip) plugin sources — no client-side writes, no install-state
-  ledger on this path (contrast the 3.3/3.4 adapter pipeline for Hermes etc.).
+  ledger on this path (contrast the 3.3/3.4 adapter pipeline for Hermes etc.,
+  which now has `hnx uninstall` — see below).
   User flow: `claude plugin marketplace add
-<PUBLIC_BASE_URL>/api/marketplace/<PAT>/marketplace.json` →
+<PUBLIC_BASE_URL>/api/marketplace/<emit-token>/marketplace.json` →
   `claude plugin install <profile>@harness-nexus-<username>`.
-- **Auth is PAT-in-path, not headers.** Claude's plugin flow can't reliably
-  send Authorization headers (spike-verified: `extraKnownMarketplaces`
+- **Auth is emit-token-in-path, not headers.** Claude's plugin flow can't
+  reliably send Authorization headers (spike-verified: `extraKnownMarketplaces`
   headers only apply on some internal refresh paths), so both routes resolve
-  the token from the URL. Unknown/revoked token → `404 MARKETPLACE_NOT_FOUND`
-  (no existence leak). The routes sit OUTSIDE `requireAuth` and set `req.user`
-  themselves (`modules/marketplace.ts`).
+  the token from the URL. The token must carry the `marketplace` scope —
+  created via `POST /api/pats {kind:'marketplace'}` (stored as
+  `scopes:['marketplace']`, the reserved scopes field's first use); such tokens
+  are REJECTED by the REST API auth hook (blast radius = the emitter URL only),
+  and general API PATs are rejected by the emitter. Unknown/revoked token →
+  `404 MARKETPLACE_NOT_FOUND` (no existence leak). The routes sit OUTSIDE
+  `requireAuth` and set `req.user` themselves (`modules/marketplace.ts`).
+  The create response carries `marketplaceUrl` + a ready-to-paste `addCommand`
+  (the server knows `PUBLIC_BASE_URL`), shown once in the Tokens page reveal
+  dialog. The request logger masks `/api/marketplace/<token>/` as
+  `/api/marketplace/[token]/` (custom pino serializer in `app.ts`).
 - **Two routes**: `GET /api/marketplace/:token/marketplace.json` (one
   marketplace per user, name `harness-nexus-<username>` — CC rejects
   name/URL remixing, so uniqueness matters) and `GET
@@ -326,8 +335,15 @@ Summary for daily work:
 - **Profile entries gained a second REST arm** (3.5): `{ resourceId, kind }`
   for every non-mcp resource kind, alongside 2.2's `{ mcpServerId }`.
   `resolveEntries` validates visibility for both; violation → `409
-ENTRY_TARGET_NOT_ACCESSIBLE`. The web profile editor still only edits MCP
-  entries (resource-entry editing is follow-up UI work).
+ENTRY_TARGET_NOT_ACCESSIBLE`. The web profile editor picks BOTH kinds
+  (MCP checkboxes + per-kind resource sections) and offers `codex` as a
+  target.
+- **`hnx uninstall --target <t> [--out] [--apply]`** reverses an adapter-path
+  install from the ledger. `applyInstall` snapshots each destination's
+  pre-install content into the ledger (`previousContent`); uninstall restores
+  snapshots / deletes created files in reverse order, keeps user post-install
+  edits as `*.hnx.bak`, prunes empty dirs, and removes the ledger. Upgrade =
+  re-run `hnx install --apply` (plans are idempotent overwrites).
 - **Config**: `PUBLIC_BASE_URL` (default `http://localhost:8080`) — MUST be
   the public HTTPS origin in production: Claude Code enforces `https://` +
   non-loopback on archive URLs, and requires CLI ≥2.1.224 for `archive`
@@ -533,5 +549,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains. **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
-  add the first real logic for a pillar, also add tests (vitest, not yet
-  wired) and update the relevant `docs/` file.
+  add real logic for a pillar, also add tests and update the relevant `docs/`
+  file. Vitest is wired in `@harness-nexus/shared` and `@harness-nexus/server`
+  (`test/` dirs, excluded from build tsconfigs; `pnpm --filter … run test`);
+  throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.

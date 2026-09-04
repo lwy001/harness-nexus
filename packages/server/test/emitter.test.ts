@@ -110,7 +110,14 @@ async function seed(uow: ReturnType<typeof createMemoryUnitOfWork>) {
 
 function makeEmitter() {
   const uow = createMemoryUnitOfWork();
-  return { uow, emitter: new MarketplaceEmitter({ uow, publicBaseUrl: 'https://hn.example', logger: fakeLogger }) };
+  return {
+    uow,
+    emitter: new MarketplaceEmitter({
+      uow,
+      publicBaseUrl: 'https://hn.example',
+      logger: fakeLogger,
+    }),
+  };
 }
 
 const fakeLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as never;

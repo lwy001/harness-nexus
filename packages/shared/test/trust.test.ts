@@ -12,9 +12,9 @@ describe('resolveTrustTier', () => {
   });
 
   it('extracts trusted owner/repo from github URLs (url / git-subdir / archive)', () => {
-    expect(
-      resolveTrustTier({ source: 'url', url: 'https://github.com/openai/skills' }),
-    ).toBe('trusted');
+    expect(resolveTrustTier({ source: 'url', url: 'https://github.com/openai/skills' })).toBe(
+      'trusted',
+    );
     expect(
       resolveTrustTier({ source: 'git-subdir', url: 'https://github.com/huggingface/skills' }),
     ).toBe('trusted');
@@ -29,8 +29,8 @@ describe('resolveTrustTier', () => {
 
   it('treats npm packages and non-github archives as community', () => {
     expect(resolveTrustTier({ source: 'npm', package: 'some-pkg' })).toBe('community');
-    expect(
-      resolveTrustTier({ source: 'archive', url: 'https://harness-nexus.local/a.zip' }),
-    ).toBe('community');
+    expect(resolveTrustTier({ source: 'archive', url: 'https://harness-nexus.local/a.zip' })).toBe(
+      'community',
+    );
   });
 });

@@ -417,9 +417,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
                           className="size-4"
                         />
                         <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                        <span className="text-muted-foreground font-mono text-[10px]">
-                          {r.key}
-                        </span>
+                        <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
                       </label>
                     ))}
                   </div>
