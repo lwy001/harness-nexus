@@ -47,8 +47,8 @@ COPY packages/core/package.json      packages/core/
 COPY packages/shared/package.json    packages/shared/
 COPY packages/sdk-ts/package.json    packages/sdk-ts/
 COPY packages/server/package.json    packages/server/
+COPY packages/mcp-runtime/package.json packages/mcp-runtime/
 COPY packages/cli/package.json       packages/cli/
-COPY packages/acp-bridge/package.json packages/acp-bridge/
 COPY apps/web/package.json           apps/web/
 RUN pnpm install --frozen-lockfile
 
@@ -61,6 +61,7 @@ COPY packages/ packages/
 RUN pnpm --filter @harness-nexus/core run build \
  && pnpm --filter @harness-nexus/shared run build \
  && pnpm --filter @harness-nexus/sdk run build \
+ && pnpm --filter @harness-nexus/mcp-runtime run build \
  && pnpm --filter @harness-nexus/server run build
 
 # 3) Extract a self-contained, prod-only server directory. `pnpm deploy`
