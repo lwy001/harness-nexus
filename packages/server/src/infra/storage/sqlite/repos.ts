@@ -976,7 +976,9 @@ export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
     },
     async listByAgentInstance(agentInstanceId) {
       const rows = db
-        .prepare('SELECT * FROM ac_sessions WHERE agent_instance_id = ? ORDER BY opened_at DESC, id')
+        .prepare(
+          'SELECT * FROM ac_sessions WHERE agent_instance_id = ? ORDER BY opened_at DESC, id',
+        )
         .all(agentInstanceId) as AcSessionRow[];
       return rows.map(mapAcSession);
     },

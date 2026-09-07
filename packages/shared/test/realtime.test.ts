@@ -127,7 +127,12 @@ describe('chat stream schemas (C5)', () => {
           { optionId: 'reject_once', name: 'Deny', kind: 'reject_once' },
         ],
       },
-      { kind: 'permission_resolved', requestId: 'r1', outcome: 'selected', optionId: 'allow_always' },
+      {
+        kind: 'permission_resolved',
+        requestId: 'r1',
+        outcome: 'selected',
+        optionId: 'allow_always',
+      },
       { kind: 'turn_result', stopReason: 'end_turn' },
       { kind: 'session_status', state: 'active' },
       { kind: 'raw', method: 'session/update', params: { sessionUpdate: 'plan' } },
@@ -142,9 +147,9 @@ describe('chat stream schemas (C5)', () => {
     expect(
       chatStreamEventSchema.safeParse({ kind: 'turn_result', stopReason: 'crashed' }).success,
     ).toBe(false);
-    expect(
-      chatStreamEventSchema.safeParse({ kind: 'session_status', state: 'busy' }).success,
-    ).toBe(false);
+    expect(chatStreamEventSchema.safeParse({ kind: 'session_status', state: 'busy' }).success).toBe(
+      false,
+    );
   });
 
   it('validates the chat:event envelope wrapping an event', () => {
@@ -174,23 +179,28 @@ describe('chat stream schemas (C5)', () => {
 
 describe('chat request schemas (C5)', () => {
   it('open accepts create and re-join forms', () => {
-    expect(
-      chatSessionOpenRequestSchema.parse({ agentInstanceId: 'a1' }),
-    ).toEqual({ agentInstanceId: 'a1' });
-    expect(
-      chatSessionOpenRequestSchema.parse({ agentInstanceId: 'a1', sessionId: 's1' }),
-    ).toEqual({ agentInstanceId: 'a1', sessionId: 's1' });
+    expect(chatSessionOpenRequestSchema.parse({ agentInstanceId: 'a1' })).toEqual({
+      agentInstanceId: 'a1',
+    });
+    expect(chatSessionOpenRequestSchema.parse({ agentInstanceId: 'a1', sessionId: 's1' })).toEqual({
+      agentInstanceId: 'a1',
+      sessionId: 's1',
+    });
     expect(chatSessionOpenRequestSchema.safeParse({}).success).toBe(false);
   });
 
   it('message send accepts a string or block array', () => {
-    expect(
-      chatMessageSendRequestSchema.parse({ sessionId: 's1', content: 'hi' }),
-    ).toEqual({ sessionId: 's1', content: 'hi' });
+    expect(chatMessageSendRequestSchema.parse({ sessionId: 's1', content: 'hi' })).toEqual({
+      sessionId: 's1',
+      content: 'hi',
+    });
     expect(
       chatMessageSendRequestSchema.safeParse({
         sessionId: 's1',
-        content: [{ type: 'text', text: 'hi' }, { type: 'resource_link', name: 'f', uri: 'file:///f' }],
+        content: [
+          { type: 'text', text: 'hi' },
+          { type: 'resource_link', name: 'f', uri: 'file:///f' },
+        ],
       }).success,
     ).toBe(true);
     expect(chatMessageSendRequestSchema.safeParse({ sessionId: 's1', content: '' }).success).toBe(
@@ -202,9 +212,10 @@ describe('chat request schemas (C5)', () => {
   });
 
   it('permission respond treats missing optionId as cancel and keeps it verbatim', () => {
-    expect(
-      chatPermissionRespondRequestSchema.parse({ sessionId: 's1', requestId: 'r1' }),
-    ).toEqual({ sessionId: 's1', requestId: 'r1' });
+    expect(chatPermissionRespondRequestSchema.parse({ sessionId: 's1', requestId: 'r1' })).toEqual({
+      sessionId: 's1',
+      requestId: 'r1',
+    });
     expect(
       chatPermissionRespondRequestSchema.parse({
         sessionId: 's1',
