@@ -1,18 +1,41 @@
 # Design: Phase 8 T1 — DeepSeek Harness (dsh) target support
 
-> Status: **planned** (branch `phase-8-t1-deepseek`). Research:
+> Status: **implemented** (branch `phase-8-t1-deepseek`). Research:
 > `docs/research/phase-8-t1-deepseek-harness.md` (ground truth: dsh
-> `v0.1.2-rc.1`). Numbering: target onboarding becomes a **T-wave inside
-> Phase 8** — it lands on Phase 8 surfaces (C3 scanner, C4 deploy, C5 ACP row)
-> plus the 3.x install pipeline; the roadmap's 3.8 "other agents" bucket is
-> superseded by this wave (same absorption move as 3.6→C2). **T1 is pulled
-> ahead of all other pending target work** (ECC/Superpower import, CC
-> local-write fallback) by explicit priority decision. Supported-harnesses
-> list (one-click install + ACP chat) after T1: **Claude Code, Codex,
-> DeepSeek Harness** — user-facing docs mention only these three for now;
-> existing adapters (hermes) keep working unlisted. Profile target range is
-> otherwise unchanged (additive `deepseek` only). Parent: Phase 8 design
-> `docs/design/phase-8-client.md`; adapter template: the Codex adapter (8 C2).
+> `v0.1.2-rc.1`). Verification: CLI 26/26 (11 new adapter tests — frontmatter
+> synthesis, per-profile managed-region replace-idempotence, long-slug cap,
+> skipped kinds, outDir override), scanner cases in `inventory.test.ts`
+> (bundles→skill / flat→command split, platform vs local MCP origins, stdio +
+> streamable-http collect), server 55/55 (incl. a NEW
+> `registry-resilience.test.ts` regression — see below), and smoke **283/283**
+> with a `[8 T1]` block driving the REAL CLI dist: create profile → `install
+--apply` → `~/.dsh/skills/<slug>/SKILL.md` with synthesized frontmatter +
+> flat command skill + managed `cordis.patch.yml` insert row + ledger →
+> reinstall is an idempotent overwrite of OUR marked region only.
+>
+> **Out-of-band fix surfaced by the T1 smoke** (committed with it): a stdio
+> `auto` row referencing a MISSING credential (the C3-import shape — env
+> values redacted to `${cred:KEY}` before upload, import saves rows directly
+> via the UnitOfWork) derives dial site `server`, and
+> `McpRegistry.resolveTransport` THREW on stdio — crashing the fire-and-forget
+> reload (unhandled rejection killed the process; the code comment even
+> claimed it was "skipped rather than crashing the pool"). C5-era smokes never
+> hit it only because no `/api/mcp-servers` mutation followed the import.
+> Fix: `serverDialedDefinitions` skips rows whose transport cannot resolve
+> (warn log; Phase 2.2 "misconfigured upstreams never block the pool" rule),
+> and `connectServer` on such a row maps to `409 not_dialable`.
+>
+> Numbering: target onboarding becomes a **T-wave inside Phase 8** — it lands
+> on Phase 8 surfaces (C3 scanner, C4 deploy, C5 ACP row) plus the 3.x install
+> pipeline; the roadmap's 3.8 "other agents" bucket is superseded by this wave
+> (same absorption move as 3.6→C2). **T1 was pulled ahead of all other pending
+> target work** (ECC/Superpower import, CC local-write fallback) by explicit
+> priority decision. Supported-harnesses list (one-click install + ACP chat)
+> after T1: **Claude Code, Codex, DeepSeek Harness** — user-facing docs
+> mention only these three for now; existing adapters (hermes) keep working
+> unlisted. Profile target range is otherwise unchanged (additive `deepseek`
+> only). Parent: Phase 8 design `docs/design/phase-8-client.md`; adapter
+> template: the Codex adapter (8 C2).
 
 ## Scope
 

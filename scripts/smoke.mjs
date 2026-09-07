@@ -1152,6 +1152,37 @@ fw(
 );
 fw('.codex/skills/codex-skill/SKILL.md', 'Codex skill body.\n');
 fw('.codex/prompts/smoke-prompt.md', 'Codex prompt body.\n');
+fw(
+  '.dsh/skills/dsh-skill/SKILL.md',
+  '---\nname: dsh-skill\ndescription: DSH smoke skill\n---\n\nDSH skill body.\n',
+);
+fw(
+  '.dsh/skills/dsh-cmd.md',
+  '---\nname: dsh-cmd\ndescription: DSH smoke command\n---\nDSH command body.\n',
+);
+fw(
+  '.dsh/cordis.patch.yml',
+  [
+    '- insert:',
+    '    - id: mcp-web',
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    '      config:',
+    '        serverName: web',
+    '        transport: streamable-http',
+    "        url: 'http://localhost:9/mcp'",
+    '# BEGIN harness-nexus:smoke (managed)',
+    '- insert:',
+    '    - id: hnx-mcp-smoke',
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    '      config:',
+    '        serverName: harness-nexus-smoke',
+    '        transport: stdio',
+    "        command: '/usr/local/bin/hnx'",
+    "        args: ['mcp', 'serve']",
+    '# END harness-nexus:smoke (managed)',
+    '',
+  ].join('\n'),
+);
 
 r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c3-laptop' } });
 expect('c3 enroll status', r.status, 201);
@@ -1196,7 +1227,7 @@ r = await req('POST', `/api/machines/${c3MachineId}/inventory/scan`, {
   body: {},
 });
 expect('scan status', r.status, 200);
-expect('scanned 3 targets', r.json.inventory.length, 3);
+expect('scanned 4 targets', r.json.inventory.length, 4);
 const ccSnap = r.json.inventory.find((i) => i.target === 'claude-code');
 expect('cc snapshot has an agent', ccSnap.agents.length, 1);
 const ccItems = ccSnap.agents[0].items;
@@ -1225,6 +1256,27 @@ expect(
   'codex prompt discovered',
   codexSnap.agents[0].items.some((i) => i.name === 'smoke-prompt'),
   true,
+);
+const dshSnap = r.json.inventory.find((i) => i.target === 'deepseek');
+expect(
+  'dsh bundle skill discovered',
+  dshSnap.agents[0].items.some((i) => i.kind === 'skill' && i.name === 'dsh-skill'),
+  true,
+);
+expect(
+  'dsh flat command discovered',
+  dshSnap.agents[0].items.some((i) => i.kind === 'command' && i.name === 'dsh-cmd'),
+  true,
+);
+expect(
+  'dsh platform mcp via harness-nexus serverName marker',
+  dshSnap.agents[0].items.find((i) => i.name === 'harness-nexus-smoke')?.origin,
+  'platform',
+);
+expect(
+  'dsh user mcp is local origin',
+  dshSnap.agents[0].items.find((i) => i.name === 'web')?.origin,
+  'local',
 );
 const hermesSnap = r.json.inventory.find((i) => i.target === 'hermes');
 expect('absent hermes home is an empty snapshot', hermesSnap.agents[0].items.length, 0);
@@ -1324,6 +1376,147 @@ if (daemonErr.includes('Error:')) {
       .join(' | ')}`,
   );
 }
+
+// ========================= Phase 8 T1: deepseek-harness target =========================
+
+log('\n--- [8 T1] deepseek profile install via the REAL CLI (dist) → ~/.dsh ---');
+// A skill with NO frontmatter (proves synthesis) + a command + an MCP entry.
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'skill:t1-skill',
+    kind: 'skill',
+    name: 'T1 Skill',
+    description: 'Synthesizes frontmatter on install',
+    scope: 'personal',
+    source: { type: 'inline', content: '# T1 skill body (no frontmatter)\n' },
+    targets: ['deepseek'],
+  },
+});
+expect('t1 skill resource created', r.status, 201);
+const t1SkillId = r.json.resource.id;
+r = await req('POST', '/api/resources', {
+  token: userToken,
+  body: {
+    key: 'command:t1-cmd',
+    kind: 'command',
+    name: 't1-cmd',
+    description: 'A flat dsh command skill',
+    scope: 'personal',
+    source: { type: 'inline', content: 'T1 command body.\n' },
+    targets: ['deepseek'],
+  },
+});
+expect('t1 command resource created', r.status, 201);
+const t1CmdId = r.json.resource.id;
+r = await req('POST', '/api/mcp-servers', {
+  token: userToken,
+  body: {
+    name: 't1-upstream',
+    transport: { type: 'streamable-http', url: 'https://t1.example.com/mcp' },
+    dialSite: 'client',
+    scope: 'personal',
+  },
+});
+expect('t1 mcp server created', r.status, 201);
+const t1McpId = r.json.mcpServer.id;
+r = await req('POST', '/api/profiles', {
+  token: userToken,
+  body: {
+    name: 't1-dsh-kit',
+    target: 'deepseek',
+    scope: 'personal',
+    entries: [
+      { resourceId: t1SkillId, kind: 'skill' },
+      { resourceId: t1CmdId, kind: 'command' },
+      { mcpServerId: t1McpId },
+    ],
+  },
+});
+expect('t1 deepseek profile created', r.status, 201);
+const t1ProfileId = r.json.profile.id;
+
+const t1Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-t1-'));
+const t1Root = pathMod.join(t1Home, '.dsh');
+const t1Run = await new Promise((resolve) => {
+  const p = spawn(
+    process.execPath,
+    [
+      'packages/cli/dist/index.js',
+      'install',
+      '--profile',
+      t1ProfileId,
+      '--server',
+      B,
+      '--token',
+      userToken,
+      '--target',
+      'deepseek',
+      '--out',
+      t1Root,
+      '--apply',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let err = '';
+  p.stderr.on('data', (d) => {
+    err += d.toString();
+  });
+  p.on('exit', (code) => resolve({ code, err }));
+});
+expect('deepseek install exit code', t1Run.code, 0);
+if (t1Run.code !== 0) log(`(t1 install stderr): ${t1Run.err.split('\n').slice(0, 4).join(' | ')}`);
+
+const { readFileSync: rf } = await import('node:fs');
+const t1Skill = rf(pathMod.join(t1Root, 'skills', 't1-skill', 'SKILL.md'), 'utf8');
+expect(
+  'skill frontmatter synthesized (dsh requires name+description)',
+  t1Skill.startsWith('---\nname: t1-skill\ndescription: "Synthesizes frontmatter on install"\n---\n'),
+  true,
+);
+expect('flat command written', rf(pathMod.join(t1Root, 'skills', 't1-cmd.md'), 'utf8').includes('T1 command body.'), true);
+const t1Patch = rf(pathMod.join(t1Root, 'cordis.patch.yml'), 'utf8');
+expect('patch mounts the mcp bridge', t1Patch.includes("name: '@deepseek-ai/dsh-mcp-client'"), true);
+expect('patch row targets our profile outlet', t1Patch.includes(`"--profile", "${t1ProfileId}"`), true);
+expect('patch serverName platform-prefixed', t1Patch.includes('serverName: harness-nexus-t1-dsh-kit'), true);
+expect(
+  'ledger written',
+  rf(pathMod.join(t1Root, 'harness-nexus-install-state.json'), 'utf8').includes('deepseek'),
+  true,
+);
+
+// Re-planning is an idempotent overwrite of OUR marked region only.
+const t1Run2 = await new Promise((resolve) => {
+  const p = spawn(
+    process.execPath,
+    [
+      'packages/cli/dist/index.js',
+      'install',
+      '--profile',
+      t1ProfileId,
+      '--server',
+      B,
+      '--token',
+      userToken,
+      '--target',
+      'deepseek',
+      '--out',
+      t1Root,
+      '--apply',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  p.on('exit', (code) => resolve({ code }));
+});
+expect('deepseek reinstall (upgrade path) exit code', t1Run2.code, 0);
+const t1Patch2 = rf(pathMod.join(t1Root, 'cordis.patch.yml'), 'utf8');
+// the serverName line is the only occurrence of the dashed form (markers use a colon)
+expect(
+  'managed region not duplicated by reinstall',
+  t1Patch2.split('serverName: harness-nexus-t1-dsh-kit').length - 1,
+  1,
+);
+rmSync(t1Home, { recursive: true, force: true });
 
 // ============================ Phase 8 C4: jobs + remote deploy ============================
 

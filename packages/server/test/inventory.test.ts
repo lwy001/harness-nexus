@@ -223,6 +223,7 @@ describe('scan round-trip', () => {
     expect(body.inventory.map((i: { target: string }) => i.target).sort()).toEqual([
       'claude-code',
       'codex',
+      'deepseek',
       'hermes',
     ]);
 
@@ -232,7 +233,7 @@ describe('scan round-trip', () => {
       headers: authed(jwt),
     });
     const rows = list.json().inventory as { target: string; agents: { items: unknown[] }[] }[];
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(rows.find((r) => r.target === 'claude-code')!.agents[0]!.items).toHaveLength(3);
 
     // /app got one freshness push per stored target.

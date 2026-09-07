@@ -561,10 +561,11 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   ledger + `hnx install` CLI), 3.4 (Hermes adapter), and 3.5 (the Claude Code
   **marketplace emitter** — profiles served as a native CC plugin marketplace
   over HTTP, plus the `{resourceId, kind}` profile-entry arm) are shipped.
-  Remaining in Phase 3: 3.8 other agents + ECC/Superpower import adapters, and
-  the local-write CC fallback adapter. 3.6 (Codex), 3.7 (cross-target import),
-  the stdio bridge entry, and the ACP bridge are **absorbed into Phase 8** (see
-  below). Channels, LLM-WIKI, memory/notes remain unplanned.
+  Remaining in Phase 3: the ECC/Superpower import adapters and the local-write
+  CC fallback adapter. 3.6 (Codex), 3.7 (cross-target import), 3.8's "other
+  agents" half (→ the Phase 8 **T-wave**; T1 = deepseek, shipped), the stdio
+  bridge entry, and the ACP bridge are **absorbed into Phase 8** (see below).
+  Channels, LLM-WIKI, memory/notes remain unplanned.
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
   reproducible reference). See `docs/roadmap.md` for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
@@ -652,7 +653,36 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
 session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   (fold-style reducer, permission cards render from payload options,
   `--signal` marks the live turn only) + MachineDetail remote-chat toggle
-  (confirm-first). Chat is owner-ONLY (admins excluded by design). Remaining:
+  (confirm-first). Chat is owner-ONLY (admins excluded by design).
+  **T1 — DeepSeek Harness (dsh) target onboarding — is shipped (2026-09,
+  the first of the T-wave; supersedes the 3.8 "other agents" bucket):**
+  `deepseek` is a first-class `AgentTarget` (profile enum additive; the
+  supported-harnesses list user-facing docs name is **Claude Code, Codex,
+  DeepSeek Harness** — hermes keeps working unlisted). Ground truth
+  `docs/research/phase-8-t1-deepseek-harness.md` (pinned to dsh
+  `v0.1.2-rc.1`): home is `~/.dsh` (`$DSH_HOME`); the HOME-level
+  `cordis.patch.yml` applies to every profile AND hot-reloads live — it is
+  the MCP integration seam; skills are Agent-Skills format under
+  `~/.dsh/skills/` but dsh REQUIRES frontmatter `name`+`description`
+  (kebab-case names) — the CLI adapter (`install/adapters/deepseek.ts`)
+  SYNTHESIZES/repairs frontmatter; commands are flat `skills/<slug>.md`
+  (dsh's `/name` slash surface IS the skill surface); MCP is a per-profile
+  MARKED region (`# BEGIN/END harness-nexus:<slug>`) in the home patch
+  mounting `@deepseek-ai/dsh-mcp-client` (stdio = the `hnx mcp serve` shim)
+  — re-plans replace only that region (idempotent; other profiles' regions
+  and user rows byte-preserved); rule/sub_agent/hook are skipped with
+  warnings (`HOOK_SUPPORT['deepseek'] = null` — dsh's CC/Codex hook
+  BRIDGES are opt-in per-profile pnpm packages an install cannot wire).
+  C3 scanner (`inventory/scanners/deepseek.ts`) maps bundles→skill /
+  flat→command / patch rows→mcp keyed by `serverName`; C5 ACP row is
+  `['dsh', '--profile', 'acp']` (dsh on PATH + configured provider; env
+  override `HN_ACP_COMMAND_DEEPSEEK`); C4-deployable (`DEPLOYABLE_TARGETS`).
+  **Registry resilience fix shipped with T1** (surfaced by its smoke): a
+  stdio `auto` row referencing a MISSING credential (the C3-import
+  `${cred:KEY}` shape) derives server-dial and used to CRASH the
+  fire-and-forget reload — `serverDialedDefinitions` now skips unresolvable
+  rows with a warning and `connectServer` maps them to `409 not_dialable`
+  (`server/test/registry-resilience.test.ts`). Remaining:
   C6 (orchestration).
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you

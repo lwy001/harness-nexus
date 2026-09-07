@@ -658,7 +658,11 @@ function DeploymentsCard({
       try {
         const all = await withAuthGuard(() => api.listProfiles(), logout);
         // Only targets with a local-write install adapter can be deployed.
-        setProfiles(all.filter((p) => p.target === 'hermes' || p.target === 'codex'));
+        setProfiles(
+          all.filter(
+            (p) => p.target === 'hermes' || p.target === 'codex' || p.target === 'deepseek',
+          ),
+        );
       } catch {
         setProfiles([]);
       }
@@ -723,7 +727,7 @@ function DeploymentsCard({
           </Button>
           <p className="text-muted-foreground pb-2 text-sm">
             {profiles !== null && profiles.length === 0
-              ? 'No deployable profiles (hermes/codex) yet.'
+              ? 'No deployable profiles (hermes/codex/deepseek) yet.'
               : null}
           </p>
         </div>

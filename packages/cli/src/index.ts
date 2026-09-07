@@ -25,6 +25,7 @@ import { resolveProfile } from './install/resolver.js';
 import { supportedTargets } from './install/registry.js';
 import { getHermesPlanWarnings } from './install/adapters/hermes.js';
 import { getCodexPlanWarnings } from './install/adapters/codex.js';
+import { getDeepseekPlanWarnings } from './install/adapters/deepseek.js';
 import { applyUninstall, planUninstall } from './install/uninstaller.js';
 import { daemonConfigPath, loadDaemonConfig, saveDaemonConfig } from './config.js';
 import { runDaemon } from './daemon/client.js';
@@ -179,6 +180,23 @@ function printCodexHints(): void {
   console.log(lines.join('\n'));
 }
 
+/** Print DeepSeek Harness (dsh) post-install hints. */
+function printDeepseekHints(): void {
+  const w = getDeepseekPlanWarnings();
+  const lines = ['\nDeepSeek Harness post-install steps:'];
+  if (w.needsHnx) {
+    lines.push(
+      `  • MCP runs through the hnx stdio shim (cordis.patch.yml row) — run 'hnx enroll' on this machine if you haven't`,
+    );
+  }
+  if (w.skipped.length > 0) {
+    lines.push(`  • Skipped (no verified dsh home-install format):`);
+    for (const s of w.skipped) lines.push(`      - ${s}`);
+  }
+  // eslint-disable-next-line no-console
+  console.log(lines.join('\n'));
+}
+
 /** Render a plan for the dry-run preview. */
 function formatPlan(plan: import('./install/types.js').InstallPlan): string {
   const lines = [
@@ -227,6 +245,9 @@ async function runInstall(args: InstallArgs): Promise<void> {
   }
   if (plan.adapter.target === 'codex') {
     printCodexHints();
+  }
+  if (plan.adapter.target === 'deepseek') {
+    printDeepseekHints();
   }
 
   if (!args.apply) {

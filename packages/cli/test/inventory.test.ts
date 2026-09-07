@@ -100,6 +100,40 @@ function setupHome(): string {
     ].join('\n'),
   );
 
+  // ---- deepseek (T1): bundle skill, flat command skill, home patch MCP rows ----
+  w(
+    '.dsh/skills/docx/SKILL.md',
+    '---\nname: docx\ndescription: Work with documents\n---\n\nCreate and edit documents.\n',
+  );
+  w('.dsh/skills/deploy-now.md', '---\nname: deploy-now\ndescription: deploys\n---\nDeploy.\n');
+  w(
+    '.dsh/cordis.patch.yml',
+    [
+      "# the user's own rows come first",
+      '- id: system-prompt',
+      '  config:',
+      '    persona: keep',
+      '# BEGIN harness-nexus:my-kit (managed)',
+      '- insert:',
+      '    - id: hnx-mcp-my-kit',
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      '        serverName: harness-nexus-my-kit',
+      '        transport: stdio',
+      '        command: /usr/local/bin/hnx',
+      "        args: ['mcp', 'serve', '--profile', 'p1']",
+      '# END harness-nexus:my-kit (managed)',
+      '- insert:',
+      '    - id: mcp-web',
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      '        serverName: web',
+      '        transport: streamable-http',
+      "        url: 'http://localhost:3000/mcp'",
+      '',
+    ].join('\n'),
+  );
+
   return home;
 }
 
@@ -186,11 +220,67 @@ describe('hermes scanner', () => {
   });
 });
 
+describe('deepseek scanner (T1)', () => {
+  it('maps bundles to skills, flat files to commands, and patch rows to mcp with origins', () => {
+    const h = setupHome();
+    const snap = scanTarget('deepseek', h);
+    const items = snap.agents[0]!.items;
+
+    const docx = items.find((i) => i.name === 'docx')!;
+    expect(docx.kind).toBe('skill');
+    expect(docx.origin).toBe('local');
+    expect(docx.summary).toBe('Create and edit documents.');
+
+    expect(items.find((i) => i.name === 'deploy-now')?.kind).toBe('command');
+
+    const shim = items.find((i) => i.name === 'harness-nexus-my-kit')!;
+    expect(shim.kind).toBe('mcp');
+    expect(shim.origin).toBe('platform'); // harness-nexus serverName marker
+    expect(shim.meta?.command).toBe('/usr/local/bin/hnx');
+    expect(snap.agents[0]!.profileApplied).toBe(true);
+
+    const user = items.find((i) => i.name === 'web')!;
+    expect(user.origin).toBe('local');
+    expect(user.meta?.transport).toBe('http');
+  });
+
+  it('collects stdio and streamable-http mounts from the patch', async () => {
+    const h = setupHome();
+    const payload = await collectItems(
+      'deepseek',
+      [
+        { kind: 'mcp', name: 'harness-nexus-my-kit' },
+        { kind: 'mcp', name: 'web' },
+        { kind: 'skill', name: 'docx' },
+      ],
+      h,
+    );
+    expect(payload[0]!.artifact).toEqual({
+      kind: 'mcp',
+      transport: {
+        type: 'stdio',
+        command: '/usr/local/bin/hnx',
+        args: ['mcp', 'serve', '--profile', 'p1'],
+      },
+    });
+    expect(payload[1]!.artifact).toEqual({
+      kind: 'mcp',
+      transport: { type: 'streamable-http', url: 'http://localhost:3000/mcp' },
+    });
+    expect(payload[2]!.ok).toBe(true);
+  });
+});
+
 describe('scanAllTargets', () => {
   it('reports a snapshot for every supported target and validates against the wire schema', async () => {
     const h = setupHome();
     const snapshots = scanAllTargets(h);
-    expect(snapshots.map((s) => s.target).sort()).toEqual(['claude-code', 'codex', 'hermes']);
+    expect(snapshots.map((s) => s.target).sort()).toEqual([
+      'claude-code',
+      'codex',
+      'deepseek',
+      'hermes',
+    ]);
     const { inventorySnapshotSchema } = await import('@harness-nexus/shared');
     for (const snap of snapshots) {
       expect(inventorySnapshotSchema.safeParse(snap).success).toBe(true);

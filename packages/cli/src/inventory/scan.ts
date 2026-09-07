@@ -4,6 +4,7 @@ import { isPlatformPath, readLedger, type DiscoveredItem } from './common.js';
 import { claudeCodeScanner } from './scanners/claude-code.js';
 import { codexScanner } from './scanners/codex.js';
 import { hermesScanner } from './scanners/hermes.js';
+import { deepseekScanner } from './scanners/deepseek.js';
 import type { PayloadItem, TargetScanner } from './types.js';
 
 /**
@@ -13,7 +14,12 @@ import type { PayloadItem, TargetScanner } from './types.js';
  * server's SCANNABLE_TARGETS (modules/inventory.ts).
  */
 
-export const SCANNERS: TargetScanner[] = [claudeCodeScanner, codexScanner, hermesScanner];
+export const SCANNERS: TargetScanner[] = [
+  claudeCodeScanner,
+  codexScanner,
+  hermesScanner,
+  deepseekScanner,
+];
 
 export function scannerFor(target: AgentTarget): TargetScanner | undefined {
   return SCANNERS.find((s) => s.target === target);

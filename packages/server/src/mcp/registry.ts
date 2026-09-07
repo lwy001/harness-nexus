@@ -48,10 +48,12 @@ export class McpRegistry {
   private readonly uow: UnitOfWork;
   private readonly encryptionKey: string;
   private readonly pool: UpstreamPool;
+  private readonly logger: FastifyBaseLogger;
 
   constructor(opts: McpRegistryOptions) {
     this.uow = opts.uow;
     this.encryptionKey = opts.encryptionKey;
+    this.logger = opts.logger;
     this.pool = new UpstreamPool({ logger: opts.logger, clientName: 'harness-nexus-server' });
   }
 
@@ -86,11 +88,25 @@ export class McpRegistry {
       if (resolveDialSite(server, (name) => distributable.get(name) === true) !== 'server') {
         continue;
       }
-      defs.push({
-        id: server.id,
-        name: server.name,
-        transport: await this.resolveTransport(server.transport),
-      });
+      // A row whose transport cannot resolve — stdio can never be server-dialed
+      // (auto derives it when a referenced credential is missing/non-
+      // distributable, e.g. a C3-imported `${cred:...}` placeholder whose
+      // credential doesn't exist yet), or a referenced credential is absent —
+      // is skipped with a warning. Unreachable/misconfigured upstreams never
+      // block the pool (Phase 2.2 rule); the row is still dialed by nothing
+      // until its config is fixed.
+      try {
+        defs.push({
+          id: server.id,
+          name: server.name,
+          transport: await this.resolveTransport(server.transport),
+        });
+      } catch (err) {
+        this.logger.warn(
+          { serverId: server.id, serverName: server.name },
+          `mcp server skipped by the server-dial pool: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     return defs;
   }
@@ -110,9 +126,11 @@ export class McpRegistry {
   /** Substitute every `${cred:NAME}` in a transport config (server-side dial). */
   private async resolveTransport(t: McpTransport): Promise<ResolvedTransport> {
     if (t.type === 'stdio') {
-      // Defensive: the route layer rejects stdio server-dial (409); auto never
-      // derives it for a reachable config. A stdio row that somehow resolves
-      // here is skipped rather than crashing the pool.
+      // Defensive: the route layer rejects stdio server-dial (409); auto only
+      // derives it when a referenced credential is missing/non-distributable
+      // (e.g. a C3-imported `${cred:...}` placeholder). Throwing here is fine:
+      // serverDialedDefinitions skips the row with a warning instead of
+      // crashing the pool.
       throw new Error(`stdio upstream "${t.command}" cannot be server-dialed`);
     }
     const url = await this.resolve(t.url);
@@ -221,7 +239,7 @@ export class McpRegistry {
     }
     const distributable = await this.distributabilityIndex();
     const site = resolveDialSite(server, (name) => distributable.get(name) === true);
-    if (site !== 'server') {
+    if (site !== 'server' || server.transport.type === 'stdio') {
       throw new RegistryError(
         `MCP server "${server.name}" is dialed by the client, not the platform (dial site: ${site})`,
         'not_dialable',

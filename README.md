@@ -19,8 +19,9 @@ while a small client (`hnx`) on each of your machines does the local work.
   at rest); tools are aggregated behind one endpoint per profile. Agents on
   your machines consume them as local stdio MCP shims (`hnx mcp serve`).
 - **Resources & profiles** — versioned skills / hooks / sub-agents / rules /
-  MCP definitions, bundled into per-target profiles (Claude Code, Codex,
-  Hermes) and deployed to a machine with one job.
+  MCP definitions, bundled into per-target profiles and deployed to a machine
+  with one job. Supported harnesses: **Claude Code, Codex, and DeepSeek
+  Harness (dsh)** — more targets are on the roadmap.
 - **Machines & deploy** — enroll a machine with `hnx enroll`, keep its daemon
   connected over WSS, scan what's installed there, diff against a profile,
   one-click import back into the platform, and deploy profiles as replayable
@@ -33,20 +34,20 @@ while a small client (`hnx`) on each of your machines does the local work.
 
 ## Status
 
-| Area                                   | State                      |
-| -------------------------------------- | -------------------------- |
-| Auth, users, roles, PATs               | ✅ shipped                 |
-| MCP connections, credentials, proxy    | ✅ shipped                 |
-| Resources & profile editors (web)      | ✅ shipped                 |
-| Skill hub (browse/save/search sources) | ✅ shipped                 |
-| Claude Code marketplace emitter        | ✅ shipped                 |
-| `hnx` install / uninstall (local)      | ✅ shipped (hermes, codex) |
-| Machines, daemon, MCP shims            | ✅ shipped                 |
-| Inventory / diff / import              | ✅ shipped                 |
-| Remote deploy jobs                     | ✅ shipped                 |
-| ACP chat                               | ✅ shipped                 |
-| Orchestration (multi-agent)            | 🧪 undesigned              |
-| Other import adapters (ECC/Superpower) | 🧪 planned                 |
+| Area                                   | State                        |
+| -------------------------------------- | ---------------------------- |
+| Auth, users, roles, PATs               | ✅ shipped                   |
+| MCP connections, credentials, proxy    | ✅ shipped                   |
+| Resources & profile editors (web)      | ✅ shipped                   |
+| Skill hub (browse/save/search sources) | ✅ shipped                   |
+| Claude Code marketplace emitter        | ✅ shipped                   |
+| `hnx` install / uninstall (local)      | ✅ shipped (codex, deepseek) |
+| Machines, daemon, MCP shims            | ✅ shipped                   |
+| Inventory / diff / import              | ✅ shipped                   |
+| Remote deploy jobs                     | ✅ shipped                   |
+| ACP chat                               | ✅ shipped                   |
+| Orchestration (multi-agent)            | 🧪 undesigned                |
+| Other import adapters (ECC/Superpower) | 🧪 planned                   |
 
 The detailed plan lives in [`docs/roadmap.md`](docs/roadmap.md); each phase has
 a paired PRD + design doc indexed in [`docs/README.md`](docs/README.md).

@@ -159,7 +159,7 @@ large, least-certain multi-source block (can stop partway).
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
   Harness Nexus stores references, the target tool executes.
 
-## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped, T-wave open)
+## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5, T1 shipped)
 
 > Repositioning: from asset-integration platform to **agent orchestration
 > platform**. Control plane (server + web) / data plane (one `hnx` client
@@ -180,7 +180,7 @@ large, least-certain multi-source block (can stop partway).
 | **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                                                                                                          | 3.7                                            |
 | **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                                                                                                    | reuses 3.3                                     |
 | **C5** ✅ | ACP chat                      | `chat:*` over `/app`↔`/ctl` (semantic stream + ACP payload dialect), daemon ACP adapter subprocesses (claude-code/codex/hermes), permission watchdog, AcSession audit, web `/chat` UI (owner-only, off by default) | Phase 5 (other half)                           |
-| **T1** 🚧 | DeepSeek Harness onboarding   | `deepseek` `AgentTarget`: install adapter (`~/.dsh` skills + home `cordis.patch.yml` MCP rows via the `hnx mcp serve` shim), C3 scanner, C5 ACP row (`dsh --profile acp`), C4-deployable                           | supersedes 3.8 "other agents"; priority: first |
+| **T1** ✅ | DeepSeek Harness onboarding   | `deepseek` `AgentTarget`: install adapter (`~/.dsh` skills + home `cordis.patch.yml` MCP rows via the `hnx mcp serve` shim), C3 scanner, C5 ACP row (`dsh --profile acp`), C4-deployable                           | supersedes 3.8 "other agents"; priority: first |
 | C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                                                                                                           | Phase 6 Channels (adjacent)                    |
 
 - Key locked decisions: global-scope credentials non-distributable by default
@@ -252,3 +252,22 @@ STDIO_REQUIRES_CLIENT` / `409 CREDENTIAL_NOT_DISTRIBUTABLE` /
   MachineDetail Deployments card (deploy form, live jobs table, agent
   instances). C3's interactive scan/import stay direct request/response —
   jobs are for replayable fire-and-forget work.
+- ✅ **T1 shipped (2026-09, branch `phase-8-t1-deepseek`)**: `deepseek`
+  `AgentTarget` end to end. Research pinned to dsh `v0.1.2-rc.1`
+  (`~/.dsh` home; home-level `cordis.patch.yml` applies to EVERY profile and
+  hot-reloads live; Agent-Skills format with MANDATORY frontmatter
+  name+description, kebab-case; `dsh-mcp-client` stdio rows; native
+  `dsh --profile acp`). CLI adapter (`install/adapters/deepseek.ts`):
+  skills → `~/.dsh/skills/<slug>/` with frontmatter synthesis, commands →
+  flat `skills/<slug>.md` (the `/name` surface), MCP → per-profile MARKED
+  region in the home patch (idempotent replace, other profiles' regions and
+  user rows untouched), rule/sub_agent/hook skipped with warnings; C3
+  scanner (bundles→skill, flat→command, patch rows keyed by `serverName`);
+  C5 ACP row `['dsh', '--profile', 'acp']` (`HN_ACP_COMMAND_DEEPSEEK`
+  override); C4-deployable; web target pickers. `HOOK_SUPPORT['deepseek']
+= null` (the CC/Codex hook BRIDGES are opt-in per-profile packages).
+  Surfaced + fixed a latent registry crash: stdio `auto` + missing
+  credential (the C3-import `${cred:KEY}` shape) derives server-dial and
+  crashed the fire-and-forget reload — now skipped with a warning
+  (`registry-resilience.test.ts`). Supported harnesses (install + ACP):
+  Claude Code, Codex, DeepSeek Harness.

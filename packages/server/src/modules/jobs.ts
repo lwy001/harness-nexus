@@ -16,9 +16,10 @@ import { jobView } from '../jobs/service.js';
 /**
  * Targets that have a local-write install adapter in the CLI registry.
  * claude-code is served by the 3.5 marketplace emitter (Claude Code installs
- * the plugin itself) — deploying into it from here is not a path.
+ * the plugin itself) — deploying into it from here is not a path. deepseek
+ * (T1) writes skills + a home cordis-patch MCP row like the others.
  */
-export const DEPLOYABLE_TARGETS = ['hermes', 'codex'] as const;
+export const DEPLOYABLE_TARGETS = ['hermes', 'codex', 'deepseek'] as const;
 
 export async function jobsRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };

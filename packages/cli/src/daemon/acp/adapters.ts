@@ -16,6 +16,9 @@ const DEFAULT_ACP_COMMANDS: Record<AgentTarget, readonly string[] | null> = {
   'claude-code': ['npx', '-y', '@zed-industries/claude-agent-acp'],
   // Official Zed adapter wrapping the OpenAI Codex CLI (needs `codex` on PATH).
   codex: ['npx', '-y', '@zed-industries/codex-acp'],
+  // DeepSeek Harness ships a native ACP v1 profile (needs `dsh` on PATH and a
+  // configured provider route — T1 research § ACP).
+  deepseek: ['dsh', '--profile', 'acp'],
   // Hermes ships a native ACP adapter as an install extra.
   hermes: ['python3', '-m', 'acp_adapter'],
   zcode: null, // no adapter exists (also no install adapter — 3.x)
