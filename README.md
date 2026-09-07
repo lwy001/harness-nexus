@@ -10,9 +10,6 @@ roadmap are still unbuilt (see [Status](#status)), and the docs sometimes lag
 the code. It is usable today for the workflows described below — but expect
 rough edges, and don't put irreplaceable data in it yet.
 
-The directory is still named `mcp-proxy` for historical reasons; the project /
-npm scope is **`harnessnexus`** (`@harness-nexus/*`).
-
 ## What it does
 
 A control plane / data-plane split: the server + web UI manage everything,
