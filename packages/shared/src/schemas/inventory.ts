@@ -17,7 +17,7 @@ import { agentTargetSchema } from './profile.js';
  * the SDK, and the CLI scanner registry (kept in lockstep with
  * `packages/cli/src/inventory/scan.ts`).
  */
-export const SCANNABLE_TARGETS = ['claude-code', 'codex', 'hermes'] as const;
+export const SCANNABLE_TARGETS = ['claude-code', 'codex', 'hermes', 'deepseek'] as const;
 
 /** Kinds an inventory item can carry — `ResourceKind` minus `hook` (no target has a scanner for it in C3). */
 export const inventoryItemKindSchema = z.enum(['skill', 'command', 'sub_agent', 'rule', 'mcp']);

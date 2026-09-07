@@ -86,7 +86,9 @@ started. Doc links point at the PRD (`docs/prd/`) and design (`docs/design/`).
   Codex adapter the trivial case (TOML `config.toml` stdio entry).
 - ➡️ 3.7 — Cross-target profile import → absorbed into Phase 8 (C3): the
   daemon's inventory scan + diff + one-click import generalizes it
-- ⏳ 3.8 — Other well-known agents (optional) + ECC/Superpower import adapters
+- ➡️ 3.8 — "Other well-known agents" half → superseded by the **Phase 8
+  T-wave** (T1 = DeepSeek Harness, explicitly prioritized ahead of the rest);
+  ECC/Superpower import adapters remain here, pending
 - PRD: `docs/prd/phase-3-install.md` · Design: `docs/design/phase-3-install.md` · Design 3.5: `docs/design/phase-3.5-marketplace-emitter.md`
 - Research: `docs/research/phase-3-ecc-install-patterns.md` (adapter factory + plan/apply + install-state; Codex ground-truth) · `docs/research/phase-3-plugin-targets.md` (per-target formats; CC/Hermes detail, ZCode superseded) · `docs/research/phase-3.5-marketplace-emitter-spike.md` (empirical CC marketplace protocol constraints)
 
@@ -157,21 +159,29 @@ large, least-certain multi-source block (can stop partway).
 - Out of scope: content security scanning (Hermes `skills_guard.py` model) —
   Harness Nexus stores references, the target tool executes.
 
-## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped)
+## Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped, T-wave open)
 
 > Repositioning: from asset-integration platform to **agent orchestration
 > platform**. Control plane (server + web) / data plane (one `hnx` client
 > program per enrolled machine). Decisions locked in the PRD; protocol, data
 > model, and per-phase plan in the design doc.
+>
+> **T-wave (target onboarding)**: adding a harness as a supported target
+> spans install adapter + inventory scanner + ACP chat row + remote deploy —
+> all but the first are Phase 8 surfaces, so onboarding lives here. The
+> supported-harnesses list (one-click install + ACP chat): **Claude Code,
+> Codex, DeepSeek Harness** — the user-facing docs mention only these three
+> for now (hermes keeps working unlisted).
 
-| #         | Sub-phase                     | Delivers                                                                                                                                                                                                           | Absorbs / impacts                         |
-| --------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| **C1** ✅ | daemon + machine registration | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)                                                                                                                | Phase 5 (half); deletes `acp-bridge`      |
-| **C2** ✅ | client MCP serving            | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode                                                                                       | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6 |
-| **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                                                                                                          | 3.7                                       |
-| **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                                                                                                    | reuses 3.3                                |
-| **C5** ✅ | ACP chat                      | `chat:*` over `/app`↔`/ctl` (semantic stream + ACP payload dialect), daemon ACP adapter subprocesses (claude-code/codex/hermes), permission watchdog, AcSession audit, web `/chat` UI (owner-only, off by default) | Phase 5 (other half)                      |
-| C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                                                                                                           | Phase 6 Channels (adjacent)               |
+| #         | Sub-phase                     | Delivers                                                                                                                                                                                                           | Absorbs / impacts                              |
+| --------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| **C1** ✅ | daemon + machine registration | `hnx daemon` + `Machine` entity + enrollment (machine PAT) + WSS control channel (Socket.IO `/ctl`)                                                                                                                | Phase 5 (half); deletes `acp-bridge`           |
+| **C2** ✅ | client MCP serving            | stdio shims (`hnx mcp serve`), credential distributability + dial-site routing, `/mcp` outlet narrowing, emitter client mode                                                                                       | 2.1 `mode`, 2.2 pooling, 3.5 emitter, 3.6      |
+| **C3** ✅ | inventory + diff + import     | per-target scans, profile diff, one-click import into resources + profile                                                                                                                                          | 3.7                                            |
+| **C4** ✅ | remote deploy                 | job abstraction (queue/dispatch/replay) over the 3.3 pipeline + Agent instances                                                                                                                                    | reuses 3.3                                     |
+| **C5** ✅ | ACP chat                      | `chat:*` over `/app`↔`/ctl` (semantic stream + ACP payload dialect), daemon ACP adapter subprocesses (claude-code/codex/hermes), permission watchdog, AcSession audit, web `/chat` UI (owner-only, off by default) | Phase 5 (other half)                           |
+| **T1** 🚧 | DeepSeek Harness onboarding   | `deepseek` `AgentTarget`: install adapter (`~/.dsh` skills + home `cordis.patch.yml` MCP rows via the `hnx mcp serve` shim), C3 scanner, C5 ACP row (`dsh --profile acp`), C4-deployable                           | supersedes 3.8 "other agents"; priority: first |
+| C6        | orchestration                 | deliberately undesigned until C1–C5 land                                                                                                                                                                           | Phase 6 Channels (adjacent)                    |
 
 - Key locked decisions: global-scope credentials non-distributable by default
   (server `/mcp` is their sole outlet); daemon is on-demand and MCP **never**

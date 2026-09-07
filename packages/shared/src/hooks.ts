@@ -60,6 +60,10 @@ export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> |
   // Codex uses a config/prompts-based hook model (TOML config + generated
   // prompts), not declarative hooks.json — null, like Hermes.
   codex: null,
+  // DeepSeek Harness has no declarative hook format of its own; its CC/Codex
+  // hooks.json BRIDGES are opt-in per-profile packages an install cannot wire
+  // (research § Hooks) — null, like Hermes/Codex.
+  deepseek: null,
   // 'generic' assumes the full set — a permissive default for unknown targets.
   generic: new Set<HookEvent>(HOOK_EVENTS),
 };

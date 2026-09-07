@@ -17,9 +17,19 @@ export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 
 //
 // Priority order (Phase 3): hermes → claude-code → codex. `zcode` has NO install
 // adapter (no reference material) but stays in the union to avoid a breaking
-// enum change — install rejects it with 409 TARGET_UNSUPPORTED. See
-// `docs/research/phase-3-ecc-install-patterns.md`.
-export const agentTargetSchema = z.enum(['claude-code', 'zcode', 'hermes', 'codex', 'generic']);
+// enum change — install rejects it with 409 TARGET_UNSUPPORTED. `deepseek`
+// (DeepSeek Harness, Phase 8 T1 — first of the target-onboarding wave,
+// prioritized ahead of the rest). See
+// `docs/research/phase-3-ecc-install-patterns.md` +
+// `docs/research/phase-8-t1-deepseek-harness.md`.
+export const agentTargetSchema = z.enum([
+  'claude-code',
+  'zcode',
+  'hermes',
+  'codex',
+  'deepseek',
+  'generic',
+]);
 export type AgentTarget = z.infer<typeof agentTargetSchema>;
 
 export const profileImportSchema = z.object({
