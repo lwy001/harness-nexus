@@ -60,6 +60,8 @@ export interface DiscoveredItem {
         transport?: 'stdio' | 'sse' | 'http' | undefined;
         command?: string | undefined;
         url?: string | undefined;
+        /** claude-code plugin-cache items: `<marketplace>/<plugin>/<version>`. */
+        plugin?: string | undefined;
       }
     | undefined;
   /** Extra evidence for origin:'platform' beyond the ledger (scanner-specific). */

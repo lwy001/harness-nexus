@@ -26,6 +26,19 @@ function setupHome(): string {
   );
   w('.claude/agents/reviewer.md', 'You are a code reviewer.\n');
   w('.claude/skills/binary-skill/SKILL.md', 'before\u0000after\n'); // binary sniff
+  // ---- claude-code marketplace plugin cache (the 3.5 install path) ----
+  w(
+    '.claude/plugins/cache/harness-nexus-ashen/cc-kit/1.0.0/skills/cc-plugin-skill/SKILL.md',
+    '---\nname: cc-plugin-skill\ndescription: from plugin\n---\n\nPlugin skill body.\n',
+  );
+  w(
+    '.claude/plugins/cache/harness-nexus-ashen/cc-kit/1.0.0/commands/plug-cmd.md',
+    'Plugin command body.\n',
+  );
+  w(
+    '.claude/plugins/cache/community/third-party/0.2.0/skills/community-skill/SKILL.md',
+    '---\nname: community-skill\ndescription: not ours\n---\nCommunity skill body.\n',
+  );
   w(
     '.claude.json',
     JSON.stringify({
@@ -163,6 +176,29 @@ describe('claude-code scanner', () => {
     expect(shim.kind).toBe('mcp');
     expect(shim.origin).toBe('platform');
     expect(snap.agents[0]!.profileApplied).toBe(true);
+  });
+
+  it('sees 3.5 marketplace plugin cache — harness-nexus items platform, third-party local', async () => {
+    const h = setupHome();
+    const snap = scanTarget('claude-code', h);
+    const items = snap.agents[0]!.items;
+
+    const pluginSkill = items.find((i) => i.name === 'cc-plugin-skill')!;
+    expect(pluginSkill.kind).toBe('skill');
+    expect(pluginSkill.origin).toBe('platform');
+    expect(pluginSkill.meta?.plugin).toBe('harness-nexus-ashen/cc-kit/1.0.0');
+    expect(pluginSkill.summary).toBe('Plugin skill body.');
+
+    expect(items.find((i) => i.name === 'plug-cmd')?.origin).toBe('platform');
+    expect(items.find((i) => i.name === 'community-skill')?.origin).toBe('local');
+
+    // Collect works straight off the cache path.
+    const payload = await collectItems(
+      'claude-code',
+      [{ kind: 'skill', name: 'cc-plugin-skill' }],
+      h,
+    );
+    expect(payload[0]!.ok).toBe(true);
   });
 
   it('redacts mcp env values daemon-side — plaintext never crosses the wire', async () => {

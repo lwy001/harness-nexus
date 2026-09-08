@@ -20,9 +20,14 @@ import type { RawMcpEntry, TargetScanner } from '../types.js';
  *   commands → ~/.claude/commands/<name>.md
  *   agents   → ~/.claude/agents/<name>.md
  *   mcp      → `mcpServers` in ~/.claude.json (user scope — OUTSIDE ~/.claude)
+ *   plugins  → ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/
+ *              {skills,commands,agents} — the 3.5 marketplace emitter IS the
+ *              claude-code install path, so its artifacts must be visible.
+ *              Items from a `harness-nexus*` marketplace carry platform origin
+ *              (the emitter names its marketplace exactly
+ *              `harness-nexus-<username>`); third-party plugins are local.
  * Rules and hooks are not scanned (no established global rules dir; CC's hook
- * matcher format is lossy vs the 4.5 event map). `~/.claude/plugins`
- * (marketplace installs) are out of scope for C3.
+ * matcher format is lossy vs the 4.5 event map).
  */
 
 const CLAUDE_JSON_LIMIT = 4 * 1024 * 1024;
@@ -43,12 +48,91 @@ function parseClaudeJson(homeDir: string): Record<string, RawMcpEntry> {
   }
 }
 
+/** The emitter's marketplace name — the platform marker for plugin-cache items. */
+export function isPlatformMarketplace(name: string): boolean {
+  return name === 'harness-nexus' || name.startsWith('harness-nexus-');
+}
+
+/** Every versioned plugin root in the CC marketplace cache. */
+function pluginCacheRoots(home: string): { dir: string; marketplace: string; relBase: string }[] {
+  const cacheDir = path.join(home, 'plugins', 'cache');
+  if (!fs.existsSync(cacheDir)) return [];
+  const roots: { dir: string; marketplace: string; relBase: string }[] = [];
+  const dnts = (dir: string) =>
+    fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const market of dnts(cacheDir)) {
+    if (!market.isDirectory()) continue;
+    const marketDir = path.join(cacheDir, market.name);
+    for (const plugin of dnts(marketDir)) {
+      if (!plugin.isDirectory()) continue;
+      const pluginDir = path.join(marketDir, plugin.name);
+      for (const version of dnts(pluginDir)) {
+        if (!version.isDirectory()) continue;
+        roots.push({
+          dir: path.join(pluginDir, version.name),
+          marketplace: market.name,
+          relBase: `plugins/cache/${market.name}/${plugin.name}/${version.name}`,
+        });
+      }
+    }
+  }
+  return roots;
+}
+
+/** Extra discovery context for plugin-cache items (merged into item meta). */
+interface PluginCtx {
+  platform: boolean;
+  plugin: string;
+}
+
+/** Scan a skills directory of `<name>/SKILL.md` (+ bundle files). */
+function scanSkillsDir(skillsDir: string, relBase: string, ctx?: PluginCtx): DiscoveredItem[] {
+  if (!fs.existsSync(skillsDir)) return [];
+  const items: DiscoveredItem[] = [];
+  for (const entry of fs
+    .readdirSync(skillsDir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(skillsDir, entry.name);
+    const files = skillDirFiles(dir);
+    const skillMd = readTextBounded(path.join(dir, 'SKILL.md'));
+    if (!skillMd.ok) {
+      items.push({
+        kind: 'skill',
+        name: entry.name,
+        absPath: dir,
+        relPath: `${relBase}/${entry.name}`,
+        importable: false,
+        note: files.length === 0 ? 'empty' : `SKILL.md ${skillMd.error}`,
+        ...(ctx ? { platform: ctx.platform } : {}),
+        ...(ctx ? { meta: { plugin: ctx.plugin } } : {}),
+      });
+      continue;
+    }
+    const totalBytes = files.reduce((sum, f) => sum + fs.statSync(path.join(dir, f)).size, 0);
+    items.push({
+      kind: 'skill',
+      name: entry.name,
+      absPath: dir,
+      relPath: `${relBase}/${entry.name}`,
+      importable: totalBytes <= MAX_ITEM_BYTES,
+      ...(totalBytes > MAX_ITEM_BYTES ? { note: 'too-large' } : {}),
+      summary: summarize(skillMd.content),
+      preview: previewOf(skillMd.content),
+      meta: { multi: files.length > 1, ...(ctx ? { plugin: ctx.plugin } : {}) },
+      ...(ctx?.platform ? { platform: true } : {}),
+    });
+  }
+  return items;
+}
+
 /** Scan one directory of sibling markdown artifacts (commands/, agents/). */
 function scanMarkdownDir(
   dir: string,
   relBase: string,
   kind: 'command' | 'sub_agent',
   ext: '.md',
+  ctx?: PluginCtx,
 ): DiscoveredItem[] {
   if (!fs.existsSync(dir)) return [];
   const items: DiscoveredItem[] = [];
@@ -68,6 +152,8 @@ function scanMarkdownDir(
       importable: text.ok,
       ...(text.ok ? { summary: summarize(text.content) } : { note: text.error }),
       ...(text.ok ? { preview: previewOf(text.content) } : {}),
+      ...(ctx ? { meta: { plugin: ctx.plugin } } : {}),
+      ...(ctx?.platform ? { platform: true } : {}),
     });
   }
   return items;
@@ -85,42 +171,38 @@ export const claudeCodeScanner: TargetScanner = {
     const homeExists = fs.existsSync(home);
 
     if (homeExists) {
-      const skillsDir = path.join(home, 'skills');
-      if (fs.existsSync(skillsDir)) {
-        for (const entry of fs
-          .readdirSync(skillsDir, { withFileTypes: true })
-          .sort((a, b) => a.name.localeCompare(b.name))) {
-          if (!entry.isDirectory()) continue;
-          const dir = path.join(skillsDir, entry.name);
-          const files = skillDirFiles(dir);
-          const skillMd = readTextBounded(path.join(dir, 'SKILL.md'));
-          if (!skillMd.ok) {
-            items.push({
-              kind: 'skill',
-              name: entry.name,
-              absPath: dir,
-              relPath: `skills/${entry.name}`,
-              importable: false,
-              note: files.length === 0 ? 'empty' : `SKILL.md ${skillMd.error}`,
-            });
-            continue;
-          }
-          const totalBytes = files.reduce((sum, f) => sum + fs.statSync(path.join(dir, f)).size, 0);
-          items.push({
-            kind: 'skill',
-            name: entry.name,
-            absPath: dir,
-            relPath: `skills/${entry.name}`,
-            importable: totalBytes <= MAX_ITEM_BYTES,
-            ...(totalBytes > MAX_ITEM_BYTES ? { note: 'too-large' } : {}),
-            summary: summarize(skillMd.content),
-            preview: previewOf(skillMd.content),
-            meta: { multi: files.length > 1 },
-          });
-        }
-      }
+      items.push(...scanSkillsDir(path.join(home, 'skills'), 'skills'));
       items.push(...scanMarkdownDir(path.join(home, 'commands'), 'commands', 'command', '.md'));
       items.push(...scanMarkdownDir(path.join(home, 'agents'), 'agents', 'sub_agent', '.md'));
+
+      // Marketplace plugin cache — the 3.5 install path. User-level items win
+      // the (kind, name) dedupe in scan.ts, so a same-named user skill
+      // shadows the plugin copy.
+      for (const root of pluginCacheRoots(home)) {
+        const ctx: PluginCtx = {
+          platform: isPlatformMarketplace(root.marketplace),
+          plugin: root.relBase.replace(/^plugins\/cache\//, ''),
+        };
+        items.push(...scanSkillsDir(path.join(root.dir, 'skills'), `${root.relBase}/skills`, ctx));
+        items.push(
+          ...scanMarkdownDir(
+            path.join(root.dir, 'commands'),
+            `${root.relBase}/commands`,
+            'command',
+            '.md',
+            ctx,
+          ),
+        );
+        items.push(
+          ...scanMarkdownDir(
+            path.join(root.dir, 'agents'),
+            `${root.relBase}/agents`,
+            'sub_agent',
+            '.md',
+            ctx,
+          ),
+        );
+      }
     }
 
     for (const [key, entry] of Object.entries(parseClaudeJson(homeDir))) {
@@ -142,7 +224,11 @@ export const claudeCodeScanner: TargetScanner = {
 
   platformMarkers(home) {
     const homeDir = path.dirname(home);
-    return Object.keys(parseClaudeJson(homeDir)).filter(isPlatformMcpName);
+    const markers = Object.keys(parseClaudeJson(homeDir)).filter(isPlatformMcpName);
+    for (const root of pluginCacheRoots(home)) {
+      if (isPlatformMarketplace(root.marketplace)) markers.push(root.marketplace);
+    }
+    return markers;
   },
 
   async collect(home, item) {

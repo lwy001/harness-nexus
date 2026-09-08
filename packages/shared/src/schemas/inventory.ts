@@ -46,6 +46,8 @@ export const inventoryItemSchema = z.object({
       transport: z.enum(['stdio', 'sse', 'http']).optional(),
       command: z.string().max(256).optional(),
       url: z.string().max(512).optional(),
+      /** For claude-code plugin-cache items: `<marketplace>/<plugin>/<version>`. */
+      plugin: z.string().max(160).optional(),
     })
     .optional(),
 });
