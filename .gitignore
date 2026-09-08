@@ -47,3 +47,7 @@ coverage/
 
 # Profiles installed locally by the CLI (user-machines only, never committed)
 .installed-profiles/
+
+# Local-only dev rig notes (this machine's docker deployment, IPs, tokens
+# procedures) — never commit; see AGENTS.md pointer for why it exists.
+docs/dev/
