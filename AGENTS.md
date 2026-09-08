@@ -754,7 +754,13 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
-  C6 (orchestration).
+  C6 (orchestration). **Phase 9 — harness runtime lifecycle — is designed
+  (2026-09), not yet implemented:** managing the harness software itself on
+  machines (runtime inventory: bin/version/install-method; `harness`-type
+  install/upgrade/pin jobs on the C4 pipeline; `RuntimeConfig` provider/model
+  push referencing distributable credentials; redacted config viewing). Read
+  `docs/research/phase-9-harness-runtime.md` + `docs/design/phase-9-harness-runtime.md`
+  first — waves W1–W4 land independently.
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`

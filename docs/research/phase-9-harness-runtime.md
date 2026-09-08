@@ -1,0 +1,176 @@
+# Research: Phase 9 — Harness runtime lifecycle (binaries, versions, provider config)
+
+> Status: **studied** (2026-09). Not yet implemented — this document is the ground
+> truth the design (`docs/design/phase-9-harness-runtime.md`) builds on.
+>
+> Sources: official Claude Code docs (code.claude.com — setup / settings /
+> env-vars / model-config), official Codex docs (learn.chatgpt.com config
+> reference + github.com/openai/codex), the Phase 8 T1 dsh research
+> (`docs/research/phase-8-t1-deepseek-harness.md`, pinned to dsh `v0.1.2-rc.1`)
+> and the acp-ref reference project's dsh overlay (`~/acp-ref/acp-bridge/overlay.yml`).
+
+## 1. The question
+
+Phase 8 C3/C4 manage **profile artifacts** (skills, commands, MCP rows) on a
+machine. Nothing in the platform today can answer or act on:
+
+- Is `claude` / `codex` / `dsh` **installed** on this machine? Which binary
+  path, which **version**, installed **how** (npm / native / brew)?
+- **Install / upgrade / pin** that software remotely, one click.
+- Configure the **LLM provider route** (provider, base URL, model, API key)
+  the harness should use — remotely, without SSH.
+- **View** the harness's effective configuration from the web UI (redacted).
+
+## 2. Claude Code (`claude`)
+
+### Install methods
+
+| Method | Command | Notes |
+| --- | --- | --- |
+| Native (recommended) | `curl -fsSL https://claude.ai/install.sh \| bash` | No Node dependency. Pin: `bash -s 2.1.89` or `bash -s stable`. Windows: `install.ps1` / `install.cmd`. |
+| npm | `npm install -g @anthropic-ai/claude-code` | Node **22+** required since v2.1.198 (the package itself ships a native binary via optional deps). npm installs are soft-deprecated in favor of native. Never with sudo. |
+| Homebrew | `brew install --cask claude-code` (`@latest` for the bleeding-edge channel) | No auto-update by default. |
+
+### Update semantics
+
+- Native installs **auto-update in the background** (startup + periodic checks);
+  manual: `claude update`. `DISABLE_AUTOUPDATER=1` (settings `env`) disables the
+  background updater, `DISABLE_UPDATES` blocks everything.
+- npm: `npm install -g @anthropic-ai/claude-code@latest` — **not** `npm update -g`
+  (respects the original semver range and may stay behind).
+- Channels: `latest` (default, every release) vs `stable` (~a week old, regressions
+  skipped) — `autoUpdatesChannel` in settings.json or `/config`. `minimumVersion`
+  guards against downgrades when switching channels.
+- **Consequence for remote management:** a platform-managed machine should set
+  `DISABLE_AUTOUPDATER` so our pinned/upgrade jobs are the only version movers.
+
+### Detection & version
+
+- `claude --version` → `2.1.211 (Claude Code)` (`<semver> (Claude Code)`).
+- Native launcher: `~/.local/bin/claude` → `~/.local/share/claude/versions/…`;
+  npm: resolves under the global `node_modules`; brew: under the brew prefix.
+  Install-method detection = bin-path prefix sniff + `claude doctor` exists but is
+  interactive-ish; path sniff is enough and cheap.
+
+### Config & provider routing
+
+- `~/.claude/settings.json` is the sanctioned file: `env` block
+  (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`), `model`,
+  `autoUpdatesChannel`, `permissions`, `apiKeyHelper`. Enterprise managed
+  settings override it (out of our scope).
+- Routing nuance: `ANTHROPIC_BASE_URL` only changes **where** requests go; the
+  model is chosen by `model` / `ANTHROPIC_DEFAULT_*`. Both must be set together
+  for a provider switch.
+- Keys **may** live in settings.json `env` — that is the documented pattern for
+  custom endpoints (file perms 0600 apply as our hygiene, not theirs).
+
+## 3. Codex (`codex`)
+
+### Install & update
+
+- `npm i -g @openai/codex` (Node 18+; Rust binary via npm wrapper) ·
+  `brew install --cask codex` · winget · direct binary from
+  github.com/openai/codex releases.
+- No built-in updater contract we can rely on: upgrade = **reinstall the same
+  channel** (`npm i -g @openai/codex@latest`, `brew upgrade codex`). Pinning =
+  `@<version>` on npm. Version: `codex --version` → `codex-cli <semver>` (older
+  builds) or a bare semver (newer); parse leniently.
+
+### Config & provider routing
+
+- Home: `$CODEX_HOME` (default `~/.codex`). Config: `config.toml` —
+  `model`, `model_provider`, and per-provider blocks:
+
+  ```toml
+  [model_providers.my-gateway]
+  name = "My Provider"
+  base_url = "https://gw.example.com/v1"
+  wire_api = "chat"            # or "responses"
+  env_key = "MY_GATEWAY_API_KEY"   # env var NAME the provider reads
+  ```
+
+- Auth: `~/.codex/auth.json` — `{"auth_mode": "apikey", "OPENAI_API_KEY": "sk-…"}`
+  or ChatGPT-login tokens; `codex login --with-api-key` (key via stdin) writes it.
+- Caveats that matter to us: a custom provider **cannot reuse** built-in OpenAI
+  auth — supply its own key via `env_key` (an env var the codex process must
+  have) or a provider-specific auth file; `requires_openai_auth = true` flips a
+  provider back to auth.json and ignores `env_key`. Our remote apply must write
+  BOTH the TOML block and a working key channel (auth.json for apikey mode;
+  for custom providers the key has to reach the process env — see §5).
+
+## 4. DeepSeek Harness (`dsh`)
+
+From the T1 research (ground truth pinned to `v0.1.2-rc.1`, developer preview —
+expect movement across 0.1.x):
+
+- **Install:** npm-distributed — `npm i -g @deepseek-ai/dsh` (runs fine via
+  `npx @deepseek-ai/dsh …` too). Home: `$DSH_HOME` → `~/.dsh`. `dsh --version`
+  prints the semver.
+- **Layering:** profiles at `~/.dsh/profiles/<name>/` (pnpm-managed plugin
+  sets) → profile `cordis.patch.yml` → **home `cordis.patch.yml`** (applies to
+  every profile, hot-reloads live). T1 already owns a managed MARKED region in
+  the home patch for MCP rows — the same region mechanism extends to provider
+  rows.
+- **Provider config** (verified in the acp-ref overlay): the LLM provider is a
+  Cordis plugin, configured as patch rows:
+
+  ```yaml
+  - id: llm-pi-ai
+    name: '@deepseek-ai/dsh-llm-pi-ai'
+    config:
+      providers:
+        demo:
+          api: anthropic-messages     # or the OpenAI-compatible api
+          baseURL: https://…
+          apiKeyEnv: LLM_API_KEY      # env var NAME — the key never sits in the yml
+          models:
+            - id: <model-id>
+  ```
+
+  The key reaches dsh via process env (`apiKeyEnv`), not via a file. The acp-ref
+  bridge does exactly this: template + env, applied with `--patch`.
+
+## 5. Cross-cutting observations
+
+1. **Version probing is trivial and uniform** — all three answer `<cli> --version`
+   on PATH; a scanner can also locate the bin (`which`-walk over PATH + the known
+   per-method locations) and classify the install method by path prefix
+   (`~/.local/share/claude` → native; global `node_modules` → npm; brew prefix →
+   brew; else unknown).
+2. **Upgrades are idempotent reinstalls** (npm `@latest`/`@<version>`, brew
+   upgrade) or a built-in updater (`claude update`). Downgrade = pin install.
+   No separate "uninstall upgrade" concept — reversal is just another pin.
+3. **Auto-update fights the manager** only for Claude Code — remote-managed
+   machines should get `DISABLE_AUTOUPDATER` alongside our installs.
+4. **Secret placement differs per harness** and the platform must map a
+   credential onto each native slot:
+   - claude-code → `settings.json` `env` (sanctioned; 0600 the file ourselves),
+   - codex → `auth.json` (apikey mode, 0600) or a custom provider's `env_key`,
+   - dsh → `apiKeyEnv` process env (no file slot at all).
+   The one genuinely awkward case is env-based key channels (dsh `apiKeyEnv`,
+   codex `env_key`): daemon-spawned ACP sessions can be given env directly, but
+   a key typed by the user into their own shell needs a persistent env file
+   (`~/.dsh/env` + shell hook, or a tiny wrapper) — W3 designs this per target.
+5. **Node prerequisites differ** (claude-code npm needs Node 22+, codex 18+,
+   dsh is itself a Node runtime) — but every machine running our daemon already
+   has Node ≥20 (hnx requires it), so npm is a viable universal channel; the
+   native installer is the fallback for claude-code on Node-less machines.
+6. **Machines need egress** to npm (and claude.ai for native installs); proxied
+   machines must pass proxy env through to the spawned installer — the daemon
+   job executor should forward `HTTP(S)_PROXY`/`npm_config_registry` from its
+   own environment.
+
+## 6. Consequences (bridge to the design)
+
+- A **runtime arm on the existing inventory report** is the natural carrier for
+  presence/version/method (C3 already round-trips per-target data on scan).
+- **Install/upgrade rides the C4 job pipeline** (queued → dispatched → running →
+  succeeded/failed, requeue-on-disconnect) as a new job type with a per-target
+  command table; the daemon gains a `runtime` capability.
+- **Provider/model config is a first-class server-side entity** referencing a
+  *distributable* credential (existing `Credential.distributable` rule), applied
+  by the daemon into the native slots above — never into profile artifacts.
+- **Config viewing** is a redacted read-back of the harness's own files/env
+  (extend the daemon-side redactor that already scrubs env/header values to
+  `${cred:<KEY>}`).
