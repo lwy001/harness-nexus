@@ -1,12 +1,18 @@
-# Harness Nexus
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Harness Nexus" width="380">
+</p>
 
-English | [简体中文](README.zh-CN.md)
+<p align="center">
+  <em>A self-hosted control plane for your coding agents — MCP servers, skills,<br>
+  hooks, sub-agents, rules and profiles in one place, deployed to your own<br>
+  machines, with remote chat over ACP.</em>
+</p>
 
-> A self-hosted control plane for your coding agents — MCP servers, skills,
-> hooks, sub-agents, rules and profiles in one place, deployed to your own
-> machines, with remote chat over ACP.
-
-[![CI](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml)
+<p align="center">
+  English | <a href="README.zh-CN.md">简体中文</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml"><img src="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
 **⚠️ Early stage.** Harness Nexus is young software under active development:
 features, APIs, and the wire protocol may change without notice, parts of the

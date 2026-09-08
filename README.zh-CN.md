@@ -1,11 +1,17 @@
-# Harness Nexus
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Harness Nexus" width="380">
+</p>
 
-[English](README.md) | 简体中文
+<p align="center">
+  <em>面向编码代理的自托管控制平面——MCP 服务器、技能、钩子、子代理、规则与配置集，<br>
+  集中管理、部署到你自己的机器，并通过 ACP 远程对话。</em>
+</p>
 
-> 面向编码代理的自托管控制平面——MCP 服务器、技能、钩子、子代理、规则与配置集，
-> 集中管理、部署到你自己的机器，并通过 ACP 远程对话。
-
-[![CI](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml)
+<p align="center">
+  <a href="README.md">English</a> | 简体中文
+  &nbsp;·&nbsp;
+  <a href="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml"><img src="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
 **⚠️ 早期阶段。** Harness Nexus 尚处于活跃开发期：功能、API 与线上协议可能随时变更，
 路线图中仍有未完成的部分（见[项目状态](#项目状态)），文档偶尔滞后于代码。目前它已经
