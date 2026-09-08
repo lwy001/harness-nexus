@@ -5,6 +5,7 @@ export * from './schemas/resource.js';
 export * from './schemas/marketplace.js';
 export * from './schemas/machine.js';
 export * from './schemas/inventory.js';
+export * from './schemas/runtime-config.js';
 export * from './hooks.js';
 export * from './trust.js';
 export * from './realtime.js';

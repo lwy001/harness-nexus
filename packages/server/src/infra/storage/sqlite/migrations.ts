@@ -277,6 +277,22 @@ CREATE INDEX IF NOT EXISTS idx_agent_instances_machine ON agent_instances(machin
 ALTER TABLE machine_inventory ADD COLUMN runtime TEXT;
     `,
   },
+  {
+    version: 12,
+    description: 'phase 9 W3 — runtime provider configs (one row per machine × target)',
+    sql: `
+CREATE TABLE IF NOT EXISTS runtime_configs (
+  id         TEXT PRIMARY KEY,
+  machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  owner_id   TEXT NOT NULL,
+  target     TEXT NOT NULL,
+  spec       TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (machine_id, target)
+);
+    `,
+  },
 ] as const;
 
 /**

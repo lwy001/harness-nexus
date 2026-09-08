@@ -103,10 +103,11 @@ describe('harnessCommand', () => {
       command: 'claude',
       args: ['update'],
     });
-    // npm-managed claude upgrades stay on npm; pinning a native install refuses.
+    // npm-managed claude upgrades stay on npm — on the STABLE dist-tag (the
+    // managed-install default, Phase 9 W3); pinning a native install refuses.
     expect(harnessCommand({ action: 'upgrade', target: 'claude-code' }, 'npm')).toEqual({
       command: 'npm',
-      args: ['install', '-g', '@anthropic-ai/claude-code@latest'],
+      args: ['install', '-g', '@anthropic-ai/claude-code@stable'],
     });
     expect(
       harnessCommand({ action: 'pin', target: 'claude-code', version: '2.1.89' }, 'native'),

@@ -1123,7 +1123,8 @@ expect('missing profile param 400', r.status, 400);
 
 log('\n--- [8 C3] fixture HOME + REAL daemon (dist) enrollment ---');
 const { spawn } = await import('node:child_process');
-const { mkdtempSync, mkdirSync, writeFileSync, rmSync, accessSync } = await import('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync, accessSync, readFileSync, statSync } =
+  await import('node:fs');
 const { tmpdir } = await import('node:os');
 const pathMod = await import('node:path');
 const fixtureHome = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-c3-'));
@@ -2192,6 +2193,170 @@ rmSync(w2Home, { recursive: true, force: true });
 if (w2Err.includes('Error:')) {
   log(
     `(w2 daemon stderr note): ${w2Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
+// ===========================================================================
+// [9 W3] Provider config push — a REAL daemon dist applies an `apply-config`
+// job end-to-end against a fixture HOME (fetches the resolved bundle over
+// REST with its machine PAT, writes the native slots). User config planted
+// beforehand proves merge preservation; the gates mirror the route tests.
+// ===========================================================================
+log('\n--- [9 W3] fixture HOME with planted user config + credential ---');
+const w3Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w3-'));
+mkdirSync(pathMod.join(w3Home, '.codex'), { recursive: true });
+writeFileSync(
+  pathMod.join(w3Home, '.codex', 'config.toml'),
+  ['# my config', '[mcp_servers.user-thing]', 'command = "keep-me"', ''].join('\n'),
+  'utf8',
+);
+mkdirSync(pathMod.join(w3Home, '.dsh'), { recursive: true });
+writeFileSync(
+  pathMod.join(w3Home, '.dsh', '.env'),
+  'DEEPSEEK_API_KEY=user-key\n',
+  'utf8',
+);
+
+r = await req('POST', '/api/credentials', {
+  token: userToken,
+  body: { name: 'w3-gw-key', secret: 'sk-w3-secret', scope: 'personal' },
+});
+expect('w3 credential created', r.status, 201);
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'w3-laptop' } });
+expect('w3 enroll status', r.status, 201);
+const w3MachineId = r.json.machine.id;
+const w3Token = r.json.token;
+
+const w3Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    w3Token,
+    '--machine-id',
+    w3MachineId,
+  ],
+  { env: { ...process.env, HOME: w3Home }, stdio: ['ignore', 'pipe', 'pipe'] },
+);
+let w3Err = '';
+w3Daemon.stderr.on('data', (d) => {
+  w3Err += d.toString();
+});
+let w3Online = false;
+for (let i = 0; i < 100 && !w3Online; i++) {
+  r = await req('GET', `/api/machines/${w3MachineId}`, { token: userToken });
+  w3Online =
+    r.json.machine.online && (r.json.machine.capabilities ?? []).includes('runtime-config');
+  if (!w3Online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('w3 daemon online (runtime-config capability)', w3Online, true);
+
+log('\n--- [9 W3] PUT codex config → apply-config job writes config.toml + auth.json ---');
+const w3CodexSpec = {
+  providerLabel: 'w3 gateway',
+  baseUrl: `${B.replace('127.0.0.1', '127.0.0.1')}/v1`,
+  api: 'openai',
+  model: 'w3-model',
+  credentialName: 'w3-gw-key',
+};
+r = await req('PUT', `/api/machines/${w3MachineId}/runtime-config/codex`, {
+  token: userToken,
+  body: w3CodexSpec,
+});
+expect('w3 codex config upserted (201 first time)', r.status, 201);
+expect('w3 spec echoes credentialName, not the secret', r.json.config.credentialName, 'w3-gw-key');
+expect('w3 response carries no secret', JSON.stringify(r.json).includes('sk-w3-secret'), false);
+expect('w3 job queued is apply-config', r.json.job.payload.action, 'apply-config');
+const w3Job1 = r.json.job.id;
+let w3job = null;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${w3MachineId}/jobs`, { token: userToken });
+  w3job = r.json.jobs.find((j) => j.id === w3Job1);
+  if (w3job && (w3job.status === 'succeeded' || w3job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('w3 codex apply job succeeded', w3job?.status, 'succeeded');
+expect(
+  'w3 job result lists the written files',
+  (w3job?.result?.files ?? []).join(','),
+  '~/.codex/config.toml,~/.codex/auth.json',
+);
+
+const w3Toml = readFileSync(pathMod.join(w3Home, '.codex', 'config.toml'), 'utf8');
+expect('codex: user comment survives', w3Toml.includes('# my config'), true);
+expect('codex: user MCP section survives', w3Toml.includes('[mcp_servers.user-thing]'), true);
+expect('codex: root model set', w3Toml.includes('model = "w3-model"'), true);
+expect('codex: model_provider selects our route', w3Toml.includes('model_provider = "harness_nexus"'), true);
+expect('codex: provider section with auth.json auth', w3Toml.includes('requires_openai_auth = true'), true);
+expect('codex: wire_api absent (Responses-only)', w3Toml.includes('wire_api'), false);
+const w3Auth = JSON.parse(readFileSync(pathMod.join(w3Home, '.codex', 'auth.json'), 'utf8'));
+expect('codex: auth.json apikey mode with our key', w3Auth.OPENAI_API_KEY, 'sk-w3-secret');
+expect('codex: auth.json 0600', statSync(pathMod.join(w3Home, '.codex', 'auth.json')).mode & 0o777, 0o600);
+
+log('\n--- [9 W3] PUT deepseek config → patch region + default-model + ~/.dsh/.env ---');
+r = await req('PUT', `/api/machines/${w3MachineId}/runtime-config/deepseek`, {
+  token: userToken,
+  body: { ...w3CodexSpec, api: 'anthropic-messages' },
+});
+expect('w3 deepseek config upserted', r.status, 201);
+const w3Job2 = r.json.job.id;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${w3MachineId}/jobs`, { token: userToken });
+  w3job = r.json.jobs.find((j) => j.id === w3Job2);
+  if (w3job && (w3job.status === 'succeeded' || w3job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('w3 deepseek apply job succeeded', w3job?.status, 'succeeded');
+const w3Patch = readFileSync(pathMod.join(w3Home, '.dsh', 'cordis.patch.yml'), 'utf8');
+expect('dsh: managed provider region', w3Patch.includes('harness-nexus:provider'), true);
+expect('dsh: llm plugin row', w3Patch.includes("@deepseek-ai/dsh-llm-pi-ai"), true);
+expect('dsh: anthropic api flavor', w3Patch.includes('api: anthropic-messages'), true);
+expect('dsh: key channel is the env var name', w3Patch.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'), true);
+expect('dsh: default-model row selects the route', w3Patch.includes("@deepseek-ai/dsh-agent-default-model"), true);
+const w3Env = readFileSync(pathMod.join(w3Home, '.dsh', '.env'), 'utf8');
+expect('dsh: user env var survives', w3Env.includes('DEEPSEEK_API_KEY=user-key'), true);
+expect('dsh: managed key written', w3Env.includes('HARNESS_NEXUS_API_KEY=sk-w3-secret'), true);
+
+log('\n--- [9 W3] gates: GET echo, machine-PAT bundle, admin 403, flavor 409 ---');
+r = await req('GET', `/api/machines/${w3MachineId}/runtime-config/codex`, { token: userToken });
+expect('GET echoes the stored spec', r.json.config.model, 'w3-model');
+r = await req('GET', `/api/machines/${w3MachineId}/runtime-config/codex`, { token: adminToken });
+expect('admin may view the spec', r.status, 200);
+r = await req('PUT', `/api/machines/${w3MachineId}/runtime-config/codex`, {
+  token: adminToken,
+  body: w3CodexSpec,
+});
+expect('admin mutation refused (owner-only)', r.status, 403);
+r = await req('PUT', `/api/machines/${w3MachineId}/runtime-config/claude-code`, {
+  token: userToken,
+  body: { ...w3CodexSpec, api: 'openai' },
+});
+expect('claude-code cannot speak openai (409)', r.status, 409);
+r = await req('POST', `/api/machines/${w3MachineId}/jobs`, {
+  token: userToken,
+  body: { type: 'harness', action: 'apply-config', target: 'codex' },
+});
+expect('bare apply-config job body refused (409)', r.status, 409);
+// The ONLY surface carrying the plaintext: the daemon's machine-PAT bundle.
+r = await req('GET', `/api/client/runtime-config?target=codex`, { token: w3Token });
+expect('machine PAT bundle resolves the secret', r.json.secret, 'sk-w3-secret');
+r = await req('GET', `/api/client/runtime-config?target=codex`, { token: userToken });
+expect('user tokens get a flat 404 on the bundle surface', r.status, 404);
+
+w3Daemon.kill('SIGTERM');
+await req('DELETE', `/api/machines/${w3MachineId}`, { token: userToken });
+rmSync(w3Home, { recursive: true, force: true });
+if (w3Err.includes('Error:')) {
+  log(
+    `(w3 daemon stderr note): ${w3Err
       .split('\n')
       .filter((l) => l.includes('Error:'))
       .slice(0, 3)

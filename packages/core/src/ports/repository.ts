@@ -18,6 +18,7 @@ import type {
   PersonalAccessToken,
   Profile,
   Resource,
+  RuntimeConfig,
   SystemSettings,
   User,
 } from '../domain/index.js';
@@ -149,6 +150,18 @@ export interface AcSessionRepository {
   save(session: AcSession): Promise<AcSession>;
 }
 
+export interface RuntimeConfigRepository {
+  /** Exactly one config per (machine, target) — the latest spec wins. */
+  findByMachineAndTarget(
+    machineId: string,
+    target: RuntimeConfig['target'],
+  ): Promise<RuntimeConfig | null>;
+  /** Upsert by id — (machine, target) identity resolution belongs to the caller. */
+  save(config: RuntimeConfig): Promise<RuntimeConfig>;
+  /** Machine deletion cascade. */
+  deleteByMachine(machineId: string): Promise<void>;
+}
+
 export interface UnitOfWork {
   resources: ResourceRepository;
   profiles: ProfileRepository;
@@ -162,4 +175,5 @@ export interface UnitOfWork {
   jobs: JobRepository;
   agentInstances: AgentInstanceRepository;
   acSessions: AcSessionRepository;
+  runtimeConfigs: RuntimeConfigRepository;
 }

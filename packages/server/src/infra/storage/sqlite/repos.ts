@@ -19,9 +19,11 @@ import type {
   Job,
   AgentInstance,
   AcSession,
+  RuntimeConfig,
   JobRepository,
   AgentInstanceRepository,
   AcSessionRepository,
+  RuntimeConfigRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -1030,6 +1032,65 @@ export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
         close_reason: session.closeReason,
       });
       return session;
+    },
+  };
+}
+
+// ---- runtime provider configs (phase 9 W3) ----
+
+interface RuntimeConfigRow {
+  id: string;
+  machine_id: string;
+  owner_id: string;
+  target: string;
+  spec: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapRuntimeConfig(row: RuntimeConfigRow): RuntimeConfig {
+  return {
+    id: row.id,
+    machineId: row.machine_id,
+    ownerId: row.owner_id,
+    target: row.target as RuntimeConfig['target'],
+    spec: JSON.parse(row.spec) as RuntimeConfig['spec'],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function sqliteRuntimeConfigRepository(db: Database): RuntimeConfigRepository {
+  return {
+    async findByMachineAndTarget(machineId, target) {
+      const row = db
+        .prepare('SELECT * FROM runtime_configs WHERE machine_id = ? AND target = ?')
+        .get(machineId, target) as RuntimeConfigRow | undefined;
+      return row ? mapRuntimeConfig(row) : null;
+    },
+    async save(config) {
+      // Upsert by id — (machine, target) identity resolution belongs to the
+      // caller, mirroring the agent_instances contract.
+      db.prepare(
+        `INSERT INTO runtime_configs
+           (id, machine_id, owner_id, target, spec, created_at, updated_at)
+         VALUES (@id, @machine_id, @owner_id, @target, @spec, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           spec       = excluded.spec,
+           updated_at = excluded.updated_at`,
+      ).run({
+        id: config.id,
+        machine_id: config.machineId,
+        owner_id: config.ownerId,
+        target: config.target,
+        spec: JSON.stringify(config.spec),
+        created_at: config.createdAt,
+        updated_at: config.updatedAt,
+      });
+      return config;
+    },
+    async deleteByMachine(machineId) {
+      db.prepare('DELETE FROM runtime_configs WHERE machine_id = ?').run(machineId);
     },
   };
 }

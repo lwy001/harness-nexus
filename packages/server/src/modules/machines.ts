@@ -114,6 +114,7 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
     app.realtime.disconnectMachine(machine);
     app.realtime.inventory.failMachine(machine.id);
     await app.realtime.jobs.purgeMachine(machine.id);
+    await app.uow.runtimeConfigs.deleteByMachine(machine.id);
     await app.uow.inventories.deleteByMachine(machine.id);
     await app.uow.tokens.delete(machine.enrollmentPatId);
     await app.uow.machines.delete(machine.id);

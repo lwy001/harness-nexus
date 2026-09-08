@@ -618,7 +618,8 @@ Extends the section above (read it first). Full design in
   `MACHINE_OWNER_ONLY`) and soft-gated on the daemon's `harness` capability
   when online (offline may queue). Payload: `{type, action:
 install|upgrade|pin, target: RuntimeTarget, version?}` — `pin` requires a
-  version; W3 adds `apply-config` + `channel`.
+  version; W3 added `apply-config` (below) — `channel` never landed: CC
+  version-less installs track the `stable` dist-tag instead.
 - **The daemon executor is `cli/src/daemon/runtime.ts`** (`runHarnessJob`,
   dispatched from `daemon/jobs.ts`). npm is the only install channel
   (`HARNESS_PACKAGES` table); the ONE native path is `claude update` for an
@@ -635,6 +636,57 @@ install|upgrade|pin, target: RuntimeTarget, version?}` — `pin` requires a
   (`cli/test/runtime-job.test.ts`, smoke `[9 W2]`). Known accepted race: the
   connect-time full report can overwrite a just-finished job's auto-report;
   the next scan self-heals.
+
+## Provider config push (Phase 9 W3)
+
+Extends the sections above. Full design in `docs/design/phase-9-harness-runtime.md`
+§4.3/§9 (W3 notes) — ground truth in `docs/research/phase-9-harness-runtime.md` §8
+(source-verified against dsh@0.1.2-rc.1 and codex-rs main). Summary for daily work:
+
+- **`RuntimeConfig`** (core domain + `RuntimeConfigRepository` port, migration
+  `0012`, sqlite/memory drivers, machine-delete cascade) is ONE provider spec
+  per (machine, target): `{providerLabel, baseUrl?, api, model,
+credentialName, extra?}` — never a secret; it names a credential that MUST
+  be distributable (dial-site rules: unknown/foreign-personal → 404,
+  non-distributable → 409 `CREDENTIAL_NOT_DISTRIBUTABLE`).
+- **REST** (`modules/runtime-config.ts`): `GET` is owner-or-admin 404-hiding
+  (echoes `credentialName`, never a secret); `PUT
+/api/machines/:id/runtime-config/:target` is owner-only, validates per-target
+  policy (`RUNTIME_API_SUPPORT` + deepseek-requires-baseUrl via
+  `runtimeSpecUnsupportedReason` in shared), upserts the row, and queues
+  `{type:'harness', action:'apply-config', target}`. A bare apply-config body
+  at `POST …/jobs` → 409 `USE_RUNTIME_CONFIG_ENDPOINT`. Soft-gated on the
+  daemon's **`runtime-config`** capability when online (W2 daemons advertise
+  `harness` without the writer).
+- **The secret never rides the job.** The daemon fetches the resolved
+  `{spec, secret}` at EXECUTION time from `GET /api/client/runtime-config`
+  (machine-PAT REST exception #3 — the tightest one; non-machine callers get
+  a flat 404). Requeue after a credential rotation picks up the new value.
+- **Writers** (`cli/src/daemon/runtime-config.ts`, dispatched from
+  `daemon/jobs.ts`; all files 0600, merge-preserving, idempotent):
+  - claude-code → `~/.claude/settings.json`: `env.ANTHROPIC_AUTH_TOKEN`,
+    `env.ANTHROPIC_BASE_URL` (a baseUrl-less re-apply REMOVES ours), top-level
+    `model`.
+  - codex → `~/.codex/config.toml` root keys `model` + `model_provider` via
+    `mergeTomlRootKeys` (top-level region only — appended root keys would land
+    inside the last table) + `[model_providers.harness_nexus]` with
+    `requires_openai_auth = true` and NO `wire_api` (current codex REMOVED
+    `wire_api="chat"` — Responses-only; gateways must be Responses-compatible);
+    `~/.codex/auth.json` merged to apikey mode with `OPENAI_API_KEY`.
+  - deepseek → `harness-nexus:provider` managed region in the home
+    `cordis.patch.yml` with TWO rows (`@deepseek-ai/dsh-llm-pi-ai` provider
+    route + `@deepseek-ai/dsh-agent-default-model` selection — mounting a
+    route alone doesn't select it) + the key into **`~/.dsh/.env`**
+    (`HARNESS_NEXUS_API_KEY`) — dsh's NATIVE user-env credential layer
+    (process env > `.credentials.yaml` > `./.env` > `~/.dsh/.env`), read on
+    every launch so user shells AND ACP spawns get it with no wrapper/snippet.
+- **Web** (MachineDetail): a Provider-config sub-form per Agent card
+  (prefilled by GET; credential picker lists distributable credentials only;
+  api select offers only the target's flavors — single-flavor targets render
+  a fixed badge; confirm-first). Strings in `strings/machineDetail.ts` (en/zh).
+- The W3 build also fixed a W2 bug: the executor defaulted `homeDir` to
+  `undefined`, so production daemons never wrote `DISABLE_AUTOUPDATER`;
+  `runHarnessJob` now defaults to `os.homedir()`.
 
 ## Authentication & authorization (permission interceptors)
 

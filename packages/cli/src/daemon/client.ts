@@ -12,13 +12,21 @@ import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.6.0-p9w2';
+export const DAEMON_VERSION = '0.7.0-p9w3';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
- * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs).
+ * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
+ * 9 W3: provider-config apply).
  */
-export const DAEMON_CAPABILITIES = ['inventory', 'deploy', 'chat', 'runtime', 'harness'];
+export const DAEMON_CAPABILITIES = [
+  'inventory',
+  'deploy',
+  'chat',
+  'runtime',
+  'harness',
+  'runtime-config',
+];
 
 /** Placeholder snapshot for a target this daemon build has no scanner for. */
 export function emptySnapshot(target: InventorySnapshot['target']): InventorySnapshot {

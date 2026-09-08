@@ -4,6 +4,7 @@ import {
   AppError,
   resolveDialSite,
   resolvePlaceholders,
+  runtimeTargetSchema,
   type ClientMcpConfig,
 } from '@harness-nexus/shared';
 import { decryptSecret, hashToken, PAT_PREFIX } from '../infra/crypto.js';
@@ -144,6 +145,46 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     return reply.send({ profile, artifacts });
+  });
+
+  // ---- GET /api/client/runtime-config?target=<t> (Phase 9 W3) ----
+  // The resolved provider bundle an apply-config job's daemon executor needs.
+  // Machine PAT exception #3 — and the TIGHTEST one: this is the only surface
+  // that ever carries the spec's plaintext, so a non-machine caller gets a
+  // flat 404 (no existence leak), and even the machine PAT only ever sees its
+  // OWN machine's row. Re-resolved on every fetch so a requeued job after a
+  // credential rotation picks up the new value.
+  app.get('/api/client/runtime-config', async (req, reply) => {
+    const caller = await resolveClientCaller(app, req);
+    if (!caller) {
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
+    }
+    if (caller.machineId === undefined) {
+      throw new AppError('Runtime config not found', 404, 'RUNTIME_CONFIG_NOT_FOUND');
+    }
+    const target = (req.query as { target?: string }).target;
+    const parsedTarget = runtimeTargetSchema.safeParse(target);
+    if (!parsedTarget.success) {
+      throw new AppError('A target query parameter is required', 400, 'TARGET_REQUIRED');
+    }
+    const row = await app.uow.runtimeConfigs.findByMachineAndTarget(
+      caller.machineId,
+      parsedTarget.data,
+    );
+    if (!row) {
+      throw new AppError('Runtime config not found', 404, 'RUNTIME_CONFIG_NOT_FOUND');
+    }
+    const cred = await app.uow.credentials.findByName(row.spec.credentialName);
+    if (!cred || !cred.distributable) {
+      // Deleted or locked since the PUT — the honest failure for the executor.
+      throw new AppError(
+        `Credential "${row.spec.credentialName}" is missing or no longer distributable`,
+        409,
+        'CREDENTIAL_NOT_DISTRIBUTABLE',
+      );
+    }
+    const secret = decryptSecret(cred.secret, app.credentialEncryptionKey);
+    return reply.send({ target: row.target, spec: row.spec, secret });
   });
 }
 
