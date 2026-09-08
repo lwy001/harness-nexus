@@ -10,6 +10,8 @@ const en = {
   noAgents: 'No agents deployed',
   remoteChatDisabled: 'Remote chat is disabled for {name}. Enable it on the machine page first.',
   machineOffline: '{name} is offline.',
+  noAgentsHint:
+    'No agent instances yet — deploy a profile with a codex / deepseek target from the machine page first; claude-code installs via its plugin marketplace and creates no agent instance.',
   newSession: 'New session',
   sessionOpen: 'open',
   sessionClosed: 'closed',
@@ -49,6 +51,8 @@ const zh: typeof en = {
   noAgents: '尚未部署代理',
   remoteChatDisabled: '已为 {name} 禁用远程聊天。请先在机器页面开启。',
   machineOffline: '{name} 当前离线。',
+  noAgentsHint:
+    '该机器还没有代理实例——先在机器详情页对 codex / deepseek 目标的配置集执行「部署」；claude-code 走插件市场安装，不产生代理实例。',
   newSession: '新会话',
   sessionOpen: '开放',
   sessionClosed: '已关闭',
