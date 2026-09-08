@@ -1,6 +1,6 @@
 # Design: Phase 9 — Harness runtime lifecycle (install / upgrade / provider config)
 
-> Status: **W1 shipped (2026-09), W2–W4 designed**. Ground truth:
+> Status: **W1 + W2 shipped (2026-09), W3–W4 designed**. Ground truth:
 > `docs/research/phase-9-harness-runtime.md`. Rides Phase 8's machines /
 > daemon / jobs infrastructure (C1–C4); touches `shared` → `cli` → `server` →
 > `sdk-ts` → `web` in that order.
@@ -254,10 +254,44 @@ full-width punctuation rules for zh).
   - Verified by: unit/integration tests (probe fixtures incl. a hanging bin,
     sync hysteresis/deploy-precedence, capture idempotence, detected-instance
     chat), smoke `[9 W1]` (fake bins on a fixture PATH), and the docker rig.
-- **W2 Install/upgrade/pin jobs** — job type, daemon executor, REST widening,
-  job UI affordance. Verify: install dsh@pin into the docker machine, upgrade.
+- **W2 Install/upgrade/pin jobs — SHIPPED (2026-09).** Implementation notes
+  (deviations settled during the build):
+  - npm is the ONLY install channel (`npm i -g <pkg>@<version|latest>` — the
+    daemon host always runs Node ≥20); the design's claude-native-installer
+    fallback is unnecessary there. The one native path kept: `claude update`
+    for an UPGRADE of an already-native claude-code install (npm over it
+    would shadow, not upgrade); PINNING a native install refuses with a clear
+    error. Managed claude-code machines get `env.DISABLE_AUTOUPDATER='1'`
+    merged into `~/.claude/settings.json` (merge-preserving, 0600; an
+    unreadable settings file is a non-fatal `warning` on the job result).
+  - `channel` is NOT in the W2 payload (CC stable/latest stays a W3 open
+    question, §11). `apply-config` joins the payload union in W3.
+  - The REST body is a `type`-discriminated union (`createMachineJobSchema`);
+    a body WITHOUT `type` defaults to deploy (every pre-W2 SDK caller).
+    Harness create is OWNER-ONLY (admin on a foreign machine → 403
+    `MACHINE_OWNER_ONLY`) and soft-gated on the daemon's **`harness`**
+    capability when online — NOT `runtime`: W1 daemons already advertise
+    `runtime` without the executor (they settle harness jobs as unsupported),
+    so the executor gets its own tag (`0.6.0-p9w2` advertises both). Harness
+    jobs never create AgentInstances.
+  - The daemon executor (`cli/src/daemon/runtime.ts`) inherits the daemon's
+    env (proxy/registry pass-through), a 10-min per-command timeout with
+    SIGTERM→SIGKILL, streams a throttled stdout/stderr tail (last ~4 KB, last
+    line per progress event) into `job:progress`, re-probes the target on
+    success, reports the landing version in `job:result.data`
+    (`harnessResultDataSchema`), and AUTO-REPORTS the target's inventory
+    (one report feeds the Agent card + the detected-instance sync).
+  - Known race (accepted): a harness job's auto-report can be overwritten by
+    the daemon's still-in-flight connect-time full report (probe latency);
+    the next scan self-heals. Real flows (scan → see not-installed →
+    install) don't hit it.
+  - Verified by: unit/integration (fake-`npm` shim on PATH — argv, tail on
+    failure, native-upgrade path, settings merge; route gates incl.
+    owner-only + capability + payload union; harness round-trip with no
+    AgentInstance side effects), smoke `[9 W2]`, and the docker rig.
 - **W3 Provider config** — RuntimeConfig table + apply-config writers + form.
   Verify: point codex at a gateway, redacted view shows the block.
+  (RuntimeConfig takes migration `0012` — W1 consumed `0011`.)
 - **W4 Config viewer + drift** — `runtime:config.get` redaction, drawer,
   re-scan after apply. Fold anything learned about dsh env ergonomics.
 

@@ -40,6 +40,8 @@ export interface ProbeOptions {
   timeoutMs?: number;
 }
 
+export type ResolveOptions = Pick<ProbeOptions, 'pathEnv' | 'homeDir'>;
+
 /** Resolve a bare bin name to an executable path — PATH walk, then known locations. */
 export async function findRuntimeBin(
   bin: string,
