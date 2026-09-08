@@ -120,8 +120,11 @@ export function ensureDshFrontmatter(content: string, slug: string, description:
 
 // ---- cordis patch surgery (per-profile managed region, no YAML parser) ----
 
-const beginMarker = (slug: string): string => `# BEGIN harness-nexus:${slug} (managed)`;
-const endMarker = (slug: string): string => `# END harness-nexus:${slug} (managed)`;
+/** dsh home patch file — applied to EVERY profile and hot-reloaded live. */
+export const DSH_PATCH_FILENAME = PATCH_FILENAME;
+
+export const beginMarker = (slug: string): string => `# BEGIN harness-nexus:${slug} (managed)`;
+export const endMarker = (slug: string): string => `# END harness-nexus:${slug} (managed)`;
 
 /**
  * Replace (or append) this profile's managed region in the home patch,

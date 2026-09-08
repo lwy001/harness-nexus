@@ -1,13 +1,16 @@
 # Research: Phase 9 — Harness runtime lifecycle (binaries, versions, provider config)
 
-> Status: **studied** (2026-09). Not yet implemented — this document is the ground
-> truth the design (`docs/design/phase-9-harness-runtime.md`) builds on.
+> Status: **studied** (2026-09, W3 provider-config ground truth added 2026-09-08).
+> The design (`docs/design/phase-9-harness-runtime.md`) builds on this; W1/W2
+> shipped, W3 shipped.
 >
 > Sources: official Claude Code docs (code.claude.com — setup / settings /
-> env-vars / model-config), official Codex docs (learn.chatgpt.com config
-> reference + github.com/openai/codex), the Phase 8 T1 dsh research
+> env-vars / model-config), official Codex docs + the codex-rs SOURCE on
+> GitHub (main @ 2026-09-08), the Phase 8 T1 dsh research
 > (`docs/research/phase-8-t1-deepseek-harness.md`, pinned to dsh `v0.1.2-rc.1`)
-> and the acp-ref reference project's dsh overlay (`~/acp-ref/acp-bridge/overlay.yml`).
+> and the acp-ref reference project's dsh overlay. W3 dsh facts were verified
+> against the REAL `@deepseek-ai/dsh@0.1.2-rc.1` install in the local rig
+> machine container (installed by the W2 acceptance run).
 
 ## 1. The question
 
@@ -220,3 +223,75 @@ platform | local` (install ledger, `harness-nexus*` names, CC marketplace
 - **Config viewing** is a redacted read-back of the harness's own files/env
   (extend the daemon-side redactor that already scrubs env/header values to
   `${cred:<KEY>}`).
+
+## 8. W3 ground truth — provider config per target (verified 2026-09-08)
+
+### 8.1 DeepSeek Harness (verified against the installed `dsh@0.1.2-rc.1`)
+
+- **Provider plugin** `@deepseek-ai/dsh-llm-pi-ai` (`lib/types/config.d.ts`):
+  plugin config is `{ providers?: Record<route, PiAiProviderProfile> }`; the
+  dict key IS the route. `PiAiProviderProfile` fields we use: `displayName`,
+  `api` (wire protocol string — REQUIRED for a route the pi-ai catalog does
+  not ship), `baseURL` (likewise required — no catalog default), `apiKeyEnv`
+  (env var NAME, "resolved per request through ctx.credentials"),
+  `models: PiAiModelProfile[]` where ONLY `id` is required (context window /
+  max tokens / modalities default at route level: 262144 / 32768 / `[text]`).
+- **api flavor mapping** (pi-ai `KnownApi` union): `anthropic-messages`
+  verbatim; our `openai` → **`openai-completions`** (the chat-completions
+  interop name; `openai-responses` also exists in the union).
+- **Default model selection** `@deepseek-ai/dsh-agent-default-model` (README):
+  config `{ provider: <route>, model: <id> }` — what FRESH agents start on.
+  Mounting a provider route alone does NOT select it; the composition entry
+  is the base, a user's saved selection layers over ours (user choice wins —
+  honest, not a fight).
+- **Key channel — the big one**: dsh has a NATIVE env-file credential layer.
+  `dsh-credentials-local` resolves an `apiKeyEnv` name through, highest first:
+  1. the inherited process environment (`KEY=… dsh`),
+  2. `$DSH_HOME/.credentials.yaml` (provider-managed, writable — YAML
+     `refs`/`records` shapes, not worth generating),
+  3. `<invocation cwd>/.env` (project layer),
+  4. **`$DSH_HOME/.env`** (user layer — our slot).
+     `dsh-app-boot` parses both `.env` files on EVERY launch and materializes
+     non-inherited values — user shells, daemon ACP spawns, everything; NO
+     wrapper script or shell snippet needed. The parser REJECTS bootstrap-only
+     names (`DSH_*` prefix, proxy/CA vars, `DEEPSEEK_BASE_URL`, `EDITOR`, …);
+     `HARNESS_NEXUS_API_KEY` is clear of the blocklist.
+     (The design's `~/.dsh/env` guess was wrong by one dot — it's `.env`.)
+- Patch-row shape mirrors T1's MCP rows: `- insert:` list entries with
+  `id` / `name` (plugin package) / `config`. Two rows in our
+  `harness-nexus:provider` managed region (llm route + default-model).
+
+### 8.2 Codex (verified against codex-rs source, main @ 2026-09-08)
+
+- **`wire_api = "chat"` is REMOVED** (`model-provider-info/src/lib.rs`):
+  `WireApi` has exactly one variant — `Responses`; deserializing `"chat"`
+  fails with a pointer to openai/codex discussion #7782. Consequence: no
+  `wire_api` in our emitted block, and a target gateway must speak the
+  Responses API (`/v1/responses`). The old "default wire_api=chat for
+  gateways" interop advice is dead.
+- **Key channel**: `ModelProviderInfo.env_key` reads the key from the process
+  environment (no file fallback — codex has no `~/.codex/.env` layer).
+  The file channel is `requires_openai_auth = true` (default false): "login
+  preference and token/key are stored in auth.json" — with
+  `auth.json = {"auth_mode":"apikey","OPENAI_API_KEY":…}` the auth manager
+  builds an ApiKey bearer (`login/src/auth/manager.rs: from_auth_dot_json`)
+  sent to the provider's `base_url` (explicit `base_url` overrides the
+  OpenAI default; `create_openai_provider` — the built-in — uses exactly
+  this pairing with `env_key: None`). Caveat: auth.json auth is GLOBAL for
+  the codex install — pushing an apikey config switches the machine's codex
+  off any ChatGPT login. That IS "point this harness at our gateway".
+- TOML surgery constraint: root keys (`model`, `model_provider`) may only be
+  edited in the region BEFORE the first `[section]` header — appended at file
+  end they'd land inside the last table. Hence `mergeTomlRootKeys` operates
+  on that region only; the `[model_providers.harness_nexus]` section is
+  order-independent and rides the existing `mergeTomlSection`.
+- Provider id `harness_nexus` (underscore — bare TOML key, no quoting).
+
+### 8.3 Claude Code
+
+- npm dist-tags (registry, 2026-09-08): `stable` 2.1.236 · `latest` 2.1.263 ·
+  `next` 2.1.263 — `stable` exists and tracks ~a week behind. Version-less
+  managed installs use `@stable`.
+- The provider write is exactly the documented settings surface:
+  `env.ANTHROPIC_BASE_URL` + `env.ANTHROPIC_AUTH_TOKEN` (bearer to custom
+  endpoints) + top-level `model` — base URL alone doesn't switch the model.

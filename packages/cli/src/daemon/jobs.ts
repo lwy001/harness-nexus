@@ -1,6 +1,7 @@
 import type { Socket } from 'socket.io-client';
 import {
   jobDispatchEventSchema,
+  harnessJobPayloadSchema,
   type JobView,
   deployResultDataSchema,
 } from '@harness-nexus/shared';
@@ -9,6 +10,7 @@ import { planInstall } from '../install/planner.js';
 import { applyInstall } from '../install/installer.js';
 import type { ResolvedProfile } from '../install/types.js';
 import { runHarnessJob } from './runtime.js';
+import { runApplyConfigJob } from './runtime-config.js';
 
 /**
  * Daemon-side job executor (Phase 8 C4 + Phase 9 W2).
@@ -47,6 +49,20 @@ export function attachJobHandlers(socket: Socket, opts: JobExecutorOptions): voi
       return;
     }
     if (job.type === 'harness') {
+      const parsed = harnessJobPayloadSchema.safeParse(job.payload);
+      if (!parsed.success) {
+        // Old daemons settle unknown ACTIONS the same way — one shared answer.
+        socket.emit('job:result', {
+          jobId: job.id,
+          ok: false,
+          error: 'harness payload invalid (upgrade hnx on the machine)',
+        });
+        return;
+      }
+      if (parsed.data.action === 'apply-config') {
+        void runApplyConfigJob(socket, opts, job);
+        return;
+      }
       void runHarnessJob(socket, job);
       return;
     }

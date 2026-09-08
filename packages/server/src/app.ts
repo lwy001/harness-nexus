@@ -22,6 +22,7 @@ import { skillsRoutes } from './modules/skills.js';
 import { machinesRoutes } from './modules/machines.js';
 import { inventoryRoutes } from './modules/inventory.js';
 import { jobsRoutes } from './modules/jobs.js';
+import { runtimeConfigRoutes } from './modules/runtime-config.js';
 import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
@@ -217,6 +218,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await machinesRoutes(api);
     await inventoryRoutes(api);
     await jobsRoutes(api);
+    await runtimeConfigRoutes(api);
     await clientConfigRoutes(api);
     await marketplaceRoutes(api);
   });

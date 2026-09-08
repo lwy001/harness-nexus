@@ -289,9 +289,75 @@ full-width punctuation rules for zh).
     failure, native-upgrade path, settings merge; route gates incl.
     owner-only + capability + payload union; harness round-trip with no
     AgentInstance side effects), smoke `[9 W2]`, and the docker rig.
-- **W3 Provider config** — RuntimeConfig table + apply-config writers + form.
-  Verify: point codex at a gateway, redacted view shows the block.
-  (RuntimeConfig takes migration `0012` — W1 consumed `0011`.)
+- **W3 Provider config — SHIPPED (2026-09).** Implementation notes
+  (deviations and §11 resolutions settled during the build):
+  - `RuntimeConfig` rides migration `0012` exactly as modeled (one row per
+    machine × target, `spec` JSON, `UNIQUE (machine_id, target)`), with a
+    `RuntimeConfigRepository` port + sqlite/memory drivers and a machine-delete
+    cascade. REST: `GET/PUT /api/machines/:id/runtime-config/:target` (GET
+    owner-or-admin 404-hiding; PUT owner-only 403 `MACHINE_OWNER_ONLY`,
+    queues `{type:'harness',action:'apply-config',target}` — a bare
+    apply-config body at `POST …/jobs` is refused 409
+    `USE_RUNTIME_CONFIG_ENDPOINT`). Route policy from `shared`
+    (`runtimeSpecUnsupportedReason`): api flavor per target
+    (`RUNTIME_API_SUPPORT`: claude-code=anthropic-messages, codex=openai,
+    deepseek=both) and deepseek REQUIRES a baseUrl. Credential gates mirror
+    dial-site rules: unknown/foreign-personal → 404, non-distributable → 409.
+  - **The secret never rides the job.** The persisted payload names only the
+    target; the daemon fetches the resolved `{spec, secret}` bundle at
+    EXECUTION time from `GET /api/client/runtime-config?target=` (machine-PAT
+    REST exception #3, the TIGHTEST one — non-machine callers get a flat 404).
+    Execution-time resolution means a requeued job after a credential rotation
+    picks up the new value (deploy-bundle semantics, not a frozen snapshot).
+  - Soft capability gate on the new **`runtime-config`** tag (W2 daemons
+    advertise `harness` without the writer; they would settle the job as
+    `harness payload invalid`). Daemon `0.7.0-p9w3` advertises both.
+  - Per-target writers (`packages/cli/src/daemon/runtime-config.ts`, all
+    files 0600, merge-preserving, idempotent): **claude-code** merges
+    `env.ANTHROPIC_AUTH_TOKEN` + `env.ANTHROPIC_BASE_URL` (a baseUrl-less
+    re-apply REMOVES ours — the platform owns the route) + top-level `model`
+    into `~/.claude/settings.json`. **codex** sets root keys `model` +
+    `model_provider` via `mergeTomlRootKeys` (top-level region only),
+    replaces `[model_providers.harness_nexus]` (name/base_url/
+    `requires_openai_auth = true`, NO `wire_api` — see below), and merges
+    `~/.codex/auth.json` to apikey mode with `OPENAI_API_KEY`. **dsh** writes
+    a `harness-nexus:provider` marked region in the home patch with TWO
+    insert rows — `@deepseek-ai/dsh-llm-pi-ai` (providers.harness-nexus:
+    displayName/api/baseURL/apiKeyEnv/models[{id}]) AND
+    `@deepseek-ai/dsh-agent-default-model` (provider/model — mounting a route
+    alone doesn't select it) — plus the key into `~/.dsh/.env` (see §11).
+  - §11 resolutions (all verified against sources): **dsh key channel is
+    `~/.dsh/.env`** (NOT `~/.dsh/env` as drafted) — dsh's native user-env
+    credential layer (`dsh-credentials-local`: process env >
+    `~/.dsh/.credentials.yaml` > `./.env` > `~/.dsh/.env`), read on EVERY
+    launch including user shells — no wrapper, no shell snippet, no daemon
+    ACP env injection needed; the env name `HARNESS_NEXUS_API_KEY` avoids the
+    bootstrap-only blocklist (`DSH_*`, proxy vars). **claude-code
+    version-less installs/upgrades track the `stable` npm dist-tag**
+    (`CHANNEL_TAG` in the executor; `latest`/`next` exist but move a managed
+    fleet too fast) — no payload `channel` field. **Multiple claude
+    binaries**: first-found stands (W1 behavior), and the card already
+    surfaces `binPath`. **codex keys: auth.json wins** —
+    `requires_openai_auth = true` + apikey-mode auth.json is the built-in
+    provider's own pairing (bearer to the custom base_url; no env_key, no env
+    persistence mechanism to invent). And a discovery beyond the question:
+    **current codex REMOVED `wire_api = "chat"`** (source: codex-rs
+    `model-provider-info/src/lib.rs`, discussion #7782) — every route speaks
+    Responses, so the emitter writes no `wire_api` and gateways must be
+    Responses-compatible; `extra.wireApi` was dropped from the spec.
+  - W2 fix riding along: the executor was called without `opts`, so
+    production daemons never wrote `DISABLE_AUTOUPDATER`
+    (`homeDir !== undefined` guard skipped it — tests/smoke always passed a
+    fixture HOME and masked it); `runHarnessJob` now defaults `homeDir` to
+    `os.homedir()`.
+  - Verified by: unit/integration (writer fixtures with planted user content
+    — merge preservation, idempotence, 0600, unset-removes-ours; route gates
+    incl. owner-only/distributable/flavor/baseUrl/machine-PAT-only bundle +
+    credential rotation; payload union), smoke `[9 W3]` (a REAL daemon dist
+    fetches the bundle over REST and writes a fixture HOME), and the docker
+    rig (codex + deepseek apply jobs succeeded; files verified in the
+    container; `dsh --version` still boots with the patch rows; UI form
+    prefilled per Agent card).
 - **W4 Config viewer + drift** — `runtime:config.get` redaction, drawer,
   re-scan after apply. Fold anything learned about dsh env ergonomics.
 
@@ -308,13 +374,13 @@ Each wave lands independently (branch → tests → smoke section `[9]` → docs
   harness-install dsh@`<pin>` → poll job → runtime row shows version →
   apply-config (fixture credential) → redacted config view masks the key.
 
-## 11. Open questions (resolve at W3)
+## 11. Open questions (resolved at W3 — decisions recorded in §9's W3 notes)
 
-- dsh `apiKeyEnv` for user-typed shells: `~/.dsh/env` + documented shell snippet
-  vs a `dsh` wrapper script on PATH — decide after watching the acp-ref pattern.
-- Claude Code `stable` vs `latest` default channel for managed installs
-  (proposal: `stable`).
-- Detected-instance lifecycle edge cases: multiple claude binaries on PATH
-  (nvm/venv shadows) — keep first-found and surface the path in the card.
-- Whether codex custom-provider keys can consistently avoid `env_key` (auth.json
-  per provider) — verify against current codex behavior in W3 spike.
+- ~~dsh `apiKeyEnv` for user-typed shells~~ → `~/.dsh/.env`, dsh's own
+  user-env credential layer (no wrapper/snippet).
+- ~~Claude Code `stable` vs `latest` default~~ → `stable` dist-tag.
+- ~~Detected-instance lifecycle edge cases (multiple claude binaries)~~ →
+  keep first-found; the card surfaces `binPath`.
+- ~~codex custom-provider keys without `env_key`~~ → auth.json via
+  `requires_openai_auth = true`; `wire_api = "chat"` was REMOVED upstream
+  (Responses-only).

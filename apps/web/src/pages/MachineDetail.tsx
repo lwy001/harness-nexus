@@ -42,12 +42,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RocketIcon, SquareIcon } from 'lucide-react';
 import {
   HarnessNexusError,
+  RUNTIME_API_SUPPORT,
   type AgentInstanceView,
+  type CredentialView,
   type ImportResult,
   type InventoryDiff,
   type JobView,
   type MachineView,
   type Profile,
+  type RuntimeConfigSpec,
+  type RuntimeTarget,
 } from '@harness-nexus/sdk';
 
 /** Wire shape of `job:update` (mirrors shared/realtime.ts). */
@@ -420,6 +424,186 @@ function RuntimeManage({
   );
 }
 
+/**
+ * Provider config sub-form (Phase 9 W3) — the Agent's LLM route, applied into
+ * the harness's NATIVE config by an `apply-config` job (confirm-first: the
+ * write ships the credential's plaintext to the machine). Renders nothing for
+ * targets the daemon doesn't runtime-manage (hermes, old hnx).
+ */
+function ProviderConfigForm({
+  machineId,
+  target,
+  runtime,
+}: {
+  machineId: string;
+  target: string;
+  runtime: RuntimeInfoView | null;
+}) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [creds, setCreds] = useState<CredentialView[] | null>(null);
+  const [providerLabel, setProviderLabel] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [model, setModel] = useState('');
+  const [apiFlavor, setApiFlavor] = useState<string>('');
+  const [credentialName, setCredentialName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const managedTarget = runtime !== null ? (target as RuntimeTarget) : null;
+  const apiOptions = managedTarget !== null ? RUNTIME_API_SUPPORT[managedTarget] : [];
+
+  // Prefill from the stored spec; the api flavor also defaults to the first
+  // (and for two targets the only) supported option.
+  useEffect(() => {
+    if (managedTarget === null) return;
+    let cancelled = false;
+    void (async () => {
+      let existing: RuntimeConfigSpec | null = null;
+      try {
+        const res = await withAuthGuard(
+          () => api.getRuntimeConfig(machineId, managedTarget),
+          logout,
+        );
+        existing = res;
+      } catch {
+        existing = null; // 404 (nothing stored yet) or transient — empty form
+      }
+      let distributable: CredentialView[] = [];
+      try {
+        distributable = (await withAuthGuard(() => api.listCredentials(), logout)).filter(
+          (c) => c.distributable,
+        );
+      } catch {
+        distributable = [];
+      }
+      if (cancelled) return;
+      setCreds(distributable);
+      setProviderLabel(existing?.providerLabel ?? '');
+      setBaseUrl(existing?.baseUrl ?? '');
+      setModel(existing?.model ?? '');
+      setApiFlavor(existing?.api ?? apiOptions[0] ?? '');
+      setCredentialName(existing?.credentialName ?? '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineId, managedTarget]);
+
+  if (managedTarget === null) return null;
+
+  async function apply(): Promise<void> {
+    if (!window.confirm(t('machineDetail.applyConfirm', { target }))) return;
+    setBusy(true);
+    try {
+      const spec: RuntimeConfigSpec = {
+        providerLabel: providerLabel.trim(),
+        api: (apiFlavor || apiOptions[0]) as RuntimeConfigSpec['api'],
+        model: model.trim(),
+        credentialName,
+        ...(baseUrl.trim() !== '' ? { baseUrl: baseUrl.trim() } : {}),
+      };
+      await withAuthGuard(() => api.putRuntimeConfig(machineId, managedTarget!, spec), logout);
+      toast.success(t('machineDetail.applyToast'));
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.applyFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const ready =
+    providerLabel.trim() !== '' && model.trim() !== '' && credentialName !== '' && !busy;
+
+  return (
+    <div className="flex flex-col gap-3 border-t px-6 pt-4">
+      <div>
+        <p className="text-sm font-medium">{t('machineDetail.providerTitle')}</p>
+        <p className="text-muted-foreground text-xs">{t('machineDetail.providerDesc')}</p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="grid min-w-44 gap-2">
+          <Label htmlFor={`pc-label-${target}`}>{t('machineDetail.providerLabelLabel')}</Label>
+          <Input
+            id={`pc-label-${target}`}
+            value={providerLabel}
+            onChange={(e) => setProviderLabel(e.target.value)}
+            placeholder={t('machineDetail.providerLabelPlaceholder')}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="grid min-w-52 gap-2">
+          <Label htmlFor={`pc-url-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
+          <Input
+            id={`pc-url-${target}`}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={t('machineDetail.baseUrlPlaceholder')}
+            className="font-mono text-xs"
+            autoComplete="off"
+            spellCheck={false}
+            inputMode="url"
+          />
+        </div>
+        <div className="grid min-w-24 gap-2">
+          <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelLabel')}</Label>
+          <Input
+            id={`pc-model-${target}`}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="font-mono text-xs"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="grid min-w-36 gap-2">
+          <Label htmlFor={`pc-api-${target}`}>{t('machineDetail.apiLabel')}</Label>
+          {apiOptions.length > 1 ? (
+            <Select value={apiFlavor} onValueChange={setApiFlavor}>
+              <SelectTrigger id={`pc-api-${target}`} className="font-mono text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {apiOptions.map((a) => (
+                  <SelectItem key={a} value={a} className="font-mono text-xs">
+                    {a}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="outline" className="font-mono text-[10px]">
+              {apiOptions[0]}
+            </Badge>
+          )}
+        </div>
+        <div className="grid min-w-44 gap-2">
+          <Label htmlFor={`pc-cred-${target}`}>{t('machineDetail.credentialLabel')}</Label>
+          <Select value={credentialName} onValueChange={setCredentialName}>
+            <SelectTrigger id={`pc-cred-${target}`} className="font-mono text-xs">
+              <SelectValue placeholder={t('machineDetail.pickCredential')} />
+            </SelectTrigger>
+            <SelectContent>
+              {(creds ?? []).map((c) => (
+                <SelectItem key={c.id} value={c.name} className="font-mono text-xs">
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button onClick={() => void apply()} disabled={!ready}>
+          {busy ? t('machineDetail.applying') : t('machineDetail.applyButton')}
+        </Button>
+      </div>
+      {creds !== null && creds.length === 0 ? (
+        <p className="text-muted-foreground text-xs">{t('machineDetail.noCredentials')}</p>
+      ) : null}
+    </div>
+  );
+}
+
 /** Capture-as-profile footer (Phase 9 W1) — confirm-first, one input + button. */
 function CaptureForm({ machineId, target }: { machineId: string; target: string }) {
   const { logout } = useAuth();
@@ -553,6 +737,7 @@ function TargetInventoryCard({ entry, machineId }: { entry: InventoryEntry; mach
             </TableBody>
           </Table>
         )}
+        <ProviderConfigForm machineId={machineId} target={entry.target} runtime={entry.runtime} />
         <CaptureForm machineId={machineId} target={entry.target} />
       </CardContent>
     </Card>

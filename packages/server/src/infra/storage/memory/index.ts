@@ -14,6 +14,7 @@ import type {
   Job,
   AgentInstance,
   AcSession,
+  RuntimeConfig,
   JobRepository,
   AgentInstanceRepository,
   AcSessionRepository,
@@ -25,6 +26,7 @@ import type {
   ProfileRepository,
   ResourceRepository,
   MachineRepository,
+  RuntimeConfigRepository,
 } from '@harness-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@harness-nexus/core';
 
@@ -49,6 +51,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   // key: `${machineId}\u0000${profileId}` — one deployed instance per pair
   const agentInstances = new Map<string, AgentInstance>();
   const acSessions = new Map<string, AcSession>();
+  const runtimeConfigs = new Map<string, RuntimeConfig>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -343,6 +346,25 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const runtimeConfigRepo: RuntimeConfigRepository = {
+    async findByMachineAndTarget(machineId, target) {
+      return (
+        [...runtimeConfigs.values()].find(
+          (c) => c.machineId === machineId && c.target === target,
+        ) ?? null
+      );
+    },
+    async save(config) {
+      runtimeConfigs.set(config.id, config);
+      return config;
+    },
+    async deleteByMachine(machineId) {
+      for (const [id, c] of runtimeConfigs) {
+        if (c.machineId === machineId) runtimeConfigs.delete(id);
+      }
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -356,5 +378,6 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     jobs: jobRepo,
     agentInstances: agentInstanceRepo,
     acSessions: acSessionRepo,
+    runtimeConfigs: runtimeConfigRepo,
   };
 }

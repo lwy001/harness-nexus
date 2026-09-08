@@ -34,9 +34,12 @@ import type {
   RuntimeInfo,
   RuntimeTarget,
   HarnessAction,
+  RuntimeConfigSpec,
+  RuntimeConfigView,
 } from '@harness-nexus/shared';
 export {
   SCANNABLE_TARGETS,
+  RUNTIME_API_SUPPORT,
   jobViewSchema,
   HOOK_EVENTS,
   HOOK_SUPPORT,
@@ -53,6 +56,8 @@ export type {
   RuntimeInfo,
   RuntimeTarget,
   HarnessAction,
+  RuntimeConfigSpec,
+  RuntimeConfigView,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -426,6 +431,36 @@ export class HarnessNexusClient {
       'GET',
       `/api/client/deploy-bundle?profile=${encodeURIComponent(profileId)}`,
     );
+  }
+
+  // ---- runtime provider config (Phase 9 W3; PUT queues the apply-config job) ----
+  async getRuntimeConfig(machineId: string, target: RuntimeTarget): Promise<RuntimeConfigView> {
+    const res = await this.request(
+      'GET',
+      `/api/machines/${machineId}/runtime-config/${encodeURIComponent(target)}`,
+    );
+    return res.config;
+  }
+
+  async putRuntimeConfig(
+    machineId: string,
+    target: RuntimeTarget,
+    spec: RuntimeConfigSpec,
+  ): Promise<{ config: RuntimeConfigView; job: JobView }> {
+    return this.request(
+      'PUT',
+      `/api/machines/${machineId}/runtime-config/${encodeURIComponent(target)}`,
+      spec,
+    );
+  }
+
+  /** The resolved `{spec, secret}` bundle an apply-config job fetches (machine PAT only). */
+  async getRuntimeConfigBundle(target: RuntimeTarget): Promise<{
+    target: RuntimeTarget;
+    spec: RuntimeConfigSpec;
+    secret: string;
+  }> {
+    return this.request('GET', `/api/client/runtime-config?target=${encodeURIComponent(target)}`);
   }
 
   // ---- settings ----

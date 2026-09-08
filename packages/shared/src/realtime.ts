@@ -100,19 +100,21 @@ export const deployJobPayloadSchema = z.object({
 });
 
 /**
- * `Job.payload` for `type: 'harness'` (Phase 9 W2) — install / upgrade / pin
- * the harness runtime itself. `apply-config` (W3) extends this union later.
- * Omitting `version` means latest; `pin` exists precisely to pin, so it
- * demands one. `channel` (claude-code stable/latest) is a W3 open question —
- * deliberately absent here.
+ * `Job.payload` for `type: 'harness'` (Phase 9 W2/W3) — install / upgrade /
+ * pin the harness runtime itself, or apply its provider config. Omitting
+ * `version` means the dist-tag default (claude-code `@stable`, others
+ * `@latest`); `pin` exists precisely to pin, so it demands one. The secret
+ * never rides the job: `apply-config` payloads name only the target — the
+ * daemon fetches the resolved `{spec, secret}` bundle with its machine PAT at
+ * execution time (requeue after a credential edit picks up the new value).
  */
-export const harnessActionSchema = z.enum(['install', 'upgrade', 'pin']);
+export const harnessActionSchema = z.enum(['install', 'upgrade', 'pin', 'apply-config']);
 export const harnessJobPayloadSchema = z
   .object({
     type: z.literal('harness'),
     action: harnessActionSchema,
     target: runtimeTargetSchema,
-    /** npm version spec (bare semver or dist-tag); omit = @latest. */
+    /** npm version spec (bare semver or dist-tag); omit = channel default. */
     version: z.string().min(1).max(64).optional(),
   })
   .superRefine((v, ctx) => {
@@ -120,6 +122,12 @@ export const harnessJobPayloadSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'pin requires a version',
+      });
+    }
+    if (v.action === 'apply-config' && v.version !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'apply-config takes no version',
       });
     }
   });
@@ -131,13 +139,15 @@ export const createMachineJobSchema = z.preprocess(
   z.union([deployJobPayloadSchema.extend({ type: z.literal('deploy') }), harnessJobPayloadSchema]),
 );
 
-/** What a daemon reports in `job:result.data` for a successful harness job (W2). */
+/** What a daemon reports in `job:result.data` for a successful harness job (W2/W3). */
 export const harnessResultDataSchema = z.object({
   target: runtimeTargetSchema,
   action: harnessActionSchema,
   version: z.string().max(64).optional(),
   binPath: z.string().max(512).optional(),
   installMethod: z.enum(['npm', 'native', 'brew', 'unknown']).optional(),
+  /** apply-config only: the native config files written (display paths). */
+  files: z.array(z.string().max(512)).max(8).optional(),
   /** Non-fatal follow-up note (e.g. settings.json left untouched). */
   warning: z.string().max(512).optional(),
 });

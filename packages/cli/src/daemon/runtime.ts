@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Socket } from 'socket.io-client';
 import {
@@ -33,10 +34,26 @@ export const HARNESS_PACKAGES: Record<string, string> = {
   deepseek: '@deepseek-ai/dsh',
 };
 
-/** The resolved installer invocation for a harness payload. */
+/**
+ * The dist-tag a version-less install/upgrade tracks. claude-code follows
+ * `stable` (a ~week-old channel with regressions skipped — the managed-install
+ * default per the Phase 9 research; `latest`/`next` exist but move faster than
+ * a managed fleet should).
+ */
+const CHANNEL_TAG: Record<string, string> = {
+  'claude-code': 'stable',
+  codex: 'latest',
+  deepseek: 'latest',
+};
+
+/**
+ * The resolved installer invocation for a harness payload. `apply-config` is
+ * not an installer — the daemon routes it to the config executor before this
+ * table; reaching it here (misrouted dispatch) refuses honestly.
+ */
 export function harnessCommand(
   payload: {
-    action: 'install' | 'upgrade' | 'pin';
+    action: 'install' | 'upgrade' | 'pin' | 'apply-config';
     target: string;
     version?: string | undefined;
   },
@@ -44,6 +61,9 @@ export function harnessCommand(
 ): { command: string; args: string[] } | { error: string } {
   const pkg = HARNESS_PACKAGES[payload.target];
   if (!pkg) return { error: `no harness package for target '${payload.target}'` };
+  if (payload.action === 'apply-config') {
+    return { error: 'apply-config is executed by the config writer, not the installer table' };
+  }
   // The one non-npm path: upgrading a NATIVE claude-code install — the native
   // launcher self-updates; npm -g over it would shadow, not upgrade.
   if (
@@ -60,7 +80,8 @@ export function harnessCommand(
         'claude-code is natively installed and cannot be pinned remotely — run the native installer on the machine, or reinstall it via npm first',
     };
   }
-  const spec = payload.version !== undefined ? `${pkg}@${payload.version}` : `${pkg}@latest`;
+  const tag = CHANNEL_TAG[payload.target] ?? 'latest';
+  const spec = payload.version !== undefined ? `${pkg}@${payload.version}` : `${pkg}@${tag}`;
   return { command: 'npm', args: ['install', '-g', spec] };
 }
 
@@ -114,7 +135,12 @@ export async function runHarnessJob(
     return;
   }
   const payload = parsed.data;
-  const homeDir = opts.homeDir;
+  // The daemon's real home (tests inject a fixture). Defaulting here (not
+  // gating on `homeDir !== undefined`) is a W3 fix: W2 daemons skipped the
+  // autoupdater write in production because the executor was called without
+  // opts — `os.homedir()` honors the daemon's HOME, which is what the smoke
+  // rig always relied on anyway.
+  const homeDir = opts.homeDir ?? homedir();
   const probeOpts: ResolveOptions = {};
   if (opts.env?.PATH !== undefined) probeOpts.pathEnv = opts.env.PATH;
   if (homeDir !== undefined) probeOpts.homeDir = homeDir;
@@ -191,7 +217,7 @@ export async function runHarnessJob(
 
   // Managed claude-code: our jobs become the only version mover.
   let warning: string | null = null;
-  if (payload.target === 'claude-code' && homeDir !== undefined) {
+  if (payload.target === 'claude-code') {
     warning = disableClaudeAutoUpdater(homeDir);
   }
 
@@ -200,7 +226,7 @@ export async function runHarnessJob(
   progress('verify', 'probing runtime');
   const runtime: RuntimeInfo = await probeRuntime(payload.target, probeOpts);
   const snapshot = scannerFor(payload.target)
-    ? scanTarget(payload.target, homeDir ?? undefined)
+    ? scanTarget(payload.target, homeDir)
     : emptySnapshot(payload.target);
   socket.emit('inventory:report', { runtimes: [runtime], snapshot });
 

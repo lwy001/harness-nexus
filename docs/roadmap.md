@@ -317,10 +317,18 @@ piece users asked for after Phase 8 shipped artifact management only
     gated); daemon executor with npm command table + `claude update` for
     native CC upgrades + `DISABLE_AUTOUPDATER` settings merge; post-install
     re-probe auto-report; Agent-card Install/Upgrade/pin controls.
-  - **W3 Provider config push** — `RuntimeConfig` entity (per machine ×
-    target, distributable-credential-referencing) applied into each harness's
-    native slots (CC `settings.json` env, codex `config.toml`+`auth.json`, dsh
-    managed patch region + `apiKeyEnv`).
+  - **W3 Provider config push — SHIPPED (2026-09)** — `RuntimeConfig` entity
+    (migration `0012`, per machine × target) referencing a distributable
+    credential; `PUT /api/machines/:id/runtime-config/:target` queues an
+    `apply-config` harness job; the daemon fetches the resolved `{spec,
+secret}` bundle at execution time (machine-PAT REST exception #3) and
+    writes each harness's native slots merge-preservingly (CC `settings.json`
+    env + model, codex `config.toml` root keys + provider section with
+    `requires_openai_auth` + `auth.json` apikey, dsh provider+default-model
+    patch rows + `~/.dsh/.env` — dsh's own user-env credential layer). §11
+    open questions resolved with source-verified facts (research §8): codex
+    removed `wire_api="chat"` (Responses-only), CC version-less installs
+    track `@stable`.
   - **W4 Redacted config viewer** — daemon-side `runtime:config.get` with
     key-name-aware masking; UI drawer.
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes

@@ -45,6 +45,15 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     const input = createMachineJobSchema.parse(req.body);
 
     if (input.type === 'harness') {
+      if (input.action === 'apply-config') {
+        // Provider config is managed as a SPEC (upsert + queue), not a bare
+        // job body — point the caller at the dedicated surface.
+        throw new AppError(
+          'Use PUT /api/machines/:id/runtime-config/:target to apply provider config',
+          409,
+          'USE_RUNTIME_CONFIG_ENDPOINT',
+        );
+      }
       // Owner-only: admins may view jobs but not run installers on someone
       // else's machine (403 — the machine is already visible to them).
       if (machine.ownerId !== req.user!.id) {
