@@ -95,6 +95,11 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 - Research T1: [`research/phase-8-t1-deepseek-harness.md`](./research/phase-8-t1-deepseek-harness.md) — DeepSeek Harness (dsh) ground truth pinned to `v0.1.2-rc.1`: the `~/.dsh` home + home-level `cordis.patch.yml` (applies to every profile, hot-reloads), the Agent-Skills format with mandatory frontmatter, `dsh-mcp-client` MCP rows, hook bridges/subagent providers (why they're skipped), and the native `dsh --profile acp` server.
 - Design T1: [`design/phase-8-t1-deepseek.md`](./design/phase-8-t1-deepseek.md) — the shipped T1 plan: the `deepseek` target end to end (install adapter with frontmatter synthesis + marked-region patch surgery, C3 scanner, C5 ACP row, C4 deployability), the T-wave numbering decision (supersedes the 3.8 "other agents" bucket), the supported-harnesses list, and the registry-resilience fix the T1 smoke surfaced.
 
+### Phase 9 — Harness runtime lifecycle 🧪 designed
+
+- Research: [`research/phase-9-harness-runtime.md`](./research/phase-9-harness-runtime.md) — ground truth for managing the harness software itself: per-CLI install methods (claude native/npm/brew incl. channel + auto-updater interference, codex npm/brew, dsh npm), `--version` shapes, install-method detection by bin path, and each harness's native provider/key config slots (CC `settings.json` env, codex `config.toml` + `auth.json`, dsh `dsh-llm-pi-ai` patch rows + `apiKeyEnv`).
+- Design: [`design/phase-9-harness-runtime.md`](./design/phase-9-harness-runtime.md) — runtime arm on the inventory payload, `harness` job type on the C4 pipeline (install/upgrade/pin), `RuntimeConfig` entity (migration `0011`) referencing distributable credentials, per-target native config writers, redacted `runtime:config.get` viewing, the MachineDetail Runtimes card, waves W1–W4.
+
 ### Concept notes (design/)
 
 - [`design/profiles.md`](./design/profiles.md) — the broader profile concept + intended CLI install flow (future).

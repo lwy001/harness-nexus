@@ -52,6 +52,7 @@ while a small client (`hnx`) on each of your machines does the local work.
 | ACP chat                               | ✅ shipped                   |
 | Web UI languages (en / zh-CN)          | ✅ shipped                   |
 | npm: `@harness-nexus/cli` published    | ✅ 0.1.0-alpha               |
+| Harness runtime mgmt (install/upgrade) | 🧪 designed (Phase 9)        |
 | Orchestration (multi-agent)            | 🧪 undesigned                |
 | Other import adapters (ECC/Superpower) | 🧪 planned                   |
 

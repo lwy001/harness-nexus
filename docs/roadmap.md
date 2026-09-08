@@ -292,3 +292,28 @@ Cross-cutting (not a numbered phase):
 - Manual channel (dev machine): granular bypass-2FA token + IP allowlist,
   `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish`.
 - Release procedure: bump the five manifests → push → run the workflow.
+
+## Phase 9 — Harness runtime lifecycle 🧪 designed (2026-09)
+
+Manage the **harness software itself** on machines — presence, version,
+install/upgrade, and the LLM provider/model configuration it runs with — the
+piece users asked for after Phase 8 shipped artifact management only
+("一键部署/升级 claude code / codex / dsh 软件本体，扫描 bin 与版本，可查看配置").
+
+- Research: `docs/research/phase-9-harness-runtime.md` · Design:
+  `docs/design/phase-9-harness-runtime.md` (both 2026-09; implementation not
+  started). Rides the Phase 8 machine/daemon/job infrastructure.
+- Planned waves:
+  - **W1 Runtime inventory** — `runtimes` arm on the inventory payload (bin
+    path, `--version`, install method) + MachineDetail card.
+  - **W2 Install / upgrade / pin jobs** — `type: 'harness'` jobs on the C4
+    pipeline; per-target command table (npm / claude native installer); CC
+    auto-updater disabled on managed machines.
+  - **W3 Provider config push** — `RuntimeConfig` entity (per machine ×
+    target, distributable-credential-referencing) applied into each harness's
+    native slots (CC `settings.json` env, codex `config.toml`+`auth.json`, dsh
+    managed patch region + `apiKeyEnv`).
+  - **W4 Redacted config viewer** — daemon-side `runtime:config.get` with
+    key-name-aware masking; UI drawer.
+- Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
+  runtimes, managed-settings hierarchies.
