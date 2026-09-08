@@ -109,7 +109,7 @@ export class JobService {
   async createJob(input: {
     machineId: string;
     ownerId: string;
-    type: 'deploy';
+    type: 'deploy' | 'harness';
     payload: Record<string, unknown>;
   }): Promise<Job> {
     const now = new Date().toISOString();

@@ -344,6 +344,82 @@ function RuntimeStatus({ runtime }: { runtime: RuntimeInfoView | null }) {
   );
 }
 
+/**
+ * Install / Upgrade / pin control for a runtime-managed Agent (Phase 9 W2) —
+ * confirm-first; an optional version turns the action into a pin/install-at.
+ * Renders nothing when the daemon doesn't probe runtimes (hermes, old hnx).
+ */
+function RuntimeManage({
+  machineId,
+  target,
+  runtime,
+}: {
+  machineId: string;
+  target: string;
+  runtime: RuntimeInfoView | null;
+}) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [version, setVersion] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (runtime === null) return null;
+  const installed = runtime.installed;
+  const trimmed = version.trim();
+
+  async function manage(): Promise<void> {
+    const action = trimmed !== '' ? 'pin' : installed ? 'upgrade' : 'install';
+    const confirmKey =
+      action === 'pin'
+        ? 'machineDetail.manageConfirmPin'
+        : action === 'upgrade'
+          ? 'machineDetail.manageConfirmUpgrade'
+          : 'machineDetail.manageConfirmInstall';
+    if (
+      !window.confirm(t(confirmKey, { target, ...(action === 'pin' ? { version: trimmed } : {}) }))
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await withAuthGuard(
+        () =>
+          api.createHarnessJob(machineId, {
+            action,
+            target: target as Parameters<typeof api.createHarnessJob>[1]['target'],
+            ...(action === 'pin' ? { version: trimmed } : {}),
+          }),
+        logout,
+      );
+      toast.success(t('machineDetail.manageToast'));
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.manageFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="flex items-center gap-2">
+      <Input
+        aria-label={t('machineDetail.versionPlaceholder')}
+        value={version}
+        onChange={(e) => setVersion(e.target.value)}
+        placeholder={t('machineDetail.versionPlaceholder')}
+        className="h-8 w-36 font-mono text-xs"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <Button size="sm" onClick={() => void manage()} disabled={busy}>
+        {busy
+          ? t('machineDetail.managing')
+          : installed
+            ? t('machineDetail.upgradeButton')
+            : t('machineDetail.installButton')}
+      </Button>
+    </span>
+  );
+}
+
 /** Capture-as-profile footer (Phase 9 W1) — confirm-first, one input + button. */
 function CaptureForm({ machineId, target }: { machineId: string; target: string }) {
   const { logout } = useAuth();
@@ -413,8 +489,9 @@ function TargetInventoryCard({ entry, machineId }: { entry: InventoryEntry; mach
               {t('machineDetail.profileApplied')}
             </Badge>
           ) : null}
-          <span className="ml-auto">
+          <span className="ml-auto flex flex-wrap items-center gap-3">
             <RuntimeStatus runtime={entry.runtime} />
+            <RuntimeManage machineId={machineId} target={entry.target} runtime={entry.runtime} />
           </span>
         </CardTitle>
         <CardDescription>

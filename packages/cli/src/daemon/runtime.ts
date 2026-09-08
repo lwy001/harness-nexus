@@ -1,0 +1,220 @@
+import { spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Socket } from 'socket.io-client';
+import {
+  harnessJobPayloadSchema,
+  harnessResultDataSchema,
+  type JobView,
+  type RuntimeInfo,
+} from '@harness-nexus/shared';
+import { probeRuntime, type ResolveOptions } from '../inventory/runtime.js';
+import { scanTarget, scannerFor } from '../inventory/scan.js';
+import { emptySnapshot } from './client.js';
+
+/**
+ * Harness-runtime job executor (Phase 9 W2). docs/design/phase-9-harness-runtime.md §4.2.
+ *
+ * `install` / `upgrade` / `pin` map to the per-target command table — npm is
+ * the universal channel (every daemon host runs Node ≥20); the ONE native
+ * path is a claude-code upgrade on an already-native install (`claude
+ * update`, which knows how to self-replace). Managed claude-code machines get
+ * `DISABLE_AUTOUPDATER` merged into settings.json so our jobs are the only
+ * version movers. A successful job re-probes the runtime and auto-reports the
+ * target's inventory (one scan feeds the Agent card + detected-instance sync).
+ *
+ * Tests drive this with a fake `npm` shim on PATH (design §10) — no network.
+ */
+
+/** npm package per runtime target (single source for install/pin/upgrade). */
+export const HARNESS_PACKAGES: Record<string, string> = {
+  'claude-code': '@anthropic-ai/claude-code',
+  codex: '@openai/codex',
+  deepseek: '@deepseek-ai/dsh',
+};
+
+/** The resolved installer invocation for a harness payload. */
+export function harnessCommand(
+  payload: {
+    action: 'install' | 'upgrade' | 'pin';
+    target: string;
+    version?: string | undefined;
+  },
+  currentInstallMethod: 'npm' | 'native' | 'brew' | 'unknown' | undefined,
+): { command: string; args: string[] } | { error: string } {
+  const pkg = HARNESS_PACKAGES[payload.target];
+  if (!pkg) return { error: `no harness package for target '${payload.target}'` };
+  // The one non-npm path: upgrading a NATIVE claude-code install — the native
+  // launcher self-updates; npm -g over it would shadow, not upgrade.
+  if (
+    payload.target === 'claude-code' &&
+    payload.action === 'upgrade' &&
+    currentInstallMethod === 'native' &&
+    payload.version === undefined
+  ) {
+    return { command: 'claude', args: ['update'] };
+  }
+  if (payload.target === 'claude-code' && currentInstallMethod === 'native' && payload.version) {
+    return {
+      error:
+        'claude-code is natively installed and cannot be pinned remotely — run the native installer on the machine, or reinstall it via npm first',
+    };
+  }
+  const spec = payload.version !== undefined ? `${pkg}@${payload.version}` : `${pkg}@latest`;
+  return { command: 'npm', args: ['install', '-g', spec] };
+}
+
+/**
+ * Merge `env.DISABLE_AUTOUPDATER = '1'` into ~/.claude/settings.json —
+ * merge-preserving (unknown/user keys survive). Never throws into the job
+ * path: an unreadable settings file is reported, not fatal.
+ */
+export function disableClaudeAutoUpdater(homeDir: string): string | null {
+  const dir = join(homeDir, '.claude');
+  const file = join(dir, 'settings.json');
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
+      return `settings.json is not a JSON object — left untouched`;
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      return `settings.json unreadable (${e instanceof Error ? e.message : String(e)}) — left untouched`;
+    }
+  }
+  const env = {
+    ...((settings.env as Record<string, string> | undefined) ?? {}),
+    DISABLE_AUTOUPDATER: '1',
+  };
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ ...settings, env }, null, 2)}\n`, 'utf8');
+  chmodSync(file, 0o600);
+  return null; // ok
+}
+
+export interface HarnessJobOptions {
+  /** Per-command timeout (default 10 min — npm on a slow link is slow). */
+  timeoutMs?: number;
+  /** Spawn env override (tests inject a fake npm via PATH). Default: process.env. */
+  env?: NodeJS.ProcessEnv;
+  homeDir?: string;
+}
+
+const TAIL_BYTES = 4096;
+
+export async function runHarnessJob(
+  socket: Socket,
+  job: JobView,
+  opts: HarnessJobOptions = {},
+): Promise<void> {
+  const parsed = harnessJobPayloadSchema.safeParse(job.payload);
+  if (!parsed.success) {
+    socket.emit('job:result', { jobId: job.id, ok: false, error: 'harness payload invalid' });
+    return;
+  }
+  const payload = parsed.data;
+  const homeDir = opts.homeDir;
+  const probeOpts: ResolveOptions = {};
+  if (opts.env?.PATH !== undefined) probeOpts.pathEnv = opts.env.PATH;
+  if (homeDir !== undefined) probeOpts.homeDir = homeDir;
+  const progress = (phase: string, message?: string): void => {
+    socket.emit('job:progress', { jobId: job.id, phase, ...(message ? { message } : {}) });
+  };
+  const result = (ok: boolean, extra: { error?: string; data?: unknown }): void => {
+    socket.emit('job:result', { jobId: job.id, ok, ...extra });
+  };
+
+  progress(
+    'resolve',
+    `${payload.action} ${payload.target}${payload.version ? `@${payload.version}` : ''}`,
+  );
+
+  // Current install method decides the claude-code upgrade path.
+  const current =
+    payload.action === 'upgrade' ? await probeRuntime(payload.target, probeOpts) : null;
+  const cmd = harnessCommand(payload, current?.installed ? current.installMethod : undefined);
+  if ('error' in cmd) {
+    result(false, { error: cmd.error });
+    return;
+  }
+
+  progress('install', `${cmd.command} ${cmd.args.join(' ')}`.slice(0, 512));
+
+  const spawnOutcome = await new Promise<{ ok: boolean; tail: string }>((resolve) => {
+    let tail = '';
+    let lastEmit = 0;
+    const append = (chunk: Buffer): void => {
+      tail = (tail + chunk.toString()).slice(-TAIL_BYTES);
+      const now = Date.now();
+      if (now - lastEmit >= 1200) {
+        lastEmit = now;
+        const line =
+          tail
+            .split('\n')
+            .filter((l) => l.trim().length > 0)
+            .pop() ?? '';
+        if (line.length > 0) progress('install', line.slice(0, 512));
+      }
+    };
+    let child: ReturnType<typeof spawn>;
+    try {
+      // Inherit the daemon's environment: proxied machines must pass
+      // HTTP(S)_PROXY / npm_config_registry through to the installer.
+      child = spawn(cmd.command, cmd.args, { env: opts.env ?? process.env });
+    } catch (e) {
+      resolve({ ok: false, tail: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 2000).unref?.();
+      resolve({ ok: false, tail: `${tail}\n timed out after ${opts.timeoutMs ?? 600000}ms` });
+    }, opts.timeoutMs ?? 600000);
+    child.stdout?.on('data', append);
+    child.stderr?.on('data', append);
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ ok: false, tail: `${tail}\n${e.message}` });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, tail });
+    });
+  });
+
+  if (!spawnOutcome.ok) {
+    const trimmed = spawnOutcome.tail.trim().split('\n').slice(-8).join('\n').slice(0, 900);
+    result(false, { error: `${cmd.command} ${cmd.args.join(' ')} failed:\n${trimmed}` });
+    return;
+  }
+
+  // Managed claude-code: our jobs become the only version mover.
+  let warning: string | null = null;
+  if (payload.target === 'claude-code' && homeDir !== undefined) {
+    warning = disableClaudeAutoUpdater(homeDir);
+  }
+
+  // Re-probe so the job RESULT reports what actually landed, then auto-report
+  // the target's inventory (runtime arm feeds the Agent card + detected sync).
+  progress('verify', 'probing runtime');
+  const runtime: RuntimeInfo = await probeRuntime(payload.target, probeOpts);
+  const snapshot = scannerFor(payload.target)
+    ? scanTarget(payload.target, homeDir ?? undefined)
+    : emptySnapshot(payload.target);
+  socket.emit('inventory:report', { runtimes: [runtime], snapshot });
+
+  const data = harnessResultDataSchema.parse({
+    target: payload.target,
+    action: payload.action,
+    ...(runtime.installed
+      ? {
+          version: runtime.version,
+          binPath: runtime.binPath,
+          installMethod: runtime.installMethod,
+        }
+      : {}),
+    ...(warning !== null ? { warning } : {}),
+  });
+  result(true, { data });
+}

@@ -4,6 +4,7 @@ import {
   inventoryItemKindSchema,
   inventorySnapshotSchema,
   runtimeInfoSchema,
+  runtimeTargetSchema,
 } from './schemas/inventory.js';
 import { agentTargetSchema } from './schemas/profile.js';
 
@@ -65,7 +66,7 @@ export const machineStatusEventSchema = z.object({
 
 // ---- job envelopes (C1 framing, C4 semantics) ----
 
-export const jobTypeSchema = z.enum(['deploy', 'import', 'scan']);
+export const jobTypeSchema = z.enum(['deploy', 'import', 'scan', 'harness']);
 export const jobStatusSchema = z.enum([
   'queued',
   'dispatched',
@@ -97,6 +98,50 @@ export const deployJobPayloadSchema = z.object({
   /** Optional install-root override on the machine (maps to the planner's `outDir`). */
   directory: z.string().min(1).max(512).optional(),
 });
+
+/**
+ * `Job.payload` for `type: 'harness'` (Phase 9 W2) — install / upgrade / pin
+ * the harness runtime itself. `apply-config` (W3) extends this union later.
+ * Omitting `version` means latest; `pin` exists precisely to pin, so it
+ * demands one. `channel` (claude-code stable/latest) is a W3 open question —
+ * deliberately absent here.
+ */
+export const harnessActionSchema = z.enum(['install', 'upgrade', 'pin']);
+export const harnessJobPayloadSchema = z
+  .object({
+    type: z.literal('harness'),
+    action: harnessActionSchema,
+    target: runtimeTargetSchema,
+    /** npm version spec (bare semver or dist-tag); omit = @latest. */
+    version: z.string().min(1).max(64).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.action === 'pin' && v.version === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'pin requires a version',
+      });
+    }
+  });
+
+/** The REST body of `POST /api/machines/:id/jobs` — type-discriminated (W2);
+ * a body without `type` is a deploy (the pre-W2 shape every SDK caller sends). */
+export const createMachineJobSchema = z.preprocess(
+  (v) => (typeof v === 'object' && v !== null && !('type' in v) ? { type: 'deploy', ...v } : v),
+  z.union([deployJobPayloadSchema.extend({ type: z.literal('deploy') }), harnessJobPayloadSchema]),
+);
+
+/** What a daemon reports in `job:result.data` for a successful harness job (W2). */
+export const harnessResultDataSchema = z.object({
+  target: runtimeTargetSchema,
+  action: harnessActionSchema,
+  version: z.string().max(64).optional(),
+  binPath: z.string().max(512).optional(),
+  installMethod: z.enum(['npm', 'native', 'brew', 'unknown']).optional(),
+  /** Non-fatal follow-up note (e.g. settings.json left untouched). */
+  warning: z.string().max(512).optional(),
+});
+export type HarnessResultData = z.infer<typeof harnessResultDataSchema>;
 
 /** server → browser (/app): a job transitioned. */
 export const jobUpdateEventSchema = z.object({ job: jobViewSchema });
@@ -382,6 +427,9 @@ export type JobType = z.infer<typeof jobTypeSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type JobView = z.infer<typeof jobViewSchema>;
 export type DeployJobPayload = z.infer<typeof deployJobPayloadSchema>;
+export type HarnessAction = z.infer<typeof harnessActionSchema>;
+export type HarnessJobPayload = z.infer<typeof harnessJobPayloadSchema>;
+export type CreateMachineJobInput = z.infer<typeof createMachineJobSchema>;
 export type JobUpdateEvent = z.infer<typeof jobUpdateEventSchema>;
 export type JobDispatchEvent = z.infer<typeof jobDispatchEventSchema>;
 export type JobProgressEvent = z.infer<typeof jobProgressEventSchema>;

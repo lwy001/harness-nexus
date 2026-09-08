@@ -32,6 +32,8 @@ import type {
   InventorySnapshot,
   InventoryDiff,
   RuntimeInfo,
+  RuntimeTarget,
+  HarnessAction,
 } from '@harness-nexus/shared';
 export {
   SCANNABLE_TARGETS,
@@ -49,6 +51,8 @@ export type {
   InventorySnapshot,
   InventoryDiff,
   RuntimeInfo,
+  RuntimeTarget,
+  HarnessAction,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -378,6 +382,18 @@ export class HarnessNexusClient {
     input: { profileId: string; directory?: string },
   ): Promise<JobView> {
     const res = await this.request('POST', `/api/machines/${machineId}/jobs`, input);
+    return res.job;
+  }
+
+  /** Queue a harness install/upgrade/pin job (Phase 9 W2 — owner-only server-side). */
+  async createHarnessJob(
+    machineId: string,
+    input: { action: HarnessAction; target: RuntimeTarget; version?: string },
+  ): Promise<JobView> {
+    const res = await this.request('POST', `/api/machines/${machineId}/jobs`, {
+      type: 'harness',
+      ...input,
+    });
     return res.job;
   }
 

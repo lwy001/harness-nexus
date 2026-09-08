@@ -605,6 +605,37 @@ designed). Summary for daily work:
   state is captureable). MachineDetail renders per-AGENT cards (runtime
   status line, not-installed state, capture form per card).
 
+## Harness install/upgrade/pin jobs (Phase 9 W2)
+
+Extends the section above (read it first). Full design in
+`docs/design/phase-9-harness-runtime.md` §4.2/§9. Summary for daily work:
+
+- **`type: 'harness'` jobs** ride the unchanged C4 pipeline (queue/replay/
+  `job:update` push) but never create AgentInstances. `POST
+/api/machines/:id/jobs` now takes a `type`-discriminated union
+  (`createMachineJobSchema`); a body WITHOUT `type` is a deploy (pre-W2 SDK
+  compat). Harness create is OWNER-ONLY (admin on a foreign machine → 403
+  `MACHINE_OWNER_ONLY`) and soft-gated on the daemon's `harness` capability
+  when online (offline may queue). Payload: `{type, action:
+install|upgrade|pin, target: RuntimeTarget, version?}` — `pin` requires a
+  version; W3 adds `apply-config` + `channel`.
+- **The daemon executor is `cli/src/daemon/runtime.ts`** (`runHarnessJob`,
+  dispatched from `daemon/jobs.ts`). npm is the only install channel
+  (`HARNESS_PACKAGES` table); the ONE native path is `claude update` for an
+  upgrade of an already-native claude-code install (pinning native refuses).
+  Installs inherit the daemon env (proxy/registry pass-through), get 10 min
+  per command (SIGTERM→SIGKILL), and stream a throttled stdout/stderr tail
+  into `job:progress`. On success it merges `DISABLE_AUTOUPDATER=1` into
+  `~/.claude/settings.json` (claude-code only; merge-preserving, 0600),
+  RE-PROBES the target, reports the landing version in `job:result.data`
+  (`harnessResultDataSchema`, optional `warning`), and auto-reports that
+  target's inventory (Agent card + detected sync update without a rescan).
+- **Tests never touch the network**: a fake `npm` shim on PATH records argv
+  and writes a bin that prints the "installed" version
+  (`cli/test/runtime-job.test.ts`, smoke `[9 W2]`). Known accepted race: the
+  connect-time full report can overwrite a just-finished job's auto-report;
+  the next scan self-heals.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -795,12 +826,12 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
-  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 is SHIPPED
-  (2026-09, see its section above): Agent-first inventory with the runtime
-  probe arm, detected AgentInstances (chatable), and capture-as-profile.**
-  Remaining waves W2–W4 are designed, not implemented: `harness`-type
-  install/upgrade/pin jobs on the C4 pipeline; `RuntimeConfig` provider/model
-  push referencing distributable credentials; redacted config viewing. Read
+  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 + W2 are
+  SHIPPED (2026-09, see the sections above): Agent-first inventory with the
+  runtime probe arm, detected AgentInstances (chatable), capture-as-profile,
+  and `harness`-type install/upgrade/pin jobs.** Remaining waves W3–W4 are
+  designed, not implemented: `RuntimeConfig` provider/model push referencing
+  distributable credentials; redacted config viewing. Read
   `docs/research/phase-9-harness-runtime.md` + `docs/design/phase-9-harness-runtime.md`
   first — waves W1–W4 land independently. Local verification-rig notes
   (machine container lifecycle, JWT minting, the FAKE dsh shim that must be

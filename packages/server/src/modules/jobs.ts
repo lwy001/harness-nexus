@@ -1,16 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import type { Machine } from '@harness-nexus/core';
-import { AppError, deployJobPayloadSchema } from '@harness-nexus/shared';
+import { AppError, createMachineJobSchema, deployJobPayloadSchema } from '@harness-nexus/shared';
 import { jobView } from '../jobs/service.js';
 
 /**
- * Deploy jobs + agent instances (Phase 8 C4). docs/design/phase-8-c4.md.
+ * Deploy jobs + harness jobs + agent instances (Phase 8 C4 · Phase 9 W2).
+ * docs/design/phase-8-c4.md · phase-9-harness-runtime.md §4.2.
  *
  * All machine-scoped endpoints inherit the machine owner-or-admin guard with
  * 404 existence-hiding. A deploy job is fire-and-forget replayable work: it
  * queues when the daemon is offline and drains on reconnect; the daemon
  * executes it through the unchanged 3.3 pipeline against a deploy bundle
- * fetched with its own machine PAT.
+ * fetched with its own machine PAT. A harness job (W2) installs/upgrades/pins
+ * the harness runtime — OWNER-ONLY to create (admins may view, not mutate:
+ * machine-touching actions match chat's owner-only stance) and gated on the
+ * daemon's `harness` capability when online.
  */
 
 /**
@@ -35,12 +39,45 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     return machine;
   };
 
-  // ---- POST /api/machines/:id/jobs — create a deploy job ----
+  // ---- POST /api/machines/:id/jobs — create a deploy or harness job ----
   app.post<{ Params: { id: string } }>('/api/machines/:id/jobs', guard, async (req, reply) => {
     const machine = await visibleMachine(req.params.id, req.user!);
-    const input = deployJobPayloadSchema.parse(req.body);
+    const input = createMachineJobSchema.parse(req.body);
 
-    const profile = await app.uow.profiles.findById(input.profileId);
+    if (input.type === 'harness') {
+      // Owner-only: admins may view jobs but not run installers on someone
+      // else's machine (403 — the machine is already visible to them).
+      if (machine.ownerId !== req.user!.id) {
+        throw new AppError(
+          'Harness jobs are owner-only — only the machine owner may manage its software',
+          403,
+          'MACHINE_OWNER_ONLY',
+        );
+      }
+      // Soft capability gate (deploy's rule): an ONLINE daemon without the
+      // harness executor would settle every job as unsupported — refuse early.
+      // An OFFLINE machine may queue; capability is knowable once hello'd.
+      if (app.realtime.presence.isOnline(machine.id) && !machine.capabilities.includes('harness')) {
+        throw new AppError(
+          'Daemon does not advertise the harness capability (upgrade hnx on the machine)',
+          409,
+          'DAEMON_NO_HARNESS',
+        );
+      }
+      const job = await app.realtime.jobs.createJob({
+        machineId: machine.id,
+        ownerId: req.user!.id,
+        type: 'harness',
+        payload: input as unknown as Record<string, unknown>,
+      });
+      return reply.code(201).send({ job: jobView(job) });
+    }
+
+    const deployInput = deployJobPayloadSchema.parse({
+      profileId: input.profileId,
+      ...(input.directory !== undefined ? { directory: input.directory } : {}),
+    });
+    const profile = await app.uow.profiles.findById(deployInput.profileId);
     const profileVisible =
       profile &&
       (profile.scope === 'global' ||
@@ -78,7 +115,7 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       type: 'deploy',
       payload: {
         profileId: profile.id,
-        ...(input.directory ? { directory: input.directory } : {}),
+        ...(deployInput.directory ? { directory: deployInput.directory } : {}),
       },
     });
     return reply.code(201).send({ job: jobView(job) });

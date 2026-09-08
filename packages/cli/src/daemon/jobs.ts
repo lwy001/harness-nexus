@@ -8,17 +8,21 @@ import { HarnessNexusClient } from '@harness-nexus/sdk';
 import { planInstall } from '../install/planner.js';
 import { applyInstall } from '../install/installer.js';
 import type { ResolvedProfile } from '../install/types.js';
+import { runHarnessJob } from './runtime.js';
 
 /**
- * Daemon-side job executor (Phase 8 C4). docs/design/phase-8-c4.md.
+ * Daemon-side job executor (Phase 8 C4 + Phase 9 W2).
+ * docs/design/phase-8-c4.md · phase-9-harness-runtime.md.
  *
  * A deploy job is the 3.3 pipeline with a different trigger: fetch the
  * resolved bundle with the machine PAT (`GET /api/client/deploy-bundle` —
  * machine PAT exception #2), plan, apply + ledger, reporting `job:progress`
- * per phase and one terminal `job:result`. Plans are idempotent overwrites,
- * so a redelivered job (server recovered it after a disconnect) simply
- * re-runs. `scan`/`import` job types are reserved by the protocol — C3's
- * interactive flows handle them; arriving here they settle as unsupported.
+ * per phase and one terminal `job:result`. A harness job (W2) runs the
+ * runtime install/upgrade/pin command table instead. Plans are idempotent
+ * overwrites, so a redelivered job (server recovered it after a disconnect)
+ * simply re-runs. `scan`/`import` job types are reserved by the protocol —
+ * C3's interactive flows handle them; arriving here they settle as
+ * unsupported.
  */
 
 export interface JobExecutorOptions {
@@ -38,15 +42,19 @@ export function attachJobHandlers(socket: Socket, opts: JobExecutorOptions): voi
     // "with the daemon", the terminal result arrives separately.
     ack?.({ accepted: true });
     const job = parsed.data.job;
-    if (job.type !== 'deploy') {
-      socket.emit('job:result', {
-        jobId: job.id,
-        ok: false,
-        error: `job type '${job.type}' is not supported by this daemon`,
-      });
+    if (job.type === 'deploy') {
+      void runDeploy(socket, opts, job);
       return;
     }
-    void runDeploy(socket, opts, job);
+    if (job.type === 'harness') {
+      void runHarnessJob(socket, job);
+      return;
+    }
+    socket.emit('job:result', {
+      jobId: job.id,
+      ok: false,
+      error: `job type '${job.type}' is not supported by this daemon`,
+    });
   });
 }
 

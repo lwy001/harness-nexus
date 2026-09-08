@@ -2033,5 +2033,171 @@ if (w1Err.includes('Error:')) {
   );
 }
 
+// ===========================================================================
+// [9 W2] Harness install/upgrade/pin jobs — a FAKE npm shim on the daemon's
+// PATH records installs by writing a bin that prints the "installed" version
+// (no network). Full loop: pin job → succeeded → runtime row updates via the
+// daemon's post-install auto-report → detected instance appears → upgrade.
+// ===========================================================================
+log('\n--- [9 W2] fixture HOME + fake npm shim ---');
+const w2Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w2-'));
+const w2Shim = pathMod.join(w2Home, 'shim');
+const w2Bin = pathMod.join(w2Home, 'bin');
+mkdirSync(w2Shim, { recursive: true });
+mkdirSync(w2Bin, { recursive: true });
+const w2Chmod = (f) => chmodSync(f, 0o755);
+const w2Npm = pathMod.join(w2Shim, 'npm');
+writeFileSync(
+  w2Npm,
+  [
+    '#!/bin/sh',
+    'spec=$3',
+    'ver=${spec##*@}',
+    'name=${spec%@*}',
+    'case "$name" in',
+    '  *claude-code) bin=claude ;;',
+    '  *codex) bin=codex ;;',
+    '  *dsh) bin=dsh ;;',
+    '  *) exit 1 ;;',
+    'esac',
+    'if [ "$ver" = "latest" ]; then ver=2.0.0-w2fake; fi',
+    `out='${w2Bin}/'$bin`,
+    '{ echo \'#!/bin/sh\'; echo "echo $ver"; } > "$out"',
+    'chmod +x "$out"',
+    'echo "added 1 package in 0.1s"',
+  ].join('\n') + '\n',
+  'utf8',
+);
+w2Chmod(w2Npm);
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'w2-laptop' } });
+expect('w2 enroll status', r.status, 201);
+const w2MachineId = r.json.machine.id;
+const w2Token = r.json.token;
+
+const w2Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    w2Token,
+    '--machine-id',
+    w2MachineId,
+  ],
+  {
+    env: {
+      ...process.env,
+      HOME: w2Home,
+      PATH: `${w2Shim}:${w2Bin}:${process.env.PATH ?? ''}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  },
+);
+let w2Err = '';
+w2Daemon.stderr.on('data', (d) => {
+  w2Err += d.toString();
+});
+let w2Online = false;
+for (let i = 0; i < 100 && !w2Online; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}`, { token: userToken });
+  w2Online = r.json.machine.online && (r.json.machine.capabilities ?? []).includes('harness');
+  if (!w2Online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('w2 daemon online (harness capability)', w2Online, true);
+
+log('\n--- [9 W2] pin dsh@1.2.3-w2fake → job succeeds, runtime row + detected instance ---');
+// Let the daemon's connect-time full report land FIRST (it carries the
+// pre-install probe: dsh absent). Starting the pin job before it would let
+// that in-flight report overwrite the job's post-install auto-report.
+let w2Initial = null;
+for (let i = 0; i < 100 && w2Initial?.runtime?.installed !== false; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}/inventory`, { token: userToken });
+  w2Initial = r.json.inventory.find((x) => x.target === 'deepseek');
+  if (w2Initial?.runtime?.installed !== false) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('initial deepseek runtime row (not installed)', w2Initial?.runtime?.installed, false);
+
+r = await req('POST', `/api/machines/${w2MachineId}/jobs`, {
+  token: userToken,
+  body: { type: 'harness', action: 'pin', target: 'deepseek', version: '1.2.3-w2fake' },
+});
+expect('harness pin job created', r.status, 201);
+expect('harness job type', r.json.job.type, 'harness');
+const w2Job1 = r.json.job.id;
+let w2job = null;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}/jobs`, { token: userToken });
+  w2job = r.json.jobs.find((j) => j.id === w2Job1);
+  if (w2job && (w2job.status === 'succeeded' || w2job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('pin job succeeded', w2job?.status, 'succeeded');
+expect('pin job result carries the probed version', w2job?.result?.version, '1.2.3-w2fake');
+expect('pin job result method', w2job?.result?.installMethod, 'unknown');
+
+// The daemon's post-install auto-report lands asynchronously — poll for it.
+let w2Row = null;
+for (let i = 0; i < 50 && w2Row?.runtime?.version !== '1.2.3-w2fake'; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}/inventory`, { token: userToken });
+  w2Row = r.json.inventory.find((x) => x.target === 'deepseek');
+  if (w2Row?.runtime?.version !== '1.2.3-w2fake') await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('runtime row updated by the auto-report', w2Row?.runtime?.version, '1.2.3-w2fake');
+r = await req('GET', `/api/machines/${w2MachineId}/agents`, { token: userToken });
+expect(
+  'detected deepseek instance appeared after install',
+  r.json.agents.some((a) => a.source === 'detected' && a.target === 'deepseek'),
+  true,
+);
+
+log('\n--- [9 W2] upgrade → npm @latest through the shim ---');
+r = await req('POST', `/api/machines/${w2MachineId}/jobs`, {
+  token: userToken,
+  body: { type: 'harness', action: 'upgrade', target: 'deepseek' },
+});
+expect('upgrade job created', r.status, 201);
+const w2Job2 = r.json.job.id;
+for (let i = 0; i < 150; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}/jobs`, { token: userToken });
+  w2job = r.json.jobs.find((j) => j.id === w2Job2);
+  if (w2job && (w2job.status === 'succeeded' || w2job.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('upgrade job succeeded', w2job?.status, 'succeeded');
+for (let i = 0; i < 50 && w2Row?.runtime?.version !== '2.0.0-w2fake'; i++) {
+  r = await req('GET', `/api/machines/${w2MachineId}/inventory`, { token: userToken });
+  w2Row = r.json.inventory.find((x) => x.target === 'deepseek');
+  if (w2Row?.runtime?.version !== '2.0.0-w2fake') await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('runtime row shows the upgraded version', w2Row?.runtime?.version, '2.0.0-w2fake');
+
+log('\n--- [9 W2] gates: pin without version 400, admin mutation 403 ---');
+r = await req('POST', `/api/machines/${w2MachineId}/jobs`, {
+  token: userToken,
+  body: { type: 'harness', action: 'pin', target: 'deepseek' },
+});
+expect('pin without version rejected', r.status, 400);
+r = await req('POST', `/api/machines/${w2MachineId}/jobs`, {
+  token: adminToken,
+  body: { type: 'harness', action: 'install', target: 'deepseek' },
+});
+expect('admin harness mutation refused (owner-only)', r.status, 403);
+
+w2Daemon.kill('SIGTERM');
+await req('DELETE', `/api/machines/${w2MachineId}`, { token: userToken });
+rmSync(w2Home, { recursive: true, force: true });
+if (w2Err.includes('Error:')) {
+  log(
+    `(w2 daemon stderr note): ${w2Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

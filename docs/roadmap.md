@@ -312,9 +312,11 @@ piece users asked for after Phase 8 shipped artifact management only
     deploy-precedence so **any detected Agent is chatable** (closes the
     emitter-installed claude-code gap), and capture-as-profile
     (`POST /api/machines/:id/inventory/capture`, zero-entry profiles allowed).
-  - **W2 Install / upgrade / pin jobs** — `type: 'harness'` jobs on the C4
-    pipeline; per-target command table (npm / claude native installer); CC
-    auto-updater disabled on managed machines.
+  - **W2 Install / upgrade / pin jobs — SHIPPED (2026-09)** — `type:
+'harness'` jobs on the C4 pipeline (owner-only, `harness`-capability
+    gated); daemon executor with npm command table + `claude update` for
+    native CC upgrades + `DISABLE_AUTOUPDATER` settings merge; post-install
+    re-probe auto-report; Agent-card Install/Upgrade/pin controls.
   - **W3 Provider config push** — `RuntimeConfig` entity (per machine ×
     target, distributable-credential-referencing) applied into each harness's
     native slots (CC `settings.json` env, codex `config.toml`+`auth.json`, dsh

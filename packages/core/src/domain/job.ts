@@ -1,13 +1,14 @@
 /**
  * Phase 8 C4 — a unit of replayable work executed by a machine's daemon over
  * `/ctl` (`job:dispatch` → `job:progress` → `job:result`). C4 ships the
- * `deploy` type (remote profile install reusing the 3.3 pipeline); `scan` /
- * `import` stay interactive (C3) and remain reserved in the type union.
- * See docs/design/phase-8-c4.md.
+ * `deploy` type (remote profile install reusing the 3.3 pipeline); Phase 9 W2
+ * adds `harness` (install/upgrade/pin the harness runtime itself — no
+ * AgentInstance side effects). `scan` / `import` stay interactive (C3) and
+ * remain reserved in the type union. See docs/design/phase-8-c4.md.
  */
 import type { AgentTarget } from './resource.js';
 
-export type JobType = 'deploy' | 'import' | 'scan';
+export type JobType = 'deploy' | 'import' | 'scan' | 'harness';
 
 export type JobStatus = 'queued' | 'dispatched' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 

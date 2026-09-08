@@ -340,6 +340,141 @@ describe('gates', () => {
     expect(res.json().error).toBe('TARGET_NOT_DEPLOYABLE');
   });
 
+  it('harness job: payload union, pin-needs-version, and bad targets are 400', async () => {
+    for (const body of [
+      { type: 'harness', action: 'pin', target: 'codex' }, // pin without version
+      { type: 'harness', action: 'install', target: 'hermes' }, // not a runtime target
+      { type: 'harness', action: 'uninstall', target: 'codex' }, // stray action
+      { type: 'harness', profileId: deployProfileId }, // harness arm needs action+target
+    ]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/machines/${machineId}/jobs`,
+        headers: authed(jwt),
+        payload: body,
+      });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('harness job is owner-only — an admin may view the machine but not run installers', async () => {
+    // Make the requesting user an admin (bootstrap 'root' already is — so use
+    // a second user owning a second machine, and have root (admin) try).
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'harnessowner', password: 'hunter2hunter2' },
+    });
+    const ownerJwt = reg.json().token;
+    const enroll = await app.inject({
+      method: 'POST',
+      url: '/api/machines',
+      headers: authed(ownerJwt),
+      payload: { name: 'harness-box' },
+    });
+    const otherMachine = enroll.json().machine.id;
+    // Admin CAN read the machine (existence visible to admins)…
+    const view = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${otherMachine}`,
+      headers: authed(jwt),
+    });
+    expect(view.statusCode).toBe(200);
+    // …but a harness job is a mutation on someone else's machine → 403.
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${otherMachine}/jobs`,
+      headers: authed(jwt),
+      payload: { type: 'harness', action: 'install', target: 'codex' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('MACHINE_OWNER_ONLY');
+    // The owner would be allowed — but the daemon is offline, so it queues
+    // (capability is only knowable once the daemon says hello).
+    const ownerRes = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${otherMachine}/jobs`,
+      headers: authed(ownerJwt),
+      payload: { type: 'harness', action: 'install', target: 'codex' },
+    });
+    expect(ownerRes.statusCode).toBe(201);
+    expect(ownerRes.json().job.type).toBe('harness');
+    expect(ownerRes.json().job.status).toBe('queued');
+  });
+
+  it('harness job: an online daemon without the harness capability → 409 DAEMON_NO_HARNESS', async () => {
+    const sock = await connectDaemon();
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { type: 'harness', action: 'upgrade', target: 'deepseek' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('DAEMON_NO_HARNESS');
+    sock.close();
+  });
+
+  it('harness job round-trip: dispatch → progress → result (no AgentInstance side effects)', async () => {
+    const sock = await connectDaemon((s) => {
+      s.on('job:dispatch', (e: { job: JobView }) => {
+        const job = e.job;
+        if (job.type !== 'harness') return;
+        s.emit('job:progress', { jobId: job.id, phase: 'install', message: 'npm i -g' });
+        s.emit('job:result', {
+          jobId: job.id,
+          ok: true,
+          data: {
+            target: 'deepseek',
+            action: 'pin',
+            version: '0.1.2-rc.1',
+            installMethod: 'npm',
+          },
+        });
+      });
+    });
+    await emitAck(sock, 'machine:hello', {
+      daemonVersion: '0.6.0-test',
+      capabilities: ['inventory', 'deploy', 'harness'],
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { type: 'harness', action: 'pin', target: 'deepseek', version: '0.1.2-rc.1' },
+    });
+    expect(res.statusCode).toBe(201);
+    const job = res.json().job;
+    expect(job.type).toBe('harness');
+    expect(job.payload).toEqual({
+      type: 'harness',
+      action: 'pin',
+      target: 'deepseek',
+      version: '0.1.2-rc.1',
+    });
+
+    const done = await waitJobStatus(job.id, 'succeeded');
+    expect(done.result).toMatchObject({ target: 'deepseek', version: '0.1.2-rc.1' });
+
+    // Harness jobs never create agent instances — no deepseek row appears
+    // (the earlier deploy test's hermes instance is the only deploy row).
+    const agents = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/agents`,
+      headers: authed(jwt),
+    });
+    expect(
+      agents
+        .json()
+        .agents.filter(
+          (a: { source: string; target: string }) =>
+            a.source === 'deploy' && a.target === 'deepseek',
+        ),
+    ).toHaveLength(0);
+    sock.close();
+  });
+
   it('another user sees 404 (existence hiding) on job endpoints', async () => {
     const reg = await app.inject({
       method: 'POST',
