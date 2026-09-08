@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, dateLocale } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { toast } from 'sonner';
 import { HarnessNexusError, type PublicUser, type Role } from '@harness-nexus/sdk';
@@ -36,46 +37,56 @@ import { MoreHorizontalIcon, PlusIcon, ShieldCheckIcon, UserIcon, TrashIcon } fr
 
 export function UsersPage() {
   const { logout } = useAuth();
+  const { t, lang } = useI18n();
   const [users, setUsers] = useState<PublicUser[]>([]);
 
   async function refresh() {
     try {
       setUsers(await withAuthGuard(() => api.listUsers(), logout));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load users');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('users.loadFailed'));
     }
   }
   useEffect(() => {
     void refresh();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function setRole(u: PublicUser, role: Role) {
     try {
       await withAuthGuard(() => api.updateUserRole(u.id, role), logout);
-      toast.success(`${u.username} is now ${role}`);
+      toast.success(
+        t('users.nowRole', {
+          username: u.username,
+          role: role === 'admin' ? t('common.roleAdmin') : t('common.roleUser'),
+        }),
+      );
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
     }
   }
 
   async function remove(u: PublicUser) {
-    if (!confirm(`Delete user ${u.username}? This cannot be undone.`)) return;
+    if (!confirm(t('users.confirmDelete', { username: u.username }))) return;
     try {
       await withAuthGuard(() => api.deleteUser(u.id), logout);
-      toast.success(`Deleted ${u.username}`);
+      toast.success(t('users.deleted', { username: u.username }));
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('users.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Manage accounts and roles. {users.length} user{users.length === 1 ? '' : 's'}.
+          {t('users.subtitle')}{' '}
+          {users.length === 1
+            ? t('users.countOne', { count: users.length })
+            : t('users.countMany', { count: users.length })}
+          .
         </p>
       </div>
 
@@ -84,11 +95,11 @@ export function UsersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Username</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('users.username')}</TableHead>
+                <TableHead>{t('users.role')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('users.created')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -98,14 +109,14 @@ export function UsersPage() {
                   <TableCell>
                     <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="gap-1">
                       {u.role === 'admin' ? <ShieldCheckIcon /> : <UserIcon />}
-                      {u.role}
+                      {u.role === 'admin' ? t('common.roleAdmin') : t('common.roleUser')}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <span className="text-muted-foreground capitalize">{u.status}</span>
                   </TableCell>
                   <TableCell className="text-muted-foreground tabular-nums">
-                    {new Date(u.createdAt).toLocaleDateString(undefined, {
+                    {new Date(u.createdAt).toLocaleDateString(dateLocale(lang), {
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
@@ -116,26 +127,26 @@ export function UsersPage() {
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="size-8">
                           <MoreHorizontalIcon className="size-4" />
-                          <span className="sr-only">Open menu</span>
+                          <span className="sr-only">{t('common.openMenu')}</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Role</DropdownMenuLabel>
+                        <DropdownMenuLabel>{t('users.role')}</DropdownMenuLabel>
                         <DropdownMenuItem
                           disabled={u.role === 'admin'}
                           onClick={() => setRole(u, 'admin')}
                         >
-                          <ShieldCheckIcon /> Make admin
+                          <ShieldCheckIcon /> {t('users.makeAdmin')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           disabled={u.role === 'user'}
                           onClick={() => setRole(u, 'user')}
                         >
-                          <UserIcon /> Make user
+                          <UserIcon /> {t('users.makeUser')}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => remove(u)}>
-                          <TrashIcon /> Delete
+                          <TrashIcon /> {t('common.delete')}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -145,7 +156,7 @@ export function UsersPage() {
               {users.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    No users yet.
+                    {t('users.noUsers')}
                   </TableCell>
                 </TableRow>
               )}
@@ -161,6 +172,7 @@ export function UsersPage() {
 
 function CreateUser({ onCreated }: { onCreated: () => void }) {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('user');
@@ -169,13 +181,13 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     try {
       await withAuthGuard(() => api.createUser({ username, password, role }), logout);
-      toast.success(`Created ${username}`);
+      toast.success(t('users.createdOk', { username }));
       setUsername('');
       setPassword('');
       setRole('user');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
     }
   }
 
@@ -184,16 +196,14 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <PlusIcon className="size-4" />
-          Add user
+          {t('users.addUser')}
         </CardTitle>
-        <CardDescription>
-          Bypasses the registration switch — admins can always add users.
-        </CardDescription>
+        <CardDescription>{t('users.addUserDesc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="grid flex-1 gap-2">
-            <Label htmlFor="new-username">Username</Label>
+            <Label htmlFor="new-username">{t('users.username')}</Label>
             <Input
               id="new-username"
               value={username}
@@ -204,7 +214,7 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="grid flex-1 gap-2">
-            <Label htmlFor="new-password">Password</Label>
+            <Label htmlFor="new-password">{t('users.password')}</Label>
             <Input
               id="new-password"
               type="password"
@@ -214,18 +224,18 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="new-role">Role</Label>
+            <Label htmlFor="new-role">{t('users.role')}</Label>
             <Select value={role} onValueChange={(v) => setRole(v as Role)}>
               <SelectTrigger id="new-role" className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="user">user</SelectItem>
-                <SelectItem value="admin">admin</SelectItem>
+                <SelectItem value="user">{t('common.roleUser')}</SelectItem>
+                <SelectItem value="admin">{t('common.roleAdmin')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit">Create</Button>
+          <Button type="submit">{t('common.create')}</Button>
         </form>
       </CardContent>
     </Card>

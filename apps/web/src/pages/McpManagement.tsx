@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -86,6 +87,7 @@ function endpointOf(s: McpServer): string {
 
 export function McpManagementPage() {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const [items, setItems] = useState<McpServer[] | null>(null);
   const [statuses, setStatuses] = useState<Map<string, McpServerStatus>>(new Map());
   // name → distributable, for deriving `auto` dial sites client-side (display
@@ -104,8 +106,9 @@ export function McpManagementPage() {
       for (const c of creds) if (!map.has(c.name)) map.set(c.name, c.distributable);
       setDistributable(map);
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load MCP servers');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('mcp.loadFailed'));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable per language; dep array kept as-is
   }, [logout]);
 
   const refreshStatuses = useCallback(async () => {
@@ -132,27 +135,30 @@ export function McpManagementPage() {
   }, [refresh, refreshStatuses]);
 
   async function remove(s: McpServer) {
-    if (!confirm(`Delete MCP server "${s.name}"?`)) return;
+    if (!confirm(t('mcp.confirmDelete', { name: s.name }))) return;
     try {
       await withAuthGuard(() => api.deleteMcpServer(s.id), logout);
-      toast.success('MCP server deleted');
+      toast.success(t('mcp.deletedToast'));
       await refresh();
       await refreshStatuses();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">MCP management</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('mcp.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          MCP servers this instance knows about. <span className="font-medium">Server</span>-dialed
-          servers are pooled by Harness Nexus behind the <code className="font-mono">/mcp</code>{' '}
-          outlet; <span className="font-medium">client</span>-dialed servers are reached by the{' '}
-          <code className="font-mono">hnx mcp serve</code> shim on the user's machine (stdio
-          included). Organize them into profiles for install.
+          {t('mcp.subtitleLead')} <span className="font-medium">{t('mcp.subtitleServerWord')}</span>
+          {t('mcp.subtitleServerText')}
+          <code className="font-mono">/mcp</code>
+          {t('mcp.subtitleServerAfter')}
+          <span className="font-medium">{t('mcp.subtitleClientWord')}</span>
+          {t('mcp.subtitleClientText')}
+          <code className="font-mono">hnx mcp serve</code>
+          {t('mcp.subtitleClientAfter')}
         </p>
       </div>
 
@@ -160,36 +166,33 @@ export function McpManagementPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ServerIcon className="size-4" />
-            Servers
+            {t('mcp.serversTitle')}
           </CardTitle>
-          <CardDescription>
-            Server-dialed rows show live connect state + tools. Client-dialed rows are dialed by the
-            shim — the platform never opens them.
-          </CardDescription>
+          <CardDescription>{t('mcp.serversDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6 w-[34%]">Name</TableHead>
-                <TableHead>Dial site</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Transport</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6 w-[34%]">{t('common.name')}</TableHead>
+                <TableHead>{t('mcp.dialSite')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('mcp.transport')}</TableHead>
+                <TableHead>{t('common.scope')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items === null ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
-                    No MCP servers configured yet.
+                    {t('mcp.empty')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -242,6 +245,7 @@ function ServerRow({
   onStatusChange: () => Promise<void>;
   logout: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [pendingConnect, setPendingConnect] = useState(false);
 
@@ -256,29 +260,33 @@ function ServerRow({
     try {
       await withAuthGuard(() => api.connectMcpServer(server.id), logout);
       await onStatusChange(); // pick up the new state immediately
-      toast.success(`Connecting to "${server.name}"…`);
+      toast.success(t('mcp.connectingToast', { name: server.name }));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Connect failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('mcp.connectFailed'));
     } finally {
       setPendingConnect(false);
     }
   }
 
   async function disconnect() {
-    if (!confirm(`Disconnect "${server.name}"? It will stay configured but go offline.`)) return;
+    if (!confirm(t('mcp.confirmDisconnect', { name: server.name }))) return;
     try {
       await withAuthGuard(() => api.disconnectMcpServer(server.id), logout);
       await onStatusChange();
-      toast.success(`"${server.name}" disconnected`);
+      toast.success(t('mcp.disconnectedToast', { name: server.name }));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Disconnect failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('mcp.disconnectFailed'));
     }
   }
 
   // Common cells shared by server-dialed and client-dialed rows.
   const dialSiteCell = (
     <Badge variant={isServerDialed ? 'default' : 'secondary'} className="font-mono text-[10px]">
-      {server.dialSite === 'auto' ? `auto → ${site}` : server.dialSite}
+      {server.dialSite === 'auto'
+        ? t('mcp.dialAutoDerived', {
+            site: site === 'client' ? t('mcp.dialClient') : t('mcp.dialServer'),
+          })
+        : server.dialSite}
     </Badge>
   );
   const transportCell = (
@@ -293,7 +301,7 @@ function ServerRow({
       ) : (
         <UserIcon className="size-3" />
       )}
-      {server.scope}
+      {server.scope === 'global' ? t('common.scopeGlobal') : t('common.scopePersonal')}
     </Badge>
   );
   const actionsCell = (
@@ -307,20 +315,20 @@ function ServerRow({
             onClick={disconnect}
           >
             <PlugZapIcon className="size-4" />
-            Disconnect
+            {t('mcp.disconnect')}
           </Button>
         ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8">
               <MoreHorizontalIcon className="size-4" />
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{t('common.openMenu')}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {isServerDialed && isConnected ? (
               <DropdownMenuItem onClick={disconnect}>
-                <PlugZapIcon /> Disconnect
+                <PlugZapIcon /> {t('mcp.disconnect')}
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem
@@ -328,7 +336,7 @@ function ServerRow({
               disabled={server.scope === 'global' && !isAdmin}
               onClick={() => onRemoved(server)}
             >
-              <TrashIcon /> Delete
+              <TrashIcon /> {t('common.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -344,7 +352,7 @@ function ServerRow({
         <TableCell>{dialSiteCell}</TableCell>
         <TableCell>
           <Badge variant="outline" className="font-mono text-[10px]">
-            dialed by hnx shim
+            {t('mcp.dialedByShim')}
           </Badge>
         </TableCell>
         <TableCell>{transportCell}</TableCell>
@@ -367,7 +375,7 @@ function ServerRow({
                   type="button"
                   className="text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-30"
                   disabled={!isConnected}
-                  aria-label={open ? 'Collapse tools' : 'Expand tools'}
+                  aria-label={open ? t('mcp.collapseTools') : t('mcp.expandTools')}
                 >
                   <ChevronRightIcon
                     className={`size-4 transition-transform ${open ? 'rotate-90' : ''}`}
@@ -393,7 +401,7 @@ function ServerRow({
                   onClick={disconnect}
                 >
                   <PlugZapIcon className="size-4" />
-                  Disconnect
+                  {t('mcp.disconnect')}
                 </Button>
               ) : (
                 <Button
@@ -408,20 +416,24 @@ function ServerRow({
                   ) : (
                     <PlugIcon className="size-4" />
                   )}
-                  {isConnecting ? 'Connecting…' : connState === 'error' ? 'Reconnect' : 'Connect'}
+                  {isConnecting
+                    ? t('mcp.connecting')
+                    : connState === 'error'
+                      ? t('mcp.reconnect')
+                      : t('mcp.connect')}
                 </Button>
               )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="size-8">
                     <MoreHorizontalIcon className="size-4" />
-                    <span className="sr-only">Open menu</span>
+                    <span className="sr-only">{t('common.openMenu')}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {isConnected ? (
                     <DropdownMenuItem onClick={disconnect}>
-                      <PlugZapIcon /> Disconnect
+                      <PlugZapIcon /> {t('mcp.disconnect')}
                     </DropdownMenuItem>
                   ) : null}
                   <DropdownMenuItem
@@ -429,7 +441,7 @@ function ServerRow({
                     disabled={server.scope === 'global' && !isAdmin}
                     onClick={() => onRemoved(server)}
                   >
-                    <TrashIcon /> Delete
+                    <TrashIcon /> {t('common.delete')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -462,6 +474,7 @@ function StatusBadge({
   detail: string | undefined;
   toolCount: number;
 }) {
+  const { t } = useI18n();
   const resolved: McpServerStatus['status'] = status ?? 'disconnected';
   const dotClass = STATUS_DOT_CLASS[resolved];
   const label = resolved;
@@ -473,7 +486,9 @@ function StatusBadge({
       </Badge>
       {resolved === 'connected' ? (
         <Badge variant="outline" className="nums font-mono text-[10px]">
-          {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+          {toolCount === 1
+            ? t('mcp.toolOne', { count: toolCount })
+            : t('mcp.toolMany', { count: toolCount })}
         </Badge>
       ) : null}
       {resolved === 'error' && detail ? (
@@ -500,6 +515,7 @@ function ToolList({
   serverName: string;
   logout: () => void;
 }) {
+  const { t } = useI18n();
   const [tools, setTools] = useState<McpToolInfo[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -507,17 +523,18 @@ function ToolList({
     try {
       return await withAuthGuard(() => api.listMcpServerTools(serverId), logout);
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load tools');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('mcp.loadToolsFailed'));
       return null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable per language; dep array kept as-is
   }, [serverId, logout]);
 
   // Fetch once on mount (the panel only renders when the row is expanded).
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const t = await load();
-      if (!cancelled) setTools(t);
+      const loaded = await load();
+      if (!cancelled) setTools(loaded);
     })();
     return () => {
       cancelled = true;
@@ -527,11 +544,11 @@ function ToolList({
   async function refresh() {
     setRefreshing(true);
     try {
-      const t = await withAuthGuard(() => api.refreshMcpServerTools(serverId), logout);
-      setTools(t);
-      toast.success(`Refreshed tools for "${serverName}"`);
+      const fresh = await withAuthGuard(() => api.refreshMcpServerTools(serverId), logout);
+      setTools(fresh);
+      toast.success(t('mcp.refreshedToast', { name: serverName }));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Refresh failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('mcp.refreshFailed'));
     } finally {
       setRefreshing(false);
     }
@@ -541,7 +558,7 @@ function ToolList({
     <div>
       <div className="mb-2 flex items-center gap-2">
         <span className="text-muted-foreground text-xs font-medium">
-          Tools{tools ? ` (${tools.length})` : ''}
+          {tools ? t('mcp.toolsHeaderCount', { count: tools.length }) : t('mcp.toolsHeader')}
         </span>
         <Button
           variant="ghost"
@@ -551,17 +568,17 @@ function ToolList({
           onClick={refresh}
         >
           <RefreshCwIcon className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('mcp.refresh')}
         </Button>
       </div>
       {tools === null ? (
-        <p className="text-muted-foreground text-xs">Loading tools…</p>
+        <p className="text-muted-foreground text-xs">{t('mcp.loadingTools')}</p>
       ) : tools.length === 0 ? (
-        <p className="text-muted-foreground text-xs">No tools exposed by this server.</p>
+        <p className="text-muted-foreground text-xs">{t('mcp.noTools')}</p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {tools.map((t) => (
-            <ToolRow key={t.name} tool={t} />
+          {tools.map((tool) => (
+            <ToolRow key={tool.name} tool={tool} />
           ))}
         </ul>
       )}
@@ -571,6 +588,7 @@ function ToolList({
 
 /** One tool row with an expandable parameter detail. */
 function ToolRow({ tool }: { tool: McpToolInfo }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const params = extractParams(tool.inputSchema);
   return (
@@ -597,7 +615,7 @@ function ToolRow({ tool }: { tool: McpToolInfo }) {
         <CollapsibleContent>
           <div className="ml-5 mt-1">
             {params.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No parameters.</p>
+              <p className="text-muted-foreground text-xs">{t('mcp.noParams')}</p>
             ) : (
               <ul className="flex flex-col gap-0.5">
                 {params.map((p) => (
@@ -605,7 +623,7 @@ function ToolRow({ tool }: { tool: McpToolInfo }) {
                     <code className="text-foreground">{p.name}</code>
                     <span className="text-muted-foreground"> : {p.type}</span>
                     {p.required ? (
-                      <span className="text-warn ml-2 font-medium">required</span>
+                      <span className="text-warn ml-2 font-medium">{t('mcp.required')}</span>
                     ) : null}
                   </li>
                 ))}
@@ -662,6 +680,7 @@ function parseStringRecord(raw: string): Record<string, string> | undefined {
 
 function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState('');
   const [dialSite, setDialSite] = useState<DialSite>('auto');
@@ -713,7 +732,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
       }
     }
     setImportOpen(false);
-    toast.success(`Imported "${entryName}" — review and click Add server`);
+    toast.success(t('mcp.importedToast', { name: entryName }));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -751,7 +770,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
           logout,
         );
       }
-      toast.success('MCP server added');
+      toast.success(t('mcp.addedToast'));
       setName('');
       setUrl('');
       setCommand('');
@@ -760,7 +779,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
       setHeadersJson(DEFAULT_HEADERS_JSON);
       onCreated();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -771,7 +790,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <PlusIcon className="size-4" />
-          Add server
+          {t('mcp.addServer')}
           <Button
             type="button"
             variant="outline"
@@ -780,47 +799,47 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
             onClick={() => setImportOpen(true)}
           >
             <FileJsonIcon className="size-4" />
-            Import JSON
+            {t('mcp.importJson')}
           </Button>
         </CardTitle>
         <CardDescription>
           {dialSite === 'server'
-            ? 'Server-dialed: the platform dials this upstream and serves it via /mcp (the only home for non-distributable credentials).'
+            ? t('mcp.descServer')
             : dialSite === 'client'
-              ? "Client-dialed: the hnx mcp serve shim dials this upstream on the user's machine — every referenced credential must be distributable."
-              : 'Auto: client-dialed when every referenced credential is distributable (or none), server-dialed otherwise.'}
+              ? t('mcp.descClient')
+              : t('mcp.descAuto')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="grid gap-2">
-              <Label htmlFor="mcp-name">Name</Label>
+              <Label htmlFor="mcp-name">{t('common.name')}</Label>
               <Input
                 id="mcp-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. context7"
+                placeholder={t('mcp.namePlaceholder')}
                 autoComplete="off"
                 spellCheck={false}
                 required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="mcp-dial-site">Dial site</Label>
+              <Label htmlFor="mcp-dial-site">{t('mcp.dialSite')}</Label>
               <Select value={dialSite} onValueChange={(v) => setDialSite(v as DialSite)}>
                 <SelectTrigger id="mcp-dial-site">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">auto (derive from credentials)</SelectItem>
-                  <SelectItem value="client">client (hnx shim dials)</SelectItem>
-                  <SelectItem value="server">server (platform dials)</SelectItem>
+                  <SelectItem value="auto">{t('mcp.dialSiteAuto')}</SelectItem>
+                  <SelectItem value="client">{t('mcp.dialSiteClient')}</SelectItem>
+                  <SelectItem value="server">{t('mcp.dialSiteServer')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="mcp-type">Transport</Label>
+              <Label htmlFor="mcp-type">{t('mcp.transport')}</Label>
               <Select value={type} onValueChange={(v) => onTypeChange(v as TransportType)}>
                 <SelectTrigger id="mcp-type">
                   <SelectValue />
@@ -828,20 +847,21 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                 <SelectContent>
                   <SelectItem value="streamable-http">streamable-http</SelectItem>
                   <SelectItem value="sse">sse</SelectItem>
-                  <SelectItem value="stdio">stdio (client-dialed only)</SelectItem>
+                  <SelectItem value="stdio">{t('mcp.transportStdio')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="mcp-scope">Scope</Label>
+              <Label htmlFor="mcp-scope">{t('common.scope')}</Label>
               <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
                 <SelectTrigger id="mcp-scope">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="personal">personal</SelectItem>
+                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
                   <SelectItem value="global" disabled={!isAdmin}>
-                    global {!isAdmin && '(admin)'}
+                    {t('common.scopeGlobal')}
+                    {!isAdmin ? t('mcp.adminSuffix') : ''}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -852,31 +872,31 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="mcp-command">Command</Label>
+                  <Label htmlFor="mcp-command">{t('mcp.command')}</Label>
                   <Input
                     id="mcp-command"
                     value={command}
                     onChange={(e) => setCommand(e.target.value)}
-                    placeholder="e.g. npx"
+                    placeholder={t('mcp.commandPlaceholder')}
                     autoComplete="off"
                     spellCheck={false}
                     required
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="mcp-args">Args (space-separated)</Label>
+                  <Label htmlFor="mcp-args">{t('mcp.args')}</Label>
                   <Input
                     id="mcp-args"
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}
-                    placeholder="e.g. -y @upstash/context7-mcp --api-key $&#123;cred:context7-key&#125;"
+                    placeholder={t('mcp.argsPlaceholder')}
                     autoComplete="off"
                     spellCheck={false}
                   />
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="mcp-env">Env (JSON, optional)</Label>
+                <Label htmlFor="mcp-env">{t('mcp.env')}</Label>
                 <Textarea
                   id="mcp-env"
                   value={envJson}
@@ -891,7 +911,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
           ) : (
             <>
               <div className="grid gap-2">
-                <Label htmlFor="mcp-url">URL</Label>
+                <Label htmlFor="mcp-url">{t('mcp.url')}</Label>
                 <Input
                   id="mcp-url"
                   value={url}
@@ -904,7 +924,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="mcp-headers">Custom headers (JSON)</Label>
+                <Label htmlFor="mcp-headers">{t('mcp.headers')}</Label>
                 <Textarea
                   id="mcp-headers"
                   value={headersJson}
@@ -921,7 +941,7 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
 
           <div>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Adding…' : 'Add server'}
+              {busy ? t('mcp.adding') : t('mcp.addServer')}
             </Button>
           </div>
         </form>
@@ -934,10 +954,11 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
 
 /** Shows available credential placeholders as copyable monospace chips. */
 function PlaceholderChips({ creds }: { creds: CredentialView[] }) {
+  const { t } = useI18n();
   if (creds.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-muted-foreground text-xs">Available placeholders:</span>
+      <span className="text-muted-foreground text-xs">{t('mcp.availablePlaceholders')}</span>
       {creds.map((c) => (
         <button
           key={c.id}
@@ -945,9 +966,9 @@ function PlaceholderChips({ creds }: { creds: CredentialView[] }) {
           className="bg-muted font-mono text-muted-foreground hover:bg-accent rounded px-2 py-0.5 text-[11px] transition-colors"
           onClick={() => {
             void navigator.clipboard.writeText(`\${cred:${c.name}}`);
-            toast.success(`Copied placeholder for ${c.name}`);
+            toast.success(t('mcp.copiedPlaceholder', { name: c.name }));
           }}
-          title={`Copy \${cred:${c.name}}`}
+          title={t('mcp.copyPlaceholder', { name: c.name })}
         >
           {'${cred:'}
           {c.name}
@@ -968,6 +989,7 @@ function ImportJsonDialog({
   onOpenChange: (v: boolean) => void;
   onImport: (entry: Record<string, unknown>, name: string) => void;
 }) {
+  const { t } = useI18n();
   const [text, setText] = useState('');
 
   function onParse() {
@@ -975,33 +997,31 @@ function ImportJsonDialog({
     try {
       parsed = JSON.parse(text);
     } catch {
-      toast.error('Invalid JSON');
+      toast.error(t('mcp.invalidJson'));
       return;
     }
     const root = parsed as { mcpServers?: Record<string, unknown> } | null;
     if (!root || typeof root !== 'object' || !root.mcpServers) {
-      toast.error('Expected { "mcpServers": { ... } }');
+      toast.error(t('mcp.expectedMcpServers'));
       return;
     }
     const entries = Object.entries(root.mcpServers);
     if (entries.length === 0) {
-      toast.error('No server entries found in mcpServers');
+      toast.error(t('mcp.noEntries'));
       return;
     }
     if (entries.length > 1) {
-      toast.error(
-        `Multiple entries found (${entries.length}). Only one server at a time is supported.`,
-      );
+      toast.error(t('mcp.multipleEntries', { count: entries.length }));
       return;
     }
     const first = entries[0];
     if (!first) {
-      toast.error('No server entries found in mcpServers');
+      toast.error(t('mcp.noEntries'));
       return;
     }
     const [entryName, raw] = first;
     if (typeof raw !== 'object' || raw === null) {
-      toast.error(`Entry "${entryName}" is not an object`);
+      toast.error(t('mcp.entryNotObject', { name: entryName }));
       return;
     }
     onImport(raw as Record<string, unknown>, entryName);
@@ -1014,13 +1034,16 @@ function ImportJsonDialog({
         <DialogPrimitive.Overlay className="bg-black/50 fixed inset-0 z-40" />
         <DialogPrimitive.Content className="bg-background fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg">
           <DialogPrimitive.Title className="text-lg font-semibold">
-            Import MCP server JSON
+            {t('mcp.importTitle')}
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="text-muted-foreground mt-1 text-sm">
-            Paste a single-entry{' '}
-            <code className="font-mono">{'{ "mcpServers": { "name": {...} } }'}</code> blob. Mode is
-            inferred (<code className="font-mono">command</code> → direct,{' '}
-            <code className="font-mono">serverUrl</code> → proxy).
+            {t('mcp.importDescLead')}
+            <code className="font-mono">{'{ "mcpServers": { "name": {...} } }'}</code>
+            {t('mcp.importDescMid')}
+            <code className="font-mono">command</code>
+            {t('mcp.importDescArrowDirect')}
+            <code className="font-mono">serverUrl</code>
+            {t('mcp.importDescArrowProxy')}
           </DialogPrimitive.Description>
           <Textarea
             value={text}
@@ -1036,11 +1059,11 @@ function ImportJsonDialog({
           <div className="mt-4 flex justify-end gap-2">
             <DialogPrimitive.Close asChild>
               <Button type="button" variant="ghost">
-                Cancel
+                {t('common.cancel')}
               </Button>
             </DialogPrimitive.Close>
             <Button type="button" onClick={onParse}>
-              Parse
+              {t('mcp.parse')}
             </Button>
           </div>
         </DialogPrimitive.Content>

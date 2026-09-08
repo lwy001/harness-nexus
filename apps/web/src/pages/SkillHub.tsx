@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,6 +95,7 @@ interface HubRow {
  */
 export function SkillHubPage() {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [marketplaces, setMarketplaces] = useState<{ id: string }[] | null>(null);
   const [selectedMkt, setSelectedMkt] = useState<string>('');
   const [category, setCategory] = useState<string>('all');
@@ -115,7 +117,9 @@ export function SkillHubPage() {
           if (first) setSelectedMkt(first.id);
         }
       } catch (e) {
-        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load marketplaces');
+        toast.error(
+          e instanceof HarnessNexusError ? e.message : t('skillHub.loadMarketplacesFailed'),
+        );
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,7 +146,7 @@ export function SkillHubPage() {
           setRows(res.plugins.map((p) => pluginToRow(p)));
         }
       } catch (e) {
-        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load skills');
+        toast.error(e instanceof HarnessNexusError ? e.message : t('skillHub.loadSkillsFailed'));
         setRows([]);
       }
     })();
@@ -163,11 +167,9 @@ export function SkillHubPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <StoreIcon className="size-5" />
-                Skill hub
+                {t('skillHub.title')}
               </CardTitle>
-              <CardDescription>
-                Browse a marketplace or search across GitHub, well-known, and direct URLs.
-              </CardDescription>
+              <CardDescription>{t('skillHub.subtitle')}</CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {!searching ? (
@@ -178,7 +180,7 @@ export function SkillHubPage() {
                     disabled={!marketplaces || marketplaces.length === 0}
                   >
                     <SelectTrigger id="filter-marketplace" className="w-[220px]">
-                      <SelectValue placeholder="Marketplace" />
+                      <SelectValue placeholder={t('skillHub.marketplacePlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {(marketplaces ?? []).map((m) => (
@@ -197,7 +199,7 @@ export function SkillHubPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All categories</SelectItem>
+                      <SelectItem value="all">{t('skillHub.allCategories')}</SelectItem>
                       {categories.map((c) => (
                         <SelectItem key={c} value={c}>
                           {c}
@@ -212,10 +214,10 @@ export function SkillHubPage() {
                 <Input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search across sources…"
+                  placeholder={t('skillHub.searchPlaceholder')}
                   spellCheck={false}
                   className="w-[260px] pl-8"
-                  aria-label="Search skills"
+                  aria-label={t('skillHub.searchAriaLabel')}
                 />
               </div>
             </div>
@@ -224,32 +226,30 @@ export function SkillHubPage() {
         <CardContent className="px-0">
           {searching && timedOut.length > 0 ? (
             <div className="text-muted-foreground px-6 py-2 text-xs">
-              Some sources timed out ({timedOut.join(', ')}); showing partial results.
+              {t('skillHub.timedOut', { sources: timedOut.join(', ') })}
             </div>
           ) : null}
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Trust</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('skillHub.category')}</TableHead>
+                <TableHead>{t('skillHub.source')}</TableHead>
+                <TableHead>{t('skillHub.trust')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows === null ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    {searching
-                      ? 'No skills match the search.'
-                      : 'No plugins match the current filters.'}
+                    {searching ? t('skillHub.emptySearch') : t('skillHub.emptyFilters')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -272,7 +272,7 @@ export function SkillHubPage() {
           onClose={() => setSaving(null)}
           onSaved={() => {
             setSaving(null);
-            toast.success('Saved as skill resource');
+            toast.success(t('skillHub.savedToast'));
           }}
         />
       ) : null}
@@ -321,6 +321,7 @@ function pluginToRow(p: MarketplacePlugin): HubRow {
 }
 
 function HubRowView({ row, onSave }: { row: HubRow; onSave: () => void }) {
+  const { t } = useI18n();
   return (
     <TableRow>
       <TableCell className="pl-6">
@@ -349,13 +350,10 @@ function HubRowView({ row, onSave }: { row: HubRow; onSave: () => void }) {
       <TableCell className="pr-6 text-right">
         {row.pluginSource ? (
           <Button variant="outline" size="sm" onClick={onSave} className="gap-1.5">
-            Save as skill
+            {t('skillHub.saveAsSkill')}
           </Button>
         ) : (
-          <span
-            className="text-muted-foreground text-xs"
-            title="Archive sources cannot be saved as plugin-source skills"
-          >
+          <span className="text-muted-foreground text-xs" title={t('skillHub.archiveTooltip')}>
             —
           </span>
         )}
@@ -370,11 +368,12 @@ function HubRowView({ row, onSave }: { row: HubRow; onSave: () => void }) {
  * per the Signal design system.
  */
 function TrustBadge({ tier }: { tier: TrustTier }) {
+  const { t } = useI18n();
   if (tier === 'trusted') {
     return (
       <Badge variant="default" className="gap-1 text-[10px]">
         <ShieldCheckIcon className="size-3" />
-        trusted
+        {t('skillHub.trusted')}
       </Badge>
     );
   }
@@ -384,7 +383,7 @@ function TrustBadge({ tier }: { tier: TrustTier }) {
         className="inline-block size-1.5 rounded-full bg-muted-foreground/60"
         aria-hidden="true"
       />
-      community
+      {t('skillHub.community')}
     </Badge>
   );
 }
@@ -406,6 +405,7 @@ function SavePluginDialog({
   onSaved: () => void;
 }) {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const [key, setKey] = useState<string>(`skill:${row.name}`);
   const [scope, setScope] = useState<Scope>('personal');
@@ -438,7 +438,7 @@ function SavePluginDialog({
       );
       onSaved();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to save skill');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('skillHub.saveFailedToast'));
     } finally {
       setBusy(false);
     }
@@ -448,10 +448,10 @@ function SavePluginDialog({
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Save as skill resource</DialogTitle>
+          <DialogTitle>{t('skillHub.dialogTitle')}</DialogTitle>
           <DialogDescription>
-            Stores this entry as a <span className="font-mono">plugin</span>-source skill. Reference
-            it from a profile via <span className="font-mono">{`skill:${row.name}`}</span>.
+            {t('skillHub.dialogDescLead')} <span className="font-mono">{`skill:${row.name}`}</span>
+            {t('skillHub.dialogDescTail')}
           </DialogDescription>
         </DialogHeader>
 
@@ -459,18 +459,15 @@ function SavePluginDialog({
           <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 p-2.5 text-xs">
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-warn" />
             <div>
-              <span className="font-medium text-warn">Community source, no pin.</span>{' '}
-              <span className="text-muted-foreground">
-                Without a SHA/version pin, this reference floats with upstream — a supply-chain
-                drift risk. Pin a SHA where possible.
-              </span>
+              <span className="font-medium text-warn">{t('skillHub.warnLead')}</span>{' '}
+              <span className="text-muted-foreground">{t('skillHub.warnBody')}</span>
             </div>
           </div>
         ) : null}
 
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="skill-key">Key</Label>
+            <Label htmlFor="skill-key">{t('skillHub.key')}</Label>
             <Input
               id="skill-key"
               value={key}
@@ -481,22 +478,23 @@ function SavePluginDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>Scope</Label>
+            <Label>{t('common.scope')}</Label>
             <Select value={scope} onValueChange={(v) => setScope(v as Scope)}>
               <SelectTrigger id="skill-scope" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="personal">personal</SelectItem>
+                <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
                 <SelectItem value="global" disabled={!isAdmin}>
-                  global {isAdmin ? '' : '(admin only)'}
+                  {t('common.scopeGlobal')}
+                  {isAdmin ? '' : t('skillHub.adminOnly')}
                 </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="grid gap-2">
-            <Label>Targets</Label>
+            <Label>{t('skillHub.targets')}</Label>
             <div className="flex flex-wrap gap-2">
               {TARGETS.map((t) => (
                 <label
@@ -525,18 +523,18 @@ function SavePluginDialog({
               className="text-muted-foreground hover:text-foreground mr-auto inline-flex items-center gap-1 text-xs"
             >
               <ExternalLinkIcon className="size-3" />
-              homepage
+              {t('skillHub.homepage')}
             </a>
           ) : null}
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
             disabled={busy || (scope === 'global' && !isAdmin)}
             onClick={onSubmit}
           >
-            {busy ? 'Saving…' : 'Save skill'}
+            {busy ? t('common.saving') : t('skillHub.saveSkill')}
           </Button>
         </DialogFooter>
       </DialogContent>

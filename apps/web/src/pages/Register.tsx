@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth';
+import { useI18n } from '@/i18n';
 import { api } from '@/api';
 import { HarnessNexusError } from '@harness-nexus/sdk';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Brand } from '@/components/brand-mark';
 
 export function RegisterPage() {
   const { register, user } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -46,7 +48,9 @@ export function RegisterPage() {
       setError(
         e instanceof HarnessNexusError
           ? e.message
-          : `Registration failed: ${e instanceof Error ? e.message : String(e)}`,
+          : t('register.failed', {
+              message: e instanceof Error ? e.message : String(e),
+            }),
       );
     } finally {
       setBusy(false);
@@ -60,15 +64,13 @@ export function RegisterPage() {
       <Brand size={30} />
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">Create account</CardTitle>
-          <CardDescription>Register a new Harness Nexus account</CardDescription>
+          <CardTitle className="text-xl">{t('register.createAccount')}</CardTitle>
+          <CardDescription>{t('register.subtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           {closed && (
             <Alert variant="destructive" className="mb-4">
-              <AlertDescription>
-                Registration is closed on this instance. Ask an admin for an account.
-              </AlertDescription>
+              <AlertDescription>{t('register.closed')}</AlertDescription>
             </Alert>
           )}
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -78,7 +80,7 @@ export function RegisterPage() {
               </Alert>
             )}
             <div className="grid gap-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">{t('register.username')}</Label>
               <Input
                 id="username"
                 value={username}
@@ -90,7 +92,7 @@ export function RegisterPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('register.password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -100,10 +102,10 @@ export function RegisterPage() {
                 autoComplete="new-password"
                 required
               />
-              <p className="text-muted-foreground text-xs">Minimum 8 characters.</p>
+              <p className="text-muted-foreground text-xs">{t('register.minChars')}</p>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="email">Email (optional)</Label>
+              <Label htmlFor="email">{t('register.emailOptional')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -114,12 +116,12 @@ export function RegisterPage() {
               />
             </div>
             <Button type="submit" disabled={busy || closed} className="w-full">
-              {busy ? 'Creating…' : 'Register'}
+              {busy ? t('register.creating') : t('register.register')}
             </Button>
             <p className="text-muted-foreground text-center text-sm">
-              Already have an account?{' '}
+              {t('register.haveAccount')}{' '}
               <Link to="/login" className="text-primary underline-offset-4 hover:underline">
-                Sign in
+                {t('register.signInLink')}
               </Link>
             </p>
           </form>

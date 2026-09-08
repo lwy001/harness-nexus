@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ServerIcon, PlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/i18n';
 
 /**
  * Dashboard signature: a mesh topology of configured upstreams converging on
@@ -50,6 +51,7 @@ export function MeshTopology({
   loading: boolean;
   statuses?: McpServerStatus[];
 }) {
+  const { t } = useI18n();
   const shown = servers.slice(0, MAX_NAMED);
   const overflow = Math.max(0, servers.length - MAX_NAMED);
   const hasLive = !!statuses;
@@ -61,7 +63,7 @@ export function MeshTopology({
         role="status"
         aria-live="polite"
       >
-        <span className="text-muted-foreground text-sm">Loading your mesh…</span>
+        <span className="text-muted-foreground text-sm">{t('dashboard.loadingMesh')}</span>
       </div>
     );
   }
@@ -71,14 +73,12 @@ export function MeshTopology({
       <div className="border-muted-foreground/20 bg-muted/30 flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
         <ServerIcon className="text-muted-foreground size-6" />
         <div>
-          <p className="text-foreground text-sm font-medium">No upstream servers yet</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            Add an MCP server to start shaping your mesh.
-          </p>
+          <p className="text-foreground text-sm font-medium">{t('dashboard.noServers')}</p>
+          <p className="text-muted-foreground mt-1 text-xs">{t('dashboard.noServersHint')}</p>
         </div>
         <Button asChild size="sm" className="mt-1">
           <Link to="/mcp-servers">
-            <PlusIcon className="size-4" /> Add connection
+            <PlusIcon className="size-4" /> {t('dashboard.addConnection')}
           </Link>
         </Button>
       </div>
@@ -95,9 +95,11 @@ export function MeshTopology({
     <div className="border-border bg-card overflow-hidden rounded-xl border">
       <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="text-foreground text-sm font-medium">Your mesh</span>
+          <span className="text-foreground text-sm font-medium">{t('dashboard.yourMesh')}</span>
           <span className="text-muted-foreground text-xs nums">
-            {servers.length} upstream{servers.length === 1 ? '' : 's'}
+            {t(servers.length === 1 ? 'dashboard.upOne' : 'dashboard.upMany', {
+              count: servers.length,
+            })}
           </span>
         </div>
         {/* Legend — documents the live connection states. */}
@@ -105,15 +107,15 @@ export function MeshTopology({
           {hasLive ? (
             <>
               <span className="text-muted-foreground flex items-center gap-1.5">
-                <Dot variant="online" /> connected
+                <Dot variant="online" /> {t('dashboard.legendConnected')}
               </span>
               <span className="text-muted-foreground flex items-center gap-1.5">
-                <Dot variant="warn" /> error
+                <Dot variant="warn" /> {t('dashboard.legendError')}
               </span>
             </>
           ) : (
             <span className="text-muted-foreground flex items-center gap-1.5">
-              <Dot variant="configured" /> configured
+              <Dot variant="configured" /> {t('dashboard.legendConfigured')}
             </span>
           )}
         </div>
@@ -122,7 +124,7 @@ export function MeshTopology({
         viewBox={`0 0 ${W} ${H}`}
         className="h-[238px] w-full"
         role="img"
-        aria-label={`Mesh of ${servers.length} configured upstream MCP servers converging on Harness Nexus.`}
+        aria-label={t('dashboard.meshAria', { count: servers.length })}
       >
         {/* signal lines: upstreams -> nexus */}
         <g stroke="currentColor" strokeWidth="1.5" className="text-signal/45">
@@ -161,7 +163,7 @@ export function MeshTopology({
             fontSize="12"
             fontFamily="var(--font-mono)"
           >
-            +{overflow} more
+            {t('dashboard.moreCount', { count: overflow })}
           </text>
         )}
 
@@ -193,7 +195,7 @@ export function MeshTopology({
           fontSize="11"
           textAnchor="middle"
         >
-          tools
+          {t('dashboard.tools')}
         </text>
       </svg>
     </div>

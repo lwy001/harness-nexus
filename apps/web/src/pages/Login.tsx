@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/auth';
+import { useI18n } from '@/i18n';
 import { HarnessNexusError } from '@harness-nexus/sdk';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,7 @@ import { Brand } from '@/components/brand-mark';
 
 export function LoginPage() {
   const { login } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState('');
@@ -33,7 +35,9 @@ export function LoginPage() {
       setError(
         e instanceof HarnessNexusError
           ? e.message
-          : `Login failed: ${e instanceof Error ? e.message : String(e)}`,
+          : t('login.failed', {
+              message: e instanceof Error ? e.message : String(e),
+            }),
       );
     } finally {
       setBusy(false);
@@ -45,8 +49,8 @@ export function LoginPage() {
       <Brand size={30} />
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">Welcome back</CardTitle>
-          <CardDescription>Sign in to your Harness Nexus account</CardDescription>
+          <CardTitle className="text-xl">{t('login.welcomeBack')}</CardTitle>
+          <CardDescription>{t('login.signInSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
@@ -56,7 +60,7 @@ export function LoginPage() {
               </Alert>
             )}
             <div className="grid gap-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">{t('login.username')}</Label>
               <Input
                 id="username"
                 value={username}
@@ -67,7 +71,7 @@ export function LoginPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('login.password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -78,12 +82,12 @@ export function LoginPage() {
               />
             </div>
             <Button type="submit" disabled={busy} className="w-full">
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? t('login.signingIn') : t('login.signIn')}
             </Button>
             <p className="text-muted-foreground text-center text-sm">
-              No account?{' '}
+              {t('login.noAccount')}{' '}
               <Link to="/register" className="text-primary underline-offset-4 hover:underline">
-                Register
+                {t('login.registerLink')}
               </Link>
             </p>
           </form>

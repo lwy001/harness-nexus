@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, dateLocale } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { appSocket, type MachineStatusEvent } from '@/realtime';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +53,7 @@ import { HarnessNexusError, type MachineView } from '@harness-nexus/sdk';
  */
 export function MachinesPage() {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [items, setItems] = useState<MachineView[] | null>(null);
   const [reveal, setReveal] = useState<{ machine: MachineView; token: string } | null>(null);
 
@@ -59,9 +61,9 @@ export function MachinesPage() {
     try {
       setItems(await withAuthGuard(() => api.listMachines(), logout));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load machines');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machines.loadFailed'));
     }
-  }, [logout]);
+  }, [logout, t]);
 
   useEffect(() => {
     void refresh();
@@ -94,11 +96,10 @@ export function MachinesPage() {
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Machines</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('machines.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Computers enrolled with this instance via the Harness Nexus client. A machine is online
-          exactly while its <code className="font-mono">hnx daemon</code> is connected — status is
-          never faked.
+          {t('machines.subtitleA')} <code className="font-mono">hnx daemon</code>{' '}
+          {t('machines.subtitleB')}
         </p>
       </div>
 
@@ -106,36 +107,34 @@ export function MachinesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <LaptopIcon className="size-4" />
-            Enrolled machines
+            {t('machines.enrolledTitle')}
           </CardTitle>
-          <CardDescription>
-            Machines are personal; admins can see every user's machines.
-          </CardDescription>
+          <CardDescription>{t('machines.enrolledDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Host</TableHead>
-                <TableHead>Daemon</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Remote chat</TableHead>
-                <TableHead>Last seen</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('machines.host')}</TableHead>
+                <TableHead>{t('machines.daemon')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('machines.remoteChat')}</TableHead>
+                <TableHead>{t('machines.lastSeen')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items === null ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                    No machines enrolled yet.
+                    {t('machines.empty')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -153,16 +152,18 @@ export function MachinesPage() {
 }
 
 function OnlineDot({ online }: { online: boolean }) {
+  const { t } = useI18n();
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`size-2 rounded-full ${online ? 'bg-ok' : 'bg-muted-foreground/40'}`} />
-      <span className="tabular-nums">{online ? 'Online' : 'Offline'}</span>
+      <span className="tabular-nums">{online ? t('machines.online') : t('machines.offline')}</span>
     </span>
   );
 }
 
 function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () => void }) {
   const { logout } = useAuth();
+  const { t, lang } = useI18n();
   const [remoteChat, setRemoteChat] = useState(machine.remoteChatEnabled);
 
   useEffect(() => {
@@ -171,34 +172,27 @@ function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () 
 
   async function toggleRemoteChat(next: boolean): Promise<void> {
     const consent = next
-      ? confirm(
-          `Enable remote chat on "${machine.name}"?\n\nChatting with an agent on this machine drives tool execution there (equivalent to running commands yourself).`,
-        )
-      : confirm(`Disable remote chat on "${machine.name}"?`);
+      ? confirm(t('machines.confirmEnable', { name: machine.name }))
+      : confirm(t('machines.confirmDisable', { name: machine.name }));
     if (!consent) return;
     setRemoteChat(next);
     try {
       await withAuthGuard(() => api.updateMachine(machine.id, { remoteChatEnabled: next }), logout);
-      toast.success(next ? 'Remote chat enabled' : 'Remote chat disabled');
+      toast.success(next ? t('machines.chatEnabled') : t('machines.chatDisabled'));
     } catch (e) {
       setRemoteChat(!next);
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
     }
   }
 
   async function revoke(): Promise<void> {
-    if (
-      !confirm(
-        `Remove machine "${machine.name}"?\n\nIts machine token is revoked immediately and the daemon disconnects.`,
-      )
-    )
-      return;
+    if (!confirm(t('machines.confirmRemove', { name: machine.name }))) return;
     try {
       await withAuthGuard(() => api.deleteMachine(machine.id), logout);
-      toast.success('Machine removed');
+      toast.success(t('machines.removed'));
       onRevoke();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Remove failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machines.removeFailed'));
     }
   }
 
@@ -223,7 +217,7 @@ function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () 
             ))}
           </span>
         ) : (
-          <span className="text-muted-foreground">never connected</span>
+          <span className="text-muted-foreground">{t('machines.neverConnected')}</span>
         )}
       </TableCell>
       <TableCell>
@@ -233,23 +227,23 @@ function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () 
         <Switch
           checked={remoteChat}
           onCheckedChange={(v) => void toggleRemoteChat(v)}
-          aria-label={`Toggle remote chat for ${machine.name}`}
+          aria-label={t('machines.toggleChatAria', { name: machine.name })}
         />
       </TableCell>
       <TableCell className="text-muted-foreground tabular-nums">
-        {machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : '—'}
+        {machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString(dateLocale(lang)) : '—'}
       </TableCell>
       <TableCell className="pr-6 text-right">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8">
               <MoreHorizontalIcon className="size-4" />
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{t('common.openMenu')}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem variant="destructive" onClick={() => void revoke()}>
-              <TrashIcon /> Remove
+              <TrashIcon /> {t('common.remove')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -266,6 +260,7 @@ function EnrollCard({
   onReveal: (r: { machine: MachineView; token: string }) => void;
 }) {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -274,12 +269,12 @@ function EnrollCard({
     setBusy(true);
     try {
       const res = await withAuthGuard(() => api.createMachine({ name }), logout);
-      toast.success('Machine enrolled');
+      toast.success(t('machines.enrolledToast'));
       onReveal(res);
       setName('');
       onEnrolled();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Enroll failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machines.enrollFailed'));
     } finally {
       setBusy(false);
     }
@@ -290,26 +285,25 @@ function EnrollCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <PlusIcon className="size-4" />
-          Enroll a machine
+          {t('machines.enrollTitle')}
         </CardTitle>
         <CardDescription>
-          Creates the machine and its dedicated machine token (shown once). Or enroll straight from
-          the machine with{' '}
+          {t('machines.enrollDescA')}{' '}
           <code className="font-mono">
             hnx enroll --server &lt;url&gt; --token &lt;your-pat&gt;
           </code>
-          .
+          {t('machines.enrollDescB')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="grid flex-1 gap-2">
-            <Label htmlFor="machine-name">Name</Label>
+            <Label htmlFor="machine-name">{t('common.name')}</Label>
             <Input
               id="machine-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. work-laptop"
+              placeholder={t('machines.namePlaceholder')}
               autoComplete="off"
               spellCheck={false}
               required
@@ -317,7 +311,7 @@ function EnrollCard({
           </div>
           <div>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Enrolling…' : 'Enroll machine'}
+              {busy ? t('machines.enrolling') : t('machines.enrollButton')}
             </Button>
           </div>
         </form>
@@ -334,6 +328,7 @@ function RevealDialog({
   reveal: { machine: MachineView; token: string } | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState<'token' | 'command' | null>(null);
 
   useEffect(() => {
@@ -346,7 +341,7 @@ function RevealDialog({
   function copy(kind: 'token' | 'command', text: string): void {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(kind);
-      toast.success(kind === 'token' ? 'Token copied' : 'Command copied');
+      toast.success(kind === 'token' ? t('machines.tokenCopied') : t('machines.commandCopied'));
     });
   }
 
@@ -354,17 +349,15 @@ function RevealDialog({
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent showCloseButton={false} className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Machine enrolled — copy the command now</DialogTitle>
+          <DialogTitle>{t('machines.revealTitle')}</DialogTitle>
           <DialogDescription>
-            The machine token is shown only once. Run this on <strong>{reveal.machine.name}</strong>{' '}
-            to bring it online:
+            {t('machines.revealDescA')} <strong>{reveal.machine.name}</strong>{' '}
+            {t('machines.revealDescB')}
           </DialogDescription>
         </DialogHeader>
 
         <Alert variant="destructive">
-          <AlertDescription>
-            Closing this dialog hides the token permanently. Removing the machine revokes it.
-          </AlertDescription>
+          <AlertDescription>{t('machines.revealWarning')}</AlertDescription>
         </Alert>
 
         <div className="bg-muted flex items-center gap-2 rounded-md border p-3">
@@ -383,7 +376,7 @@ function RevealDialog({
             ) : (
               <CopyIcon className="size-4" />
             )}
-            {copied === 'command' ? 'Copied' : 'Copy'}
+            {copied === 'command' ? t('common.copied') : t('common.copy')}
           </Button>
         </div>
 
@@ -403,13 +396,13 @@ function RevealDialog({
             ) : (
               <CopyIcon className="size-4" />
             )}
-            {copied === 'token' ? 'Copied' : 'Copy'}
+            {copied === 'token' ? t('common.copied') : t('common.copy')}
           </Button>
         </div>
 
         <DialogFooter>
           <Button type="button" onClick={onClose}>
-            Done
+            {t('common.done')}
           </Button>
         </DialogFooter>
       </DialogContent>

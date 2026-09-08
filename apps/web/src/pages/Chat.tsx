@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, type TranslationKey } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import {
   appSocket,
@@ -190,8 +191,15 @@ function conversationReducer(
 
 // ---- page ----
 
+const ROLE_KEY: Record<'user' | 'agent' | 'thought', TranslationKey> = {
+  user: 'chat.roleYou',
+  agent: 'chat.roleAgent',
+  thought: 'chat.roleThinking',
+};
+
 export function ChatPage() {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [machines, setMachines] = useState<MachineView[]>([]);
   const [machineId, setMachineId] = useState('');
   const [agents, setAgents] = useState<AgentInstanceView[]>([]);
@@ -312,13 +320,13 @@ export function ChatPage() {
       const code = ack.error ?? 'unknown error';
       setError(
         code === 'REMOTE_CHAT_DISABLED'
-          ? 'Remote chat is disabled for this machine — enable it on the machine page first.'
+          ? t('chat.errRemoteChatDisabled')
           : code === 'MACHINE_OFFLINE'
-            ? 'The machine is offline.'
+            ? t('chat.errMachineOffline')
             : code === 'DAEMON_NO_CHAT'
-              ? "The machine's daemon does not support chat (upgrade hnx)."
+              ? t('chat.errDaemonNoChat')
               : code === 'SESSION_LIMIT_REACHED'
-                ? 'Too many open chat channels on this machine — close one first.'
+                ? t('chat.errSessionLimit')
                 : code,
       );
       return;
@@ -337,7 +345,7 @@ export function ChatPage() {
       content: text,
     });
     if (ack.error !== undefined) {
-      toast.error(ack.error === 'SESSION_BUSY' ? 'A turn is already running' : ack.error);
+      toast.error(ack.error === 'SESSION_BUSY' ? t('chat.turnBusy') : ack.error);
     }
   }
 
@@ -367,21 +375,20 @@ export function ChatPage() {
   return (
     <AppShell>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">Chat</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Talk to a deployed agent on one of your machines. Talking drives tool execution on that
-          machine — chat is per-machine opt-in.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">
+          {t('chat.title')}
+        </h1>
+        <p className="text-muted-foreground mt-1 text-sm">{t('chat.subtitle')}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
         {/* Left rail: machine → agent → sessions */}
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="chat-machine">Machine</Label>
+            <Label htmlFor="chat-machine">{t('chat.machine')}</Label>
             <Select value={machineId} onValueChange={setMachineId}>
               <SelectTrigger id="chat-machine">
-                <SelectValue placeholder="Select machine" />
+                <SelectValue placeholder={t('chat.selectMachine')} />
               </SelectTrigger>
               <SelectContent>
                 {machines.map((m) => (
@@ -393,11 +400,11 @@ export function ChatPage() {
             </Select>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="chat-agent">Agent</Label>
+            <Label htmlFor="chat-agent">{t('chat.agent')}</Label>
             <Select value={agentId} onValueChange={setAgentId} disabled={agents.length === 0}>
               <SelectTrigger id="chat-agent">
                 <SelectValue
-                  placeholder={agents.length === 0 ? 'No agents deployed' : 'Select agent'}
+                  placeholder={agents.length === 0 ? t('chat.noAgents') : t('chat.selectAgent')}
                 />
               </SelectTrigger>
               <SelectContent>
@@ -412,11 +419,13 @@ export function ChatPage() {
 
           {machine !== undefined && !machine.remoteChatEnabled ? (
             <p className="text-warn text-xs">
-              Remote chat is disabled for {machine.name}. Enable it on the machine page first.
+              {t('chat.remoteChatDisabled', { name: machine.name })}
             </p>
           ) : null}
           {machine !== undefined && machine.remoteChatEnabled && !machine.online ? (
-            <p className="text-muted-foreground text-xs">{machine.name} is offline.</p>
+            <p className="text-muted-foreground text-xs">
+              {t('chat.machineOffline', { name: machine.name })}
+            </p>
           ) : null}
 
           <Button
@@ -424,7 +433,7 @@ export function ChatPage() {
             disabled={chatBlocked || openSessions.length >= 3}
           >
             <PlusIcon className="size-4" />
-            New session
+            {t('chat.newSession')}
           </Button>
 
           <div className="flex flex-col gap-1.5">
@@ -441,13 +450,13 @@ export function ChatPage() {
                 >
                   <span className="font-mono">{s.id.slice(0, 10)}</span>
                   <span className="text-muted-foreground">
-                    {open ? 'open' : (s.closeReason ?? 'closed')}
+                    {open ? t('chat.sessionOpen') : (s.closeReason ?? t('chat.sessionClosed'))}
                   </span>
                 </button>
               );
             })}
             {sessions.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No sessions yet.</p>
+              <p className="text-muted-foreground text-xs">{t('chat.noSessions')}</p>
             ) : null}
           </div>
         </div>
@@ -462,28 +471,28 @@ export function ChatPage() {
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm">
                     <BotIcon className="size-4" />
-                    <span className="font-medium">{agent?.name ?? 'Agent'}</span>
+                    <span className="font-medium">{agent?.name ?? t('chat.agentFallback')}</span>
                     <Badge variant="outline" className="font-mono text-[10px]">
                       {agent?.target}
                     </Badge>
                     {phase === 'connecting' ? (
-                      <span className="text-muted-foreground">connecting…</span>
+                      <span className="text-muted-foreground">{t('chat.connecting')}</span>
                     ) : null}
                     {phase === 'ready' && conversation.turnActive ? (
                       <span className="text-signal flex items-center gap-1.5">
                         <span className="bg-signal inline-block size-1.5 animate-pulse rounded-full" />
-                        working
+                        {t('chat.working')}
                       </span>
                     ) : null}
                     {phase === 'closed' ? (
                       <span className="text-muted-foreground">
-                        closed{error !== null ? ` — ${error}` : ''}
+                        {error !== null ? t('chat.closedWithError', { error }) : t('chat.closed')}
                       </span>
                     ) : null}
                   </div>
                   {phase !== 'closed' ? (
                     <Button variant="outline" size="sm" onClick={() => void closeChannel()}>
-                      Close
+                      {t('common.close')}
                     </Button>
                   ) : null}
                 </div>
@@ -492,8 +501,8 @@ export function ChatPage() {
                   {conversation.blocks.map((b, i) => (
                     <ConversationBlock key={i} role={b.role} text={b.text} />
                   ))}
-                  {conversation.tools.map((t) => (
-                    <ToolLine key={t.toolCallId} tool={t} />
+                  {conversation.tools.map((tool) => (
+                    <ToolLine key={tool.toolCallId} tool={tool} />
                   ))}
                   {conversation.permissions
                     .filter((p) => !p.settled)
@@ -505,7 +514,7 @@ export function ChatPage() {
                       />
                     ))}
                   {conversation.stopReason === 'cancelled' ? (
-                    <p className="text-muted-foreground text-xs">Turn cancelled.</p>
+                    <p className="text-muted-foreground text-xs">{t('chat.turnCancelled')}</p>
                   ) : null}
                   <div ref={bottomRef} />
                 </div>
@@ -520,7 +529,9 @@ export function ChatPage() {
                         void send();
                       }
                     }}
-                    placeholder={phase === 'ready' ? 'Send a message…' : 'Start a session to chat.'}
+                    placeholder={
+                      phase === 'ready' ? t('chat.placeholderReady') : t('chat.placeholderIdle')
+                    }
                     disabled={phase !== 'ready'}
                     rows={2}
                     autoComplete="off"
@@ -529,12 +540,12 @@ export function ChatPage() {
                   {conversation.turnActive ? (
                     <Button variant="outline" onClick={() => void cancelTurn()}>
                       <CircleStopIcon className="size-4" />
-                      Stop
+                      {t('chat.stop')}
                     </Button>
                   ) : (
                     <Button onClick={() => void send()} disabled={phase !== 'ready'}>
                       <ArrowUpIcon className="size-4" />
-                      Send
+                      {t('chat.send')}
                     </Button>
                   )}
                 </div>
@@ -548,28 +559,24 @@ export function ChatPage() {
 }
 
 function EmptyPane() {
+  const { t } = useI18n();
   return (
     <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 py-16 text-sm">
       <MessageSquareIcon className="size-8" />
-      <p>Pick a machine and agent, then open a session.</p>
+      <p>{t('chat.emptyTitle')}</p>
       <p className="flex items-center gap-1.5 text-xs">
-        <LaptopIcon className="size-3.5" /> The machine's daemon spawns the agent locally.
+        <LaptopIcon className="size-3.5" /> {t('chat.emptyHint')}
       </p>
     </div>
   );
 }
 
-const ROLE_LABEL: Record<'user' | 'agent' | 'thought', string> = {
-  user: 'You',
-  agent: 'Agent',
-  thought: 'Thinking',
-};
-
 function ConversationBlock({ role, text }: { role: 'user' | 'agent' | 'thought'; text: string }) {
+  const { t } = useI18n();
   if (text === '') return null;
   return (
     <div className={role === 'thought' ? 'text-muted-foreground text-sm italic' : 'text-sm'}>
-      <span className="text-muted-foreground mr-2 text-xs uppercase">{ROLE_LABEL[role]}</span>
+      <span className="text-muted-foreground mr-2 text-xs uppercase">{t(ROLE_KEY[role])}</span>
       <span className={role === 'user' ? 'font-medium' : 'whitespace-pre-wrap'}>{text}</span>
     </div>
   );
@@ -601,11 +608,13 @@ function PermissionCard({
   permission: ConversationState['permissions'][number];
   onRespond: (optionId?: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="border-warn/50 bg-warn/5 rounded-md border p-3 text-sm">
       <p className="mb-1 font-medium">
-        The agent asks permission
-        {permission.toolCall.title !== undefined ? `: ${permission.toolCall.title}` : ''}
+        {permission.toolCall.title !== undefined
+          ? t('chat.permissionAskTitle', { title: permission.toolCall.title })
+          : t('chat.permissionAsk')}
       </p>
       <p className="text-muted-foreground mb-2 font-mono text-xs">
         {permission.toolCall.kind ?? 'tool'} · {permission.toolCall.toolCallId}

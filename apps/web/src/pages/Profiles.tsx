@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { LayersIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon, TerminalIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, type TranslationKey } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ type Scope = 'global' | 'personal';
 const TARGETS: AgentTarget[] = ['claude-code', 'hermes', 'codex', 'deepseek', 'zcode', 'generic'];
 
 /** Non-mcp resource kinds a profile entry can reference (Phase 3.5). */
-const RESOURCE_KINDS: ResourceKind[] = ['skill', 'rule', 'command', 'sub_agent', 'hook'];
+const RESOURCE_KINDS: NonMcpKind[] = ['skill', 'rule', 'command', 'sub_agent', 'hook'];
 /**
  * The kind domain a `{resourceId, kind}` entry accepts — 'mcp' is excluded
  * (MCP servers enter via the mcpServerId arm). Safe to assert: kind:'mcp'
@@ -54,8 +55,18 @@ const RESOURCE_KINDS: ResourceKind[] = ['skill', 'rule', 'command', 'sub_agent',
  */
 type NonMcpKind = Exclude<ResourceKind, 'mcp'>;
 
+/** Fieldset legend per entry kind (values rendered verbatim — never derived). */
+const KIND_LEGEND: Record<NonMcpKind, TranslationKey> = {
+  skill: 'profiles.kindSkills',
+  rule: 'profiles.kindRules',
+  command: 'profiles.kindCommands',
+  sub_agent: 'profiles.kindSubAgents',
+  hook: 'profiles.kindHooks',
+};
+
 export function ProfilesPage() {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const [items, setItems] = useState<Profile[] | null>(null);
   const isAdmin = user?.role === 'admin';
 
@@ -63,7 +74,7 @@ export function ProfilesPage() {
     try {
       setItems(await withAuthGuard(() => api.listProfiles(), logout));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load profiles');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('profiles.loadFailed'));
     }
   }
 
@@ -72,23 +83,21 @@ export function ProfilesPage() {
   }, []);
 
   async function remove(p: Profile) {
-    if (!confirm(`Delete profile "${p.name}"?`)) return;
+    if (!confirm(t('profiles.confirmDelete', { name: p.name }))) return;
     try {
       await withAuthGuard(() => api.deleteProfile(p.id), logout);
-      toast.success('Profile deleted');
+      toast.success(t('profiles.deleted'));
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Bundles of MCP servers and resources that agent tools install or connect through.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('profiles.title')}</h1>
+        <p className="text-muted-foreground mt-1 text-sm">{t('profiles.subtitle')}</p>
       </div>
 
       {user && (
@@ -96,11 +105,11 @@ export function ProfilesPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <TerminalIcon className="size-4" />
-              Install in Claude Code
+              {t('profiles.installTitle')}
             </CardTitle>
             <CardDescription>
-              Every <code className="font-mono">claude-code</code> profile below is served as a
-              native Claude Code plugin. Create a marketplace token once, then on your machine:
+              {t('profiles.installDescBefore')} <code className="font-mono">claude-code</code>{' '}
+              {t('profiles.installDescAfter')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -109,11 +118,11 @@ export function ProfilesPage() {
 claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}</code>
             </pre>
             <p className="text-muted-foreground mt-2 text-xs">
-              The add command is shown once when you create the token —{' '}
+              {t('profiles.installNoteBefore')}
               <a className="text-signal underline-offset-4 hover:underline" href="/tokens">
-                manage tokens
+                {t('profiles.manageTokens')}
               </a>
-              . Install, update, and uninstall are then handled by Claude Code itself.
+              {t('profiles.installNoteAfter')}
             </p>
           </CardContent>
         </Card>
@@ -123,34 +132,32 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <LayersIcon className="size-4" />
-            Profiles
+            {t('profiles.title')}
           </CardTitle>
-          <CardDescription>
-            Personal profiles are yours; global ones are shared by an admin.
-          </CardDescription>
+          <CardDescription>{t('profiles.cardDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Target</TableHead>
-                <TableHead>Entries</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('profiles.target')}</TableHead>
+                <TableHead>{t('profiles.entries')}</TableHead>
+                <TableHead>{t('common.scope')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items === null ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    No profiles yet.
+                    {t('profiles.noProfiles')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -182,7 +189,7 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
                         ) : (
                           <UserIcon className="size-3" />
                         )}
-                        {p.scope}
+                        {p.scope === 'global' ? t('common.scopeGlobal') : t('common.scopePersonal')}
                       </Badge>
                     </TableCell>
                     <TableCell className="pr-6 text-right">
@@ -190,7 +197,7 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8">
                             <MoreHorizontalIcon className="size-4" />
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t('common.openMenu')}</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -199,7 +206,7 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
                             disabled={p.scope === 'global' && !isAdmin}
                             onClick={() => remove(p)}
                           >
-                            <TrashIcon /> Delete
+                            <TrashIcon /> {t('common.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -219,6 +226,7 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
 
 function CreateProfile({ onCreated }: { onCreated: () => void }) {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -277,7 +285,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
           }),
         logout,
       );
-      toast.success('Profile created');
+      toast.success(t('profiles.created'));
       setName('');
       setDescription('');
       setTarget('generic');
@@ -285,7 +293,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       setSelectedResources(new Set());
       onCreated();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -296,62 +304,61 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <PlusIcon className="size-4" />
-          Add profile
+          {t('profiles.addTitle')}
         </CardTitle>
-        <CardDescription>
-          Choose which MCP servers this profile exposes to agent tools.
-        </CardDescription>
+        <CardDescription>{t('profiles.addDesc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-4">
             <div className="grid gap-2">
-              <Label htmlFor="prof-name">Name</Label>
+              <Label htmlFor="prof-name">{t('common.name')}</Label>
               <Input
                 id="prof-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Frontend daily"
+                placeholder={t('profiles.namePlaceholder')}
                 autoComplete="off"
                 spellCheck={false}
                 required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="prof-target">Target</Label>
+              <Label htmlFor="prof-target">{t('profiles.target')}</Label>
               <Select value={target} onValueChange={(v) => setTarget(v as AgentTarget)}>
                 <SelectTrigger id="prof-target">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TARGETS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
+                  {TARGETS.map((target) => (
+                    <SelectItem key={target} value={target}>
+                      {target}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="prof-desc">Description</Label>
+              <Label htmlFor="prof-desc">{t('common.description')}</Label>
               <Input
                 id="prof-desc"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="optional"
+                placeholder={t('profiles.optional')}
                 autoComplete="off"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="prof-scope">Scope</Label>
+              <Label htmlFor="prof-scope">{t('common.scope')}</Label>
               <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
                 <SelectTrigger id="prof-scope">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="personal">personal</SelectItem>
+                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
                   <SelectItem value="global" disabled={!isAdmin}>
-                    global {!isAdmin && '(admin)'}
+                    {t('common.scopeGlobal')}
+                    {!isAdmin && t('profiles.adminSuffix')}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -359,13 +366,11 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
           </div>
 
           <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium">MCP servers in this profile</legend>
+            <legend className="text-sm font-medium">{t('profiles.serversLegend')}</legend>
             {servers === null ? (
-              <p className="text-muted-foreground text-sm">Loading servers…</p>
+              <p className="text-muted-foreground text-sm">{t('profiles.loadingServers')}</p>
             ) : servers.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No MCP servers visible to you yet. Add one first.
-              </p>
+              <p className="text-muted-foreground text-sm">{t('profiles.noServers')}</p>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
                 {servers.map((s) => (
@@ -394,15 +399,15 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             return (
               <fieldset key={kind} className="grid gap-2">
                 <legend className="text-sm font-medium">
-                  {kind === 'sub_agent' ? 'sub-agents' : `${kind}s`}
+                  {t(KIND_LEGEND[kind])}
                   <span className="text-muted-foreground ml-1.5 text-xs font-normal">
-                    ({of.length} visible)
+                    {t('profiles.visibleCount', { count: of.length })}
                   </span>
                 </legend>
                 {resources === null ? (
-                  <p className="text-muted-foreground text-sm">Loading…</p>
+                  <p className="text-muted-foreground text-sm">{t('common.loading')}</p>
                 ) : of.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">None — manage them in Resources.</p>
+                  <p className="text-muted-foreground text-sm">{t('profiles.noneInResources')}</p>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {of.map((r) => (
@@ -431,7 +436,7 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
               type="submit"
               disabled={busy || (selectedServers.size === 0 && selectedResources.size === 0)}
             >
-              {busy ? 'Creating…' : 'Create profile'}
+              {busy ? t('profiles.creating') : t('profiles.createProfile')}
             </Button>
           </div>
         </form>

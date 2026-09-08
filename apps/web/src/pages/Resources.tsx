@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, dateLocale, type TranslationKey } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,45 +61,54 @@ import {
 
 type Scope = 'global' | 'personal';
 
-/** Kinds currently shipped (4.2/4.3/4.4/4.5). 4.6 adds skill here when it lands. */
-const KINDS: { value: ResourceKind; label: string; bodyLabel: string; bodyPlaceholder: string }[] =
-  [
-    {
-      value: 'sub_agent',
-      label: 'Sub-agent',
-      bodyLabel: 'System prompt',
-      bodyPlaceholder: 'You are a careful code reviewer…',
-    },
-    {
-      value: 'rule',
-      label: 'Rule',
-      bodyLabel: 'Policy / guideline',
-      bodyPlaceholder: 'Always run tests before marking a task done…',
-    },
-    {
-      value: 'command',
-      label: 'Command',
-      bodyLabel: 'Command body',
-      bodyPlaceholder: 'Explain the arguments to this command: $ARGUMENTS',
-    },
-    {
-      value: 'hook',
-      label: 'Hook',
-      bodyLabel: 'Hooks',
-      bodyPlaceholder: '', // hooks use a structured editor, not a textarea
-    },
-    {
-      value: 'skill',
-      label: 'Skill',
-      bodyLabel: 'SKILL.md',
-      bodyPlaceholder: 'A skill is a markdown file with YAML frontmatter…',
-    },
-  ];
+/**
+ * Kinds currently shipped (4.2/4.3/4.4/4.5). 4.6 adds skill here when it lands.
+ * Strings are held as TranslationKeys and resolved with t() at render time —
+ * never at module scope.
+ */
+const KINDS: {
+  value: ResourceKind;
+  labelKey: TranslationKey;
+  bodyLabelKey: TranslationKey;
+  bodyPlaceholderKey: TranslationKey;
+}[] = [
+  {
+    value: 'sub_agent',
+    labelKey: 'resources.kindSubAgent',
+    bodyLabelKey: 'resources.bodySystemPrompt',
+    bodyPlaceholderKey: 'resources.phSubAgent',
+  },
+  {
+    value: 'rule',
+    labelKey: 'resources.kindRule',
+    bodyLabelKey: 'resources.bodyPolicy',
+    bodyPlaceholderKey: 'resources.phRule',
+  },
+  {
+    value: 'command',
+    labelKey: 'resources.kindCommand',
+    bodyLabelKey: 'resources.bodyCommand',
+    bodyPlaceholderKey: 'resources.phCommand',
+  },
+  {
+    value: 'hook',
+    labelKey: 'resources.kindHook',
+    bodyLabelKey: 'resources.bodyHooks',
+    bodyPlaceholderKey: 'resources.phHook', // hooks use a structured editor, not a textarea
+  },
+  {
+    value: 'skill',
+    labelKey: 'resources.kindSkill',
+    bodyLabelKey: 'resources.bodySkillMd',
+    bodyPlaceholderKey: 'resources.phSkill',
+  },
+];
 
 const TARGETS: AgentTarget[] = ['claude-code', 'zcode', 'hermes', 'generic'];
 
 export function ResourcesPage() {
   const { logout, user } = useAuth();
+  const { t, lang } = useI18n();
   const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<Resource[] | null>(null);
   const [kindFilter, setKindFilter] = useState<ResourceKind | 'all'>('all');
@@ -111,7 +121,7 @@ export function ResourcesPage() {
       const all = await withAuthGuard(() => api.listResources(), logout);
       setItems(all);
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load resources');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('resources.loadFailed'));
     }
   }
 
@@ -143,24 +153,23 @@ export function ResourcesPage() {
   }, [items]);
 
   async function remove(r: Resource) {
-    if (!confirm(`Delete resource "${r.name}" (${r.kind})? This cannot be undone.`)) return;
+    if (!confirm(t('resources.confirmDelete', { name: r.name, kind: r.kind }))) return;
     try {
       await withAuthGuard(() => api.deleteResource(r.id), logout);
-      toast.success('Resource deleted');
+      toast.success(t('resources.deleted'));
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Resources</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('resources.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Versioned assets (sub-agents, rules) that profiles reference by{' '}
-          <code className="font-mono">kind:key</code>. Personal ones are yours; global ones are
-          shared by an admin.
+          {t('resources.subtitle')} <code className="font-mono">kind:key</code>
+          {t('resources.subtitleAfter')}
         </p>
       </div>
 
@@ -170,9 +179,9 @@ export function ResourcesPage() {
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <BoxesIcon className="size-4" />
-                Stored resources
+                {t('resources.storedTitle')}
               </CardTitle>
-              <CardDescription>Filter by kind or scope to narrow the list.</CardDescription>
+              <CardDescription>{t('resources.storedDesc')}</CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Select
@@ -183,10 +192,10 @@ export function ResourcesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All kinds</SelectItem>
+                  <SelectItem value="all">{t('resources.allKinds')}</SelectItem>
                   {KINDS.map((k) => (
                     <SelectItem key={k.value} value={k.value}>
-                      {k.label}
+                      {t(k.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -196,14 +205,14 @@ export function ResourcesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All scopes</SelectItem>
-                  <SelectItem value="personal">personal</SelectItem>
-                  <SelectItem value="global">global</SelectItem>
+                  <SelectItem value="all">{t('resources.allScopes')}</SelectItem>
+                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
+                  <SelectItem value="global">{t('common.scopeGlobal')}</SelectItem>
                 </SelectContent>
               </Select>
               <Button onClick={() => setEditing('new')} className="gap-1.5">
                 <PlusIcon className="size-4" />
-                <span className="hidden sm:inline">New resource</span>
+                <span className="hidden sm:inline">{t('resources.newResource')}</span>
               </Button>
             </div>
           </div>
@@ -212,25 +221,25 @@ export function ResourcesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead>Updated</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('resources.kind')}</TableHead>
+                <TableHead>{t('resources.key')}</TableHead>
+                <TableHead>{t('common.scope')}</TableHead>
+                <TableHead>{t('resources.updated')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered === null ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
-                    No resources yet.
+                    {t('resources.empty')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -253,11 +262,11 @@ export function ResourcesPage() {
                         ) : (
                           <UserIcon className="size-3" />
                         )}
-                        {r.scope}
+                        {r.scope === 'global' ? t('common.scopeGlobal') : t('common.scopePersonal')}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
-                      {new Date(r.updatedAt).toLocaleDateString(undefined, {
+                      {new Date(r.updatedAt).toLocaleDateString(dateLocale(lang), {
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric',
@@ -268,7 +277,7 @@ export function ResourcesPage() {
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8">
                             <MoreHorizontalIcon className="size-4" />
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t('common.openMenu')}</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -276,14 +285,14 @@ export function ResourcesPage() {
                             disabled={r.scope === 'global' && !isAdmin}
                             onClick={() => setEditing(r)}
                           >
-                            <PencilIcon /> Edit
+                            <PencilIcon /> {t('common.edit')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             variant="destructive"
                             disabled={r.scope === 'global' && !isAdmin}
                             onClick={() => remove(r)}
                           >
-                            <TrashIcon /> Delete
+                            <TrashIcon /> {t('common.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -318,6 +327,7 @@ function ResourceEditor({
   onSaved: () => void;
 }) {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const isCreate = existing === null;
 
@@ -361,39 +371,46 @@ function ResourceEditor({
       };
       if (isCreate) {
         await withAuthGuard(() => api.createResource({ ...shared, kind, scope }), logout);
-        toast.success('Resource created');
+        toast.success(t('resources.created'));
       } else {
         await withAuthGuard(() => api.updateResource(existing!.id, shared), logout);
-        toast.success('Resource saved');
+        toast.success(t('resources.saved'));
       }
       onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Save failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.saveFailed'));
     } finally {
       setBusy(false);
     }
   }
 
-  function toggleTarget(t: AgentTarget) {
-    setTargets((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  function toggleTarget(target: AgentTarget) {
+    setTargets((prev) =>
+      prev.includes(target) ? prev.filter((x) => x !== target) : [...prev, target],
+    );
   }
 
   return (
     <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isCreate ? 'New resource' : `Edit ${existing!.name}`}</DialogTitle>
+          <DialogTitle>
+            {isCreate
+              ? t('resources.newResource')
+              : t('resources.editTitle', { name: existing!.name })}
+          </DialogTitle>
           <DialogDescription>
-            {kindMeta.bodyLabel.toLowerCase()} content is stored as inline markdown and referenced
-            by <code className="font-mono">{`${kind}:${key || '…'}`}</code>.
+            {t('resources.editorDesc', { body: t(kindMeta.bodyLabelKey).toLowerCase() })}{' '}
+            <code className="font-mono">{`${kind}:${key || '…'}`}</code>
+            {t('resources.editorDescAfter')}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="res-kind">Kind</Label>
+              <Label htmlFor="res-kind">{t('resources.kind')}</Label>
               <Select
                 value={kind}
                 onValueChange={(v) => setKind(v as ResourceKind)}
@@ -405,14 +422,14 @@ function ResourceEditor({
                 <SelectContent>
                   {KINDS.map((k) => (
                     <SelectItem key={k.value} value={k.value}>
-                      {k.label}
+                      {t(k.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="res-scope">Scope</Label>
+              <Label htmlFor="res-scope">{t('common.scope')}</Label>
               <Select
                 value={scope}
                 onValueChange={(v) => setScope(v as Scope)}
@@ -422,9 +439,10 @@ function ResourceEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="personal">personal</SelectItem>
+                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
                   <SelectItem value="global" disabled={!isAdmin}>
-                    global {!isAdmin && '(admin)'}
+                    {t('common.scopeGlobal')}
+                    {!isAdmin && t('resources.adminSuffix')}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -433,7 +451,7 @@ function ResourceEditor({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="res-key">Key</Label>
+              <Label htmlFor="res-key">{t('resources.key')}</Label>
               <Input
                 id="res-key"
                 value={key}
@@ -445,12 +463,12 @@ function ResourceEditor({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="res-name">Name</Label>
+              <Label htmlFor="res-name">{t('common.name')}</Label>
               <Input
                 id="res-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Human-readable name"
+                placeholder={t('resources.phName')}
                 autoComplete="off"
                 required
               />
@@ -459,7 +477,7 @@ function ResourceEditor({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="res-version">Version</Label>
+              <Label htmlFor="res-version">{t('resources.version')}</Label>
               <Input
                 id="res-version"
                 value={version}
@@ -470,32 +488,32 @@ function ResourceEditor({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="res-desc">Description</Label>
+              <Label htmlFor="res-desc">{t('common.description')}</Label>
               <Input
                 id="res-desc"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional summary"
+                placeholder={t('resources.phDescription')}
                 autoComplete="off"
               />
             </div>
           </div>
 
           <div className="grid gap-2">
-            <Label>Targets</Label>
+            <Label>{t('resources.targets')}</Label>
             <div className="flex flex-wrap gap-2">
-              {TARGETS.map((t) => (
+              {TARGETS.map((target) => (
                 <label
-                  key={t}
+                  key={target}
                   className="flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs"
                 >
                   <input
                     type="checkbox"
-                    checked={targets.includes(t)}
-                    onChange={() => toggleTarget(t)}
+                    checked={targets.includes(target)}
+                    onChange={() => toggleTarget(target)}
                     className="size-3.5"
                   />
-                  <span className="font-mono">{t}</span>
+                  <span className="font-mono">{target}</span>
                 </label>
               ))}
             </div>
@@ -506,12 +524,12 @@ function ResourceEditor({
               <HookBodyEditor body={body} setBody={setBody} targets={targets} />
             ) : (
               <>
-                <Label htmlFor="res-body">{kindMeta.bodyLabel}</Label>
+                <Label htmlFor="res-body">{t(kindMeta.bodyLabelKey)}</Label>
                 <Textarea
                   id="res-body"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  placeholder={kindMeta.bodyPlaceholder}
+                  placeholder={t(kindMeta.bodyPlaceholderKey)}
                   spellCheck={false}
                   className="min-h-48 font-mono text-xs"
                 />
@@ -526,10 +544,14 @@ function ResourceEditor({
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="button" disabled={busy} onClick={onSubmit}>
-            {busy ? 'Saving…' : isCreate ? 'Create resource' : 'Save changes'}
+            {busy
+              ? t('common.saving')
+              : isCreate
+                ? t('resources.createResource')
+                : t('resources.saveChanges')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -563,13 +585,14 @@ function HookBodyEditor({
   targets: AgentTarget[];
 }) {
   // Parse the stored JSON once into entries; fall back to empty.
+  const { t } = useI18n();
   const [entries, setEntries] = useState<HookEntry[]>(() => parseHooksJson(body));
 
   // Events available for the declared targets (union; Hermes contributes none).
   const availableEvents = useMemo(() => {
     const set = new Set<HookEvent>();
-    for (const t of targets) {
-      const supported = HOOK_SUPPORT[t];
+    for (const target of targets) {
+      const supported = HOOK_SUPPORT[target];
       if (supported) for (const e of supported) set.add(e);
     }
     return HOOK_EVENTS.filter((e) => set.has(e));
@@ -598,20 +621,20 @@ function HookBodyEditor({
   return (
     <>
       <div className="flex items-center justify-between">
-        <Label>Hook bindings</Label>
+        <Label>{t('resources.hookBindings')}</Label>
         <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addEntry}>
           <PlusIcon className="size-4" />
-          Add binding
+          {t('resources.addBinding')}
         </Button>
       </div>
       <p className="text-muted-foreground text-xs">
-        Stored as <code className="font-mono">hooks.json</code>. Only events supported by your
-        chosen targets are offered.
+        {t('resources.hooksDesc')} <code className="font-mono">hooks.json</code>
+        {t('resources.hooksDescAfter')}
       </p>
       <div className="flex flex-col gap-3">
         {entries.length === 0 ? (
           <p className="text-muted-foreground rounded-md border border-dashed py-6 text-center text-sm">
-            No hook bindings yet. Click “Add binding”.
+            {t('resources.hooksEmpty')}
           </p>
         ) : (
           entries.map((e, i) => (
@@ -635,7 +658,7 @@ function HookBodyEditor({
                 <Input
                   value={e.matcher}
                   onChange={(ev) => updateEntry(i, { matcher: ev.target.value })}
-                  placeholder="matcher (regex, optional) e.g. Bash|Edit"
+                  placeholder={t('resources.phMatcher')}
                   spellCheck={false}
                   className="flex-1 font-mono text-xs"
                 />
@@ -647,13 +670,13 @@ function HookBodyEditor({
                   onClick={() => removeEntry(i)}
                 >
                   <TrashIcon className="size-4" />
-                  <span className="sr-only">Remove binding</span>
+                  <span className="sr-only">{t('resources.removeBinding')}</span>
                 </Button>
               </div>
               <Input
                 value={e.command}
                 onChange={(ev) => updateEntry(i, { command: ev.target.value })}
-                placeholder="shell command, e.g. ./hooks/lint.sh"
+                placeholder={t('resources.phHookCommand')}
                 spellCheck={false}
                 className="font-mono text-xs"
               />
@@ -722,6 +745,7 @@ function SkillBundleEditor({
   files: Record<string, string>;
   setFiles: (f: Record<string, string>) => void;
 }) {
+  const { t } = useI18n();
   const [newPath, setNewPath] = useState('');
   const [activePath, setActivePath] = useState<string | null>(null);
   const paths = Object.keys(files).sort();
@@ -730,11 +754,11 @@ function SkillBundleEditor({
     const p = newPath.trim();
     if (!p) return;
     if (p === 'SKILL.md' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
-      toast.error('Invalid path (use a relative path, not SKILL.md)');
+      toast.error(t('resources.invalidPath'));
       return;
     }
     if (files[p] !== undefined) {
-      toast.error(`"${p}" already exists`);
+      toast.error(t('resources.pathExists', { path: p }));
       return;
     }
     setFiles({ ...files, [p]: '' });
@@ -756,16 +780,17 @@ function SkillBundleEditor({
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between">
-        <Label>Extra files (multi-file skill)</Label>
+        <Label>{t('resources.extraFiles')}</Label>
         <span className="text-muted-foreground text-xs">
           {paths.length === 0
-            ? 'single-file (SKILL.md only)'
-            : `${paths.length} extra file${paths.length > 1 ? 's' : ''}`}
+            ? t('resources.singleFile')
+            : t('resources.extraCount', { count: paths.length })}
         </span>
       </div>
       <p className="text-muted-foreground text-xs">
-        Add supporting files like <code className="font-mono">references/foo.md</code> or{' '}
-        <code className="font-mono">scripts/run.sh</code>. Leave empty for a single-file skill.
+        {t('resources.bundleDescA')} <code className="font-mono">references/foo.md</code>{' '}
+        {t('resources.bundleDescB')} <code className="font-mono">scripts/run.sh</code>
+        {t('resources.bundleDescC')}
       </p>
 
       {paths.length > 0 ? (
@@ -799,13 +824,13 @@ function SkillBundleEditor({
               key={activePath}
               value={files[activePath]}
               onChange={(e) => updateContent(activePath, e.target.value)}
-              placeholder={`Content of ${activePath}`}
+              placeholder={t('resources.fileContent', { path: activePath })}
               spellCheck={false}
               className="min-h-48 flex-1 font-mono text-xs"
             />
           ) : (
             <div className="text-muted-foreground flex flex-1 items-center justify-center rounded-md border border-dashed py-8 text-sm">
-              Select a file to edit
+              {t('resources.selectFile')}
             </div>
           )}
         </div>
@@ -833,7 +858,7 @@ function SkillBundleEditor({
           onClick={addFile}
         >
           <PlusIcon className="size-4" />
-          Add file
+          {t('resources.addFile')}
         </Button>
       </div>
     </div>

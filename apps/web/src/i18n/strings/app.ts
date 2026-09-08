@@ -1,0 +1,63 @@
+/** App chrome: sidebar/nav, header, guards, and the toggles. */
+const en = {
+  skipToContent: 'Skip to content',
+  brandHome: 'Harness Nexus home',
+  primaryNav: 'Primary',
+  signedIn: 'Signed in',
+  signOut: 'Sign out',
+  themeToLight: 'Switch to light theme',
+  themeToDark: 'Switch to dark theme',
+  langToZh: '切换到中文',
+  langToEn: 'Switch to English',
+  mobileOpenNav: 'Open navigation',
+  mobileCloseNav: 'Close navigation',
+  mobileMenu: 'Menu',
+  // Nav items (single source of truth in app-shell.tsx).
+  navHome: 'Home',
+  navMachines: 'Machines',
+  navChat: 'Chat',
+  navMcp: 'MCP management',
+  navProfiles: 'Profiles',
+  navResources: 'Resources',
+  navSkillHub: 'Skill hub',
+  navCredentials: 'Credentials',
+  navTokens: 'Access tokens',
+  navUsers: 'Users',
+  navSettings: 'Settings',
+  // 403 view (guards.tsx).
+  adminsOnlyTitle: 'Admins only',
+  adminsOnlyBody:
+    "You don't have permission to view this page. Ask an administrator if you need access.",
+  backToOverview: 'Back to overview',
+};
+
+const zh: typeof en = {
+  skipToContent: '跳到主要内容',
+  brandHome: 'Harness Nexus 首页',
+  primaryNav: '主导航',
+  signedIn: '当前登录',
+  signOut: '退出登录',
+  themeToLight: '切换到浅色主题',
+  themeToDark: '切换到深色主题',
+  langToZh: '切换到中文',
+  langToEn: 'Switch to English',
+  mobileOpenNav: '打开导航',
+  mobileCloseNav: '关闭导航',
+  mobileMenu: '菜单',
+  navHome: '总览',
+  navMachines: '机器',
+  navChat: '聊天',
+  navMcp: 'MCP 管理',
+  navProfiles: '配置集',
+  navResources: '资源',
+  navSkillHub: '技能中心',
+  navCredentials: '凭据',
+  navTokens: '访问令牌',
+  navUsers: '用户',
+  navSettings: '系统设置',
+  adminsOnlyTitle: '仅限管理员',
+  adminsOnlyBody: '你没有权限查看此页面。如需访问，请联系管理员。',
+  backToOverview: '返回总览',
+};
+
+export const appStrings = { en, zh };

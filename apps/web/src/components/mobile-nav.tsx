@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { MenuIcon, XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button';
 export function MobileNav({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const { t } = useI18n();
 
   // Close whenever the route changes (the nav links live inside `children`).
   useEffect(() => {
@@ -25,7 +27,12 @@ export function MobileNav({ children }: { children: ReactNode }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
       <DialogPrimitive.Trigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label={t('app.mobileOpenNav')}
+        >
           <MenuIcon className="size-5" />
         </Button>
       </DialogPrimitive.Trigger>
@@ -33,12 +40,14 @@ export function MobileNav({ children }: { children: ReactNode }) {
         <DialogPrimitive.Overlay className="bg-foreground/40 fixed inset-0 z-40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className="bg-background fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col border-r p-4 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
-          aria-description="Site navigation"
+          aria-description={t('app.primaryNav')}
         >
           <div className="flex items-center justify-between">
-            <span className="text-foreground text-sm font-semibold tracking-tight">Menu</span>
+            <span className="text-foreground text-sm font-semibold tracking-tight">
+              {t('app.mobileMenu')}
+            </span>
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon" aria-label="Close navigation">
+              <Button variant="ghost" size="icon" aria-label={t('app.mobileCloseNav')}>
                 <XIcon className="size-5" />
               </Button>
             </DialogPrimitive.Close>

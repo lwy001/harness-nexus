@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { KeyRoundIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ type Scope = 'global' | 'personal';
 
 export function CredentialsPage() {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const [items, setItems] = useState<CredentialView[] | null>(null);
   const isAdmin = user?.role === 'admin';
 
@@ -45,7 +47,7 @@ export function CredentialsPage() {
     try {
       setItems(await withAuthGuard(() => api.listCredentials(), logout));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load credentials');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('credentials.loadFailed'));
     }
   }
 
@@ -54,24 +56,23 @@ export function CredentialsPage() {
   }, []);
 
   async function remove(c: CredentialView) {
-    if (!confirm(`Delete credential "${c.name}"? This cannot be undone.`)) return;
+    if (!confirm(t('credentials.confirmDelete', { name: c.name }))) return;
     try {
       await withAuthGuard(() => api.deleteCredential(c.id), logout);
-      toast.success('Credential deleted');
+      toast.success(t('credentials.deletedToast'));
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Delete failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Credentials</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('credentials.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Named secrets referenced by MCP transports via{' '}
-          <code className="font-mono">{'${cred:NAME}'}</code> placeholders. Secrets are encrypted at
-          rest and never returned after creation.
+          {t('credentials.subtitle1')} <code className="font-mono">{'${cred:NAME}'}</code>{' '}
+          {t('credentials.subtitle2')}
         </p>
       </div>
 
@@ -79,34 +80,32 @@ export function CredentialsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <KeyRoundIcon className="size-4" />
-            Stored credentials
+            {t('credentials.storedTitle')}
           </CardTitle>
-          <CardDescription>
-            Personal credentials are yours; global ones are shared by an admin.
-          </CardDescription>
+          <CardDescription>{t('credentials.storedDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Placeholder</TableHead>
-                <TableHead>Preview</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('credentials.placeholderHeader')}</TableHead>
+                <TableHead>{t('credentials.previewHeader')}</TableHead>
+                <TableHead>{t('common.scope')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items === null ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                    No credentials yet.
+                    {t('credentials.empty')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -131,7 +130,7 @@ export function CredentialsPage() {
                         ) : (
                           <UserIcon className="size-3" />
                         )}
-                        {c.scope}
+                        {c.scope === 'global' ? t('common.scopeGlobal') : t('common.scopePersonal')}
                       </Badge>
                     </TableCell>
                     <TableCell className="pr-6 text-right">
@@ -139,7 +138,7 @@ export function CredentialsPage() {
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8">
                             <MoreHorizontalIcon className="size-4" />
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t('common.openMenu')}</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -148,7 +147,7 @@ export function CredentialsPage() {
                             disabled={c.scope === 'global' && !isAdmin}
                             onClick={() => remove(c)}
                           >
-                            <TrashIcon /> Delete
+                            <TrashIcon /> {t('common.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -168,6 +167,7 @@ export function CredentialsPage() {
 
 function CreateCredential({ onCreated }: { onCreated: () => void }) {
   const { logout, user } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const [name, setName] = useState('');
   const [secret, setSecret] = useState('');
@@ -192,12 +192,12 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
           }),
         logout,
       );
-      toast.success('Credential created');
+      toast.success(t('credentials.createdToast'));
       setName('');
       setSecret('');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -208,49 +208,48 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <PlusIcon className="size-4" />
-          Add credential
+          {t('credentials.addTitle')}
         </CardTitle>
-        <CardDescription>
-          The secret is encrypted immediately and shown only as a preview afterwards.
-        </CardDescription>
+        <CardDescription>{t('credentials.addDesc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="grid gap-2">
-              <Label htmlFor="cred-name">Name</Label>
+              <Label htmlFor="cred-name">{t('common.name')}</Label>
               <Input
                 id="cred-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. context7-key"
+                placeholder={t('credentials.namePlaceholder')}
                 autoComplete="off"
                 spellCheck={false}
                 required
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="cred-secret">Secret</Label>
+              <Label htmlFor="cred-secret">{t('credentials.secret')}</Label>
               <Input
                 id="cred-secret"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                placeholder="Paste the token / key"
+                placeholder={t('credentials.secretPlaceholder')}
                 required
                 autoComplete="new-password"
                 spellCheck={false}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="cred-scope">Scope</Label>
+              <Label htmlFor="cred-scope">{t('common.scope')}</Label>
               <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
                 <SelectTrigger id="cred-scope">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="personal">personal</SelectItem>
+                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
                   <SelectItem value="global" disabled={!isAdmin}>
-                    global {!isAdmin && '(admin)'}
+                    {t('common.scopeGlobal')}
+                    {!isAdmin && t('credentials.adminSuffix')}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -262,19 +261,19 @@ function CreateCredential({ onCreated }: { onCreated: () => void }) {
                 id="cred-distributable"
                 checked={distributable}
                 onCheckedChange={setDistributable}
-                aria-label="Allow the plaintext to reach client shims"
+                aria-label={t('credentials.distributableAria')}
               />
               <Label htmlFor="cred-distributable" className="font-normal">
-                Distributable — allow the plaintext to reach{' '}
-                <code className="font-mono">hnx mcp serve</code> shims on users&apos; machines. Off
-                (default): the secret never leaves the server; upstreams using it are served via the{' '}
-                <code className="font-mono">/mcp</code> outlet only.
+                {t('credentials.distributableLabel1')}{' '}
+                <code className="font-mono">hnx mcp serve</code>{' '}
+                {t('credentials.distributableLabel2')} <code className="font-mono">/mcp</code>{' '}
+                {t('credentials.distributableLabel3')}
               </Label>
             </div>
           ) : null}
           <div>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Creating…' : 'Create credential'}
+              {busy ? t('credentials.creating') : t('credentials.createButton')}
             </Button>
           </div>
         </form>

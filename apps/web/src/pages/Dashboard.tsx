@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth, withAuthGuard } from '@/auth';
 import { api } from '@/api';
+import { useI18n } from '@/i18n';
 import {
   HarnessNexusError,
   type CredentialView,
@@ -26,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 
 export function DashboardPage() {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
 
   const [servers, setServers] = useState<McpServer[] | null>(null);
@@ -54,7 +56,7 @@ export function DashboardPage() {
         setProfiles(p);
       } catch (e) {
         if (cancelled) return;
-        toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load overview');
+        toast.error(e instanceof HarnessNexusError ? e.message : t('dashboard.loadFailed'));
         setServers([]);
         setStatuses([]);
         setCreds([]);
@@ -78,10 +80,8 @@ export function DashboardPage() {
           this product's world, so it leads instead of a "Welcome" headline. */}
       <section className="mb-8">
         <div className="mb-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Upstream MCP servers aggregated into one connection for your agent tools.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('dashboard.subtitle')}</p>
         </div>
         <MeshTopology
           servers={servers ?? []}
@@ -95,63 +95,63 @@ export function DashboardPage() {
         <SummaryLink
           to="/mcp-servers"
           icon={<ServerIcon className="size-4" />}
-          label="MCP servers"
+          label={t('dashboard.servers')}
           count={serverCount}
           loading={servers === null}
-          hint="Upstream connections (SSE · HTTP)"
+          hint={t('dashboard.serversHint')}
         />
         <SummaryLink
           to="/profiles"
           icon={<LayersIcon className="size-4" />}
-          label="Profiles"
+          label={t('dashboard.profiles')}
           count={profileCount}
           loading={profiles === null}
-          hint="Bundles of servers for agent tools"
+          hint={t('dashboard.profilesHint')}
         />
         <SummaryLink
           to="/credentials"
           icon={<KeyRoundIcon className="size-4" />}
-          label="Credentials"
+          label={t('dashboard.credentials')}
           count={credCount}
           loading={creds === null}
-          hint="Encrypted secrets for upstreams"
+          hint={t('dashboard.credentialsHint')}
         />
         {isAdmin ? (
           <>
             <SummaryLink
               to="/admin/users"
               icon={<UsersIcon className="size-4" />}
-              label="Users"
-              hint="Accounts and roles"
-              actionLabel="Manage"
+              label={t('dashboard.users')}
+              hint={t('dashboard.usersHint')}
+              actionLabel={t('dashboard.manage')}
             />
             <SummaryLink
               to="/admin/settings"
               icon={<SettingsIcon className="size-4" />}
-              label="Settings"
-              hint="Registration switch"
-              actionLabel="Open"
+              label={t('dashboard.settings')}
+              hint={t('dashboard.settingsHint')}
+              actionLabel={t('dashboard.open')}
             />
           </>
         ) : (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                Account
+                {t('dashboard.account')}
                 <Badge variant="secondary" className="text-[10px]">
                   {user.role}
                 </Badge>
               </CardTitle>
-              <CardDescription>Your profile and access level</CardDescription>
+              <CardDescription>{t('dashboard.accountDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="text-muted-foreground flex flex-col gap-1 text-sm">
               <div className="min-w-0">
-                <span>Username </span>
+                <span>{t('dashboard.username')} </span>
                 <span className="text-foreground font-medium">{user.username}</span>
               </div>
               {user.email && (
                 <div className="min-w-0">
-                  <span>Email </span>
+                  <span>{t('dashboard.email')} </span>
                   <span className="text-foreground font-medium">{user.email}</span>
                 </div>
               )}
@@ -161,9 +161,8 @@ export function DashboardPage() {
       </section>
 
       <p className="text-muted-foreground mt-6 text-xs">
-        Agent tools connect via a PAT and a profile:{' '}
-        <code className="font-mono">/mcp?profile=&lt;id&gt;</code>. callable-function scripts
-        (wrapping vendor APIs as MCP tools) arrive in a later phase.
+        {t('dashboard.footerPrefix')} <code className="font-mono">/mcp?profile=&lt;id&gt;</code>
+        {t('dashboard.footerSuffix')}
       </p>
     </AppShell>
   );
@@ -186,6 +185,7 @@ function SummaryLink({
   hint: string;
   actionLabel?: string;
 }) {
+  const { t } = useI18n();
   return (
     <Link to={to} className="group">
       <Card className="transition-colors group-hover:border-signal/50">
@@ -204,7 +204,7 @@ function SummaryLink({
                 {loading ? '—' : count}
               </span>
               <span className="text-muted-foreground text-xs">
-                {count === 1 ? 'item' : 'items'}
+                {count === 1 ? t('dashboard.itemsOne') : t('dashboard.itemsMany')}
               </span>
             </div>
           ) : (

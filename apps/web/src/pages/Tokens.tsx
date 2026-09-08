@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, dateLocale } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,13 +51,14 @@ import { HarnessNexusError, type PatView } from '@harness-nexus/sdk';
 
 export function TokensPage() {
   const { logout } = useAuth();
+  const { t, lang } = useI18n();
   const [items, setItems] = useState<PatView[] | null>(null);
 
   async function refresh() {
     try {
       setItems(await withAuthGuard(() => api.listPats(), logout));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load tokens');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('tokens.loadFailed'));
     }
   }
 
@@ -65,25 +67,28 @@ export function TokensPage() {
   }, []);
 
   async function revoke(p: PatView) {
-    if (!confirm(`Revoke token "${p.name}"? Anything using it stops working immediately.`)) return;
+    if (!confirm(t('tokens.confirmRevoke', { name: p.name }))) return;
     try {
       await withAuthGuard(() => api.revokePat(p.id), logout);
-      toast.success('Token revoked');
+      toast.success(t('tokens.revokedToast'));
       await refresh();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Revoke failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('tokens.revokeFailed'));
     }
   }
 
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Access tokens</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('tokens.title')}</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Personal access tokens (<code className="font-mono">hnpat_…</code>) authenticate the CLI
-          or automation against this server as you. A <strong>marketplace</strong> token authorizes
-          only your Claude Code plugin-marketplace URL. The full token is shown{' '}
-          <strong>only once</strong> at creation — copy it then.
+          {t('tokens.subtitle1')}
+          <code className="font-mono">hnpat_…</code>
+          {t('tokens.subtitle2')}
+          <strong>{t('tokens.subtitleMarketplace')}</strong>
+          {t('tokens.subtitle3')}
+          <strong>{t('tokens.subtitleOnce')}</strong>
+          {t('tokens.subtitle4')}
         </p>
       </div>
 
@@ -91,36 +96,34 @@ export function TokensPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <KeyRoundIcon className="size-4" />
-            Your tokens
+            {t('tokens.listTitle')}
           </CardTitle>
-          <CardDescription>
-            Tokens are personal; another user can never see or revoke yours.
-          </CardDescription>
+          <CardDescription>{t('tokens.listDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Prefix</TableHead>
-                <TableHead>Scopes</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Last used</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="pr-6 text-right">Actions</TableHead>
+                <TableHead className="pl-6">{t('common.name')}</TableHead>
+                <TableHead>{t('tokens.prefix')}</TableHead>
+                <TableHead>{t('tokens.scopes')}</TableHead>
+                <TableHead>{t('tokens.expires')}</TableHead>
+                <TableHead>{t('tokens.lastUsed')}</TableHead>
+                <TableHead>{t('tokens.created')}</TableHead>
+                <TableHead className="pr-6 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items === null ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                    Loading…
+                    {t('common.loading')}
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
-                    No tokens yet.
+                    {t('tokens.empty')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -143,28 +146,28 @@ export function TokensPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
                       {p.expiresAt ? (
-                        new Date(p.expiresAt).toLocaleDateString(undefined, {
+                        new Date(p.expiresAt).toLocaleDateString(dateLocale(lang), {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric',
                         })
                       ) : (
-                        <span className="text-muted-foreground">Never</span>
+                        <span className="text-muted-foreground">{t('tokens.never')}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
                       {p.lastUsedAt ? (
-                        new Date(p.lastUsedAt).toLocaleDateString(undefined, {
+                        new Date(p.lastUsedAt).toLocaleDateString(dateLocale(lang), {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric',
                         })
                       ) : (
-                        <span className="text-muted-foreground">Never</span>
+                        <span className="text-muted-foreground">{t('tokens.never')}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
-                      {new Date(p.createdAt).toLocaleDateString(undefined, {
+                      {new Date(p.createdAt).toLocaleDateString(dateLocale(lang), {
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric',
@@ -175,12 +178,12 @@ export function TokensPage() {
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="size-8">
                             <MoreHorizontalIcon className="size-4" />
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t('common.openMenu')}</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem variant="destructive" onClick={() => revoke(p)}>
-                            <TrashIcon /> Revoke
+                            <TrashIcon /> {t('tokens.revoke')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -201,6 +204,7 @@ export function TokensPage() {
 /** Renders the create form and the one-shot token reveal dialog. */
 function CreateToken({ onCreated }: { onCreated: () => void }) {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'api' | 'marketplace'>('api');
   const [expiresLocal, setExpiresLocal] = useState(''); // datetime-local string, "" = never
@@ -220,7 +224,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
         () => api.createPat({ name, ...(kind !== 'api' ? { kind } : {}), expiresAt }),
         logout,
       );
-      toast.success('Token created');
+      toast.success(t('tokens.createdToast'));
       setCreatedToken(token);
       setCreatedAddCommand(addCommand ?? null);
       setCopied(null);
@@ -228,7 +232,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
       setExpiresLocal('');
       onCreated();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Create failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -238,7 +242,9 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
     if (!text) return;
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(kind);
-      toast.success(kind === 'token' ? 'Token copied' : 'Command copied');
+      toast.success(
+        kind === 'token' ? t('tokens.tokenCopiedToast') : t('tokens.commandCopiedToast'),
+      );
     });
   }
 
@@ -248,41 +254,39 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <PlusIcon className="size-4" />
-            New token
+            {t('tokens.newTitle')}
           </CardTitle>
-          <CardDescription>
-            Leave expiry blank for a token that never expires. The full value is returned only once.
-          </CardDescription>
+          <CardDescription>{t('tokens.newDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="grid gap-2">
-                <Label htmlFor="pat-name">Name</Label>
+                <Label htmlFor="pat-name">{t('common.name')}</Label>
                 <Input
                   id="pat-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. ci-pipeline"
+                  placeholder={t('tokens.namePlaceholder')}
                   autoComplete="off"
                   spellCheck={false}
                   required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="pat-kind">Purpose</Label>
+                <Label htmlFor="pat-kind">{t('tokens.purpose')}</Label>
                 <Select value={kind} onValueChange={(v) => setKind(v as 'api' | 'marketplace')}>
                   <SelectTrigger id="pat-kind">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="api">API / CLI</SelectItem>
-                    <SelectItem value="marketplace">Claude Code marketplace</SelectItem>
+                    <SelectItem value="api">{t('tokens.kindApi')}</SelectItem>
+                    <SelectItem value="marketplace">{t('tokens.kindMarketplace')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="pat-expires">Expires (optional)</Label>
+                <Label htmlFor="pat-expires">{t('tokens.expiresOptional')}</Label>
                 <Input
                   id="pat-expires"
                   type="datetime-local"
@@ -293,14 +297,13 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
             </div>
             {kind === 'marketplace' && (
               <p className="text-muted-foreground text-sm">
-                A marketplace token only authorizes your plugin-marketplace URL (it cannot call the
-                API). Claude Code installs your <code className="font-mono">claude-code</code>{' '}
-                profiles from it — the add command is shown once after creation.
+                {t('tokens.note1')}
+                <code className="font-mono">claude-code</code> {t('tokens.note2')}
               </p>
             )}
             <div>
               <Button type="submit" disabled={busy}>
-                {busy ? 'Creating…' : 'Create token'}
+                {busy ? t('tokens.creating') : t('tokens.createButton')}
               </Button>
             </div>
           </form>
@@ -318,23 +321,17 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
       >
         <DialogContent showCloseButton={false} className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Token created — copy it now</DialogTitle>
-            <DialogDescription>
-              This is the only time the full token is shown. Store it somewhere safe; it can't be
-              recovered later.
-            </DialogDescription>
+            <DialogTitle>{t('tokens.revealTitle')}</DialogTitle>
+            <DialogDescription>{t('tokens.revealDesc')}</DialogDescription>
           </DialogHeader>
 
           <Alert variant="destructive">
-            <AlertDescription>
-              Closing this dialog hides the token permanently. You can still revoke it from the list
-              above.
-            </AlertDescription>
+            <AlertDescription>{t('tokens.revealWarning')}</AlertDescription>
           </Alert>
 
           {createdAddCommand && (
             <div className="grid gap-2">
-              <p className="text-sm font-medium">Install your marketplace in Claude Code:</p>
+              <p className="text-sm font-medium">{t('tokens.installLabel')}</p>
               <div className="bg-muted flex items-center gap-2 rounded-md border p-3">
                 <code className="text-foreground min-w-0 flex-1 break-all font-mono text-xs">
                   {createdAddCommand}
@@ -351,7 +348,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
                   ) : (
                     <CopyIcon className="size-4" />
                   )}
-                  {copied === 'command' ? 'Copied' : 'Copy'}
+                  {copied === 'command' ? t('common.copied') : t('common.copy')}
                 </Button>
               </div>
             </div>
@@ -373,7 +370,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
               ) : (
                 <CopyIcon className="size-4" />
               )}
-              {copied === 'token' ? 'Copied' : 'Copy'}
+              {copied === 'token' ? t('common.copied') : t('common.copy')}
             </Button>
           </div>
 
@@ -385,7 +382,7 @@ function CreateToken({ onCreated }: { onCreated: () => void }) {
                 setCreatedAddCommand(null);
               }}
             >
-              Done
+              {t('common.done')}
             </Button>
           </DialogFooter>
         </DialogContent>

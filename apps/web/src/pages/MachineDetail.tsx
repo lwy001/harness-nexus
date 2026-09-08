@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n, dateLocale } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { appSocket, type InventoryUpdatedEvent, type MachineStatusEvent } from '@/realtime';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -96,6 +97,7 @@ interface InventoryItemView {
 export function MachineDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [machine, setMachine] = useState<MachineView | null>(null);
   const [inventory, setInventory] = useState<InventoryEntry[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -112,9 +114,9 @@ export function MachineDetailPage() {
       setMachine(m);
       setInventory(inv);
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Failed to load machine');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.loadFailed'));
     }
-  }, [id, logout]);
+  }, [id, logout, t]);
 
   const refreshJobs = useCallback(async () => {
     if (!id) return;
@@ -190,9 +192,9 @@ export function MachineDetailPage() {
           agents: r.agents,
         })),
       );
-      toast.success(`Scanned ${result.length} target(s)`);
+      toast.success(t('machineDetail.scannedToast', { count: result.length }));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Scan failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.scanFailed'));
     } finally {
       setScanning(false);
     }
@@ -206,11 +208,11 @@ export function MachineDetailPage() {
         <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
           <Link to="/machines">
             <ArrowLeftIcon className="size-4" />
-            Machines
+            {t('machineDetail.back')}
           </Link>
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">
-          {machine?.name ?? 'Machine'}
+          {machine?.name ?? t('machineDetail.fallbackTitle')}
         </h1>
         <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <span>
@@ -219,7 +221,7 @@ export function MachineDetailPage() {
                 machine?.online ? 'bg-ok' : 'bg-muted-foreground/40'
               }`}
             />
-            {machine?.online ? 'Online' : 'Offline'}
+            {machine?.online ? t('machineDetail.online') : t('machineDetail.offline')}
           </span>
           {machine?.hostname ? (
             <span className="font-mono text-xs">
@@ -227,7 +229,9 @@ export function MachineDetailPage() {
             </span>
           ) : null}
           {machine?.daemonVersion ? (
-            <span className="font-mono text-xs tabular-nums">daemon {machine.daemonVersion}</span>
+            <span className="font-mono text-xs tabular-nums">
+              {t('machineDetail.daemonVersion', { version: machine.daemonVersion })}
+            </span>
           ) : null}
         </p>
       </div>
@@ -235,10 +239,12 @@ export function MachineDetailPage() {
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Button onClick={() => void scan()} disabled={scanning || machine?.online !== true}>
           <RefreshCwIcon className={scanning ? 'size-4 animate-spin' : 'size-4'} />
-          {scanning ? 'Scanning…' : 'Scan now'}
+          {scanning ? t('machineDetail.scanning') : t('machineDetail.scanNow')}
         </Button>
         <span className="text-muted-foreground text-sm">
-          Requires the daemon online{machine?.online !== true ? ' — machine is offline' : ''}.
+          {machine?.online !== true
+            ? t('machineDetail.scanHintOffline')
+            : t('machineDetail.scanHint')}
         </span>
         {machine !== null ? (
           <span className="ml-auto">
@@ -248,11 +254,13 @@ export function MachineDetailPage() {
       </div>
 
       {inventory === null ? (
-        <p className="text-muted-foreground py-8 text-center text-sm">Loading inventory…</p>
+        <p className="text-muted-foreground py-8 text-center text-sm">
+          {t('machineDetail.loadingInventory')}
+        </p>
       ) : inventory.length === 0 ? (
         <Card>
           <CardContent className="text-muted-foreground py-8 text-center text-sm">
-            No inventory yet — run a scan while the daemon is online.
+            {t('machineDetail.emptyInventory')}
           </CardContent>
         </Card>
       ) : (
@@ -283,14 +291,16 @@ function KindBadge({ kind }: { kind: string }) {
 }
 
 function OriginBadge({ origin }: { origin: 'platform' | 'local' }) {
+  const { t } = useI18n();
   return (
     <Badge variant={origin === 'platform' ? 'secondary' : 'default'} className="text-[10px]">
-      {origin === 'platform' ? 'hnx' : 'local'}
+      {origin === 'platform' ? 'hnx' : t('machineDetail.originLocal')}
     </Badge>
   );
 }
 
 function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
+  const { t, lang } = useI18n();
   const agent = entry.agents[0];
   return (
     <Card>
@@ -303,31 +313,33 @@ function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
           </Badge>
           {agent?.profileApplied ? (
             <Badge variant="secondary" className="text-[10px]">
-              profile applied
+              {t('machineDetail.profileApplied')}
             </Badge>
           ) : null}
         </CardTitle>
         <CardDescription>
-          {entry.agents.reduce((n, a) => n + a.items.length, 0)} items · reported{' '}
-          {new Date(entry.reportedAt).toLocaleString()}
+          {t('machineDetail.itemsReported', {
+            count: entry.agents.reduce((n, a) => n + a.items.length, 0),
+            time: new Date(entry.reportedAt).toLocaleString(dateLocale(lang)),
+          })}
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-6">Kind</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Origin</TableHead>
-              <TableHead>Summary</TableHead>
-              <TableHead className="pr-6">Path</TableHead>
+              <TableHead className="pl-6">{t('machineDetail.kind')}</TableHead>
+              <TableHead>{t('common.name')}</TableHead>
+              <TableHead>{t('machineDetail.origin')}</TableHead>
+              <TableHead>{t('machineDetail.summary')}</TableHead>
+              <TableHead className="pr-6">{t('machineDetail.path')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {entry.agents.flatMap((a) => a.items).length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground py-6 text-center">
-                  Nothing discovered on this target.
+                  {t('machineDetail.emptyTarget')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -344,7 +356,9 @@ function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
                     <TableCell className="max-w-[28rem] truncate text-muted-foreground text-xs">
                       {item.importable
                         ? (item.summary ?? item.contentPreview ?? '—')
-                        : `not importable (${item.note ?? 'unknown'})`}
+                        : t('machineDetail.notImportable', {
+                            note: item.note ?? t('machineDetail.unknown'),
+                          })}
                     </TableCell>
                     <TableCell className="text-muted-foreground pr-6 font-mono text-xs">
                       {item.path}
@@ -362,6 +376,7 @@ function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
 
 function DiffAndImport({ machineId, targets }: { machineId: string; targets: string[] }) {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [profileId, setProfileId] = useState<string>('');
   const [diff, setDiff] = useState<InventoryDiff | null>(null);
@@ -394,7 +409,7 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
     try {
       setDiff(await withAuthGuard(() => api.diffMachineInventory(machineId, id), logout));
     } catch (e) {
-      setDiffError(e instanceof HarnessNexusError ? e.message : 'Diff failed');
+      setDiffError(e instanceof HarnessNexusError ? e.message : t('machineDetail.diffFailed'));
     }
   }
 
@@ -413,7 +428,7 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
       .filter((i) => i.importable && selected.has(`${i.kind}:${i.name}`))
       .map((i) => ({ kind: i.kind, name: i.name }));
     if (items.length === 0) {
-      toast.error('Select at least one importable item');
+      toast.error(t('machineDetail.selectFirst'));
       return;
     }
     setImporting(true);
@@ -429,10 +444,14 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
       );
       setResult(res);
       toast.success(
-        `Profile "${res.profile.name}" created (${res.created.length} new, ${res.reused.length} reused)`,
+        t('machineDetail.createdToast', {
+          name: res.profile.name,
+          created: res.created.length,
+          reused: res.reused.length,
+        }),
       );
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Import failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.importFailed'));
     } finally {
       setImporting(false);
     }
@@ -443,17 +462,14 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <GitCompareArrowsIcon className="size-4" />
-          Compare with a profile & import
+          {t('machineDetail.diffTitle')}
         </CardTitle>
-        <CardDescription>
-          Local artifacts no profile claims are import candidates — pull them into the platform as a
-          new personal profile.
-        </CardDescription>
+        <CardDescription>{t('machineDetail.diffDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid min-w-64 gap-2">
-            <Label htmlFor="diff-profile">Profile</Label>
+            <Label htmlFor="diff-profile">{t('machineDetail.profileLabel')}</Label>
             <Select
               value={profileId}
               onValueChange={(v) => {
@@ -462,7 +478,7 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
               }}
             >
               <SelectTrigger id="diff-profile" className="font-mono text-xs">
-                <SelectValue placeholder="Pick a profile…" />
+                <SelectValue placeholder={t('machineDetail.pickProfile')} />
               </SelectTrigger>
               <SelectContent>
                 {eligible.map((p) => (
@@ -474,7 +490,7 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
             </Select>
           </div>
           <p className="text-muted-foreground pb-2 text-sm">
-            {eligible.length === 0 ? 'No profiles match this machine’s targets yet.' : null}
+            {eligible.length === 0 ? t('machineDetail.noProfileMatch') : null}
           </p>
         </div>
 
@@ -487,14 +503,17 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
         {diff ? (
           <>
             <div className="grid gap-2 sm:grid-cols-3">
-              <SummaryStat label="Applied" value={diff.summary.applied} />
-              <SummaryStat label="Missing on machine" value={diff.summary.missing} />
-              <SummaryStat label="Import candidates" value={diff.summary.candidates} />
+              <SummaryStat label={t('machineDetail.statApplied')} value={diff.summary.applied} />
+              <SummaryStat label={t('machineDetail.statMissing')} value={diff.summary.missing} />
+              <SummaryStat
+                label={t('machineDetail.statCandidates')}
+                value={diff.summary.candidates}
+              />
             </div>
 
             {diff.missingOnMachine.length > 0 ? (
               <div>
-                <p className="mb-1 text-sm font-medium">Missing on machine (drift)</p>
+                <p className="mb-1 text-sm font-medium">{t('machineDetail.driftHeading')}</p>
                 <ul className="text-muted-foreground flex flex-wrap gap-2 text-xs">
                   {diff.missingOnMachine.map((e) => (
                     <li key={`${e.kind}:${e.name}`} className="border rounded-md px-2 py-1">
@@ -509,11 +528,11 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
 
             <div>
               <p className="mb-1 text-sm font-medium">
-                Import candidates ({diff.notInProfile.length}) — not claimed by any profile
+                {t('machineDetail.candidatesHeading', { count: diff.notInProfile.length })}
               </p>
               {diff.notInProfile.length === 0 ? (
                 <p className="text-muted-foreground text-sm">
-                  Nothing to import — every local artifact is already in the profile.
+                  {t('machineDetail.nothingToImport')}
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1">
@@ -526,7 +545,7 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
                           checked={selected.has(key)}
                           onCheckedChange={() => toggle(key)}
                           disabled={!item.importable}
-                          aria-label={`Import ${item.name}`}
+                          aria-label={t('machineDetail.importItemAria', { name: item.name })}
                         />
                         <label
                           htmlFor={`imp-${key}`}
@@ -539,7 +558,9 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
                           </span>
                           {!item.importable ? (
                             <span className="text-muted-foreground text-xs">
-                              (not importable{item.note ? `: ${item.note}` : ''})
+                              {item.note
+                                ? t('machineDetail.notImportableShortNote', { note: item.note })
+                                : t('machineDetail.notImportableShort')}
                             </span>
                           ) : null}
                         </label>
@@ -553,12 +574,12 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
             {diff.notInProfile.some((i) => i.importable) ? (
               <div className="flex flex-wrap items-end gap-3 border-t pt-4">
                 <div className="grid min-w-64 gap-2">
-                  <Label htmlFor="import-profile-name">New profile name</Label>
+                  <Label htmlFor="import-profile-name">{t('machineDetail.newNameLabel')}</Label>
                   <Input
                     id="import-profile-name"
                     value={profileName}
                     onChange={(e) => setProfileName(e.target.value)}
-                    placeholder="e.g. My laptop setup"
+                    placeholder={t('machineDetail.newNamePlaceholder')}
                     autoComplete="off"
                     spellCheck={false}
                     required
@@ -569,7 +590,9 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
                   disabled={importing || profileName.trim().length === 0 || selected.size === 0}
                 >
                   <UploadIcon className="size-4" />
-                  {importing ? 'Importing…' : `Import ${selected.size} item(s)`}
+                  {importing
+                    ? t('machineDetail.importing')
+                    : t('machineDetail.importButton', { count: selected.size })}
                 </Button>
               </div>
             ) : null}
@@ -580,17 +603,27 @@ function DiffAndImport({ machineId, targets }: { machineId: string; targets: str
           <Alert>
             <BoxesIcon className="size-4" />
             <AlertTitle>
-              Imported into{' '}
+              {t('machineDetail.importedInto')}{' '}
               <Link to="/profiles" className="underline">
                 {result.profile.name}
               </Link>{' '}
-              — {result.created.length} created, {result.reused.length} reused
-              {result.failed.length > 0 ? `, ${result.failed.length} failed` : ''}.
+              {result.failed.length > 0
+                ? t('machineDetail.importStatsFailed', {
+                    created: result.created.length,
+                    reused: result.reused.length,
+                    failed: result.failed.length,
+                  })
+                : t('machineDetail.importStats', {
+                    created: result.created.length,
+                    reused: result.reused.length,
+                  })}
             </AlertTitle>
             <AlertDescription>
               {result.failed.length > 0 ? (
                 <span className="block">
-                  Failed: {result.failed.map((f) => `${f.name} (${f.error})`).join('; ')}
+                  {t('machineDetail.failedList', {
+                    list: result.failed.map((f) => `${f.name} (${f.error})`).join('; '),
+                  })}
                 </span>
               ) : null}
               {result.warnings.length > 0 ? (
@@ -649,6 +682,7 @@ function DeploymentsCard({
   onChanged: () => void;
 }) {
   const { logout } = useAuth();
+  const { t, lang } = useI18n();
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [profileId, setProfileId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -674,10 +708,10 @@ function DeploymentsCard({
     setBusy(true);
     try {
       await withAuthGuard(() => api.createMachineJob(machineId, { profileId }), logout);
-      toast.success(online ? 'Deploy job dispatched' : 'Deploy job queued (daemon offline)');
+      toast.success(online ? t('machineDetail.dispatchToast') : t('machineDetail.queuedToast'));
       onChanged();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Deploy failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.deployFailed'));
     } finally {
       setBusy(false);
     }
@@ -688,7 +722,7 @@ function DeploymentsCard({
       await withAuthGuard(() => api.cancelJob(job.id), logout);
       onChanged();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Cancel failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.cancelFailed'));
     }
   }
 
@@ -697,20 +731,17 @@ function DeploymentsCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <RocketIcon className="size-4" />
-          Deployments
+          {t('machineDetail.deployTitle')}
         </CardTitle>
-        <CardDescription>
-          Deploy a profile as a job — it queues while the daemon is offline and replays when the
-          machine comes back. Re-deploying upgrades the same agent instance.
-        </CardDescription>
+        <CardDescription>{t('machineDetail.deployDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid min-w-64 gap-2">
-            <Label htmlFor="deploy-profile">Profile</Label>
+            <Label htmlFor="deploy-profile">{t('machineDetail.profileLabel')}</Label>
             <Select value={profileId} onValueChange={setProfileId}>
               <SelectTrigger id="deploy-profile" className="font-mono text-xs">
-                <SelectValue placeholder="Pick a profile…" />
+                <SelectValue placeholder={t('machineDetail.pickProfile')} />
               </SelectTrigger>
               <SelectContent>
                 {(profiles ?? []).map((p) => (
@@ -723,12 +754,14 @@ function DeploymentsCard({
           </div>
           <Button onClick={() => void deploy()} disabled={busy || profileId === ''}>
             <RocketIcon className="size-4" />
-            {busy ? 'Creating…' : online ? 'Deploy' : 'Queue deploy'}
+            {busy
+              ? t('machineDetail.creating')
+              : online
+                ? t('machineDetail.deploy')
+                : t('machineDetail.queueDeploy')}
           </Button>
           <p className="text-muted-foreground pb-2 text-sm">
-            {profiles !== null && profiles.length === 0
-              ? 'No deployable profiles (hermes/codex/deepseek) yet.'
-              : null}
+            {profiles !== null && profiles.length === 0 ? t('machineDetail.noDeployable') : null}
           </p>
         </div>
 
@@ -736,23 +769,23 @@ function DeploymentsCard({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-4">Job</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Detail</TableHead>
-                <TableHead className="pr-4 text-right">Actions</TableHead>
+                <TableHead className="pl-4">{t('machineDetail.job')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead>{t('machineDetail.detail')}</TableHead>
+                <TableHead className="pr-4 text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs === null ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground py-6 text-center">
-                    Loading jobs…
+                    {t('machineDetail.loadingJobs')}
                   </TableCell>
                 </TableRow>
               ) : jobs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-muted-foreground py-6 text-center">
-                    No jobs yet.
+                    {t('machineDetail.noJobs')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -764,7 +797,7 @@ function DeploymentsCard({
                           {job.type}
                         </Badge>
                         <span className="text-muted-foreground font-mono text-xs">
-                          {new Date(job.createdAt).toLocaleString()}
+                          {new Date(job.createdAt).toLocaleString(dateLocale(lang))}
                         </span>
                       </span>
                     </TableCell>
@@ -772,13 +805,14 @@ function DeploymentsCard({
                       <JobStatusBadge status={job.status} />
                     </TableCell>
                     <TableCell className="max-w-[24rem] truncate text-muted-foreground text-xs">
-                      {job.error ?? (job.status === 'queued' ? 'waiting for daemon' : '—')}
+                      {job.error ??
+                        (job.status === 'queued' ? t('machineDetail.waitingDaemon') : '—')}
                     </TableCell>
                     <TableCell className="pr-4 text-right">
                       {job.status === 'queued' ? (
                         <Button variant="ghost" size="sm" onClick={() => void cancel(job)}>
                           <SquareIcon className="size-4" />
-                          Cancel
+                          {t('common.cancel')}
                         </Button>
                       ) : null}
                     </TableCell>
@@ -790,9 +824,11 @@ function DeploymentsCard({
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Agent instances ({agents.length})</p>
+          <p className="mb-2 text-sm font-medium">
+            {t('machineDetail.agentsHeading', { count: agents.length })}
+          </p>
           {agents.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Nothing deployed on this machine yet.</p>
+            <p className="text-muted-foreground text-sm">{t('machineDetail.noAgents')}</p>
           ) : (
             <ul className="flex flex-col gap-1">
               {agents.map((a) => (
@@ -810,7 +846,7 @@ function DeploymentsCard({
                   <Button asChild variant="ghost" size="sm" className="ml-auto">
                     <Link to="/chat">
                       <MessageSquareIcon className="size-4" />
-                      Chat
+                      {t('machineDetail.chat')}
                     </Link>
                   </Button>
                 </li>
@@ -826,27 +862,23 @@ function DeploymentsCard({
 /** Remote chat toggle — a remote-code-execution switch; confirm-first. */
 function RemoteChatToggle({ machine, onChanged }: { machine: MachineView; onChanged: () => void }) {
   const { logout } = useAuth();
+  const { t } = useI18n();
   async function toggle(next: boolean): Promise<void> {
-    if (
-      next &&
-      !window.confirm(
-        'Enable remote chat? Chatting with agents on this machine runs tools and commands on it — only you can open channels.',
-      )
-    ) {
+    if (next && !window.confirm(t('machineDetail.chatConfirm'))) {
       return;
     }
     try {
       await withAuthGuard(() => api.updateMachine(machine.id, { remoteChatEnabled: next }), logout);
-      toast.success(next ? 'Remote chat enabled' : 'Remote chat disabled');
+      toast.success(next ? t('machineDetail.chatEnabled') : t('machineDetail.chatDisabled'));
       onChanged();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
     }
   }
   return (
     <label className="text-muted-foreground flex items-center gap-2 text-sm">
       <Switch checked={machine.remoteChatEnabled} onCheckedChange={(v) => void toggle(v)} />
-      Remote chat
+      {t('machineDetail.chatLabel')}
     </label>
   );
 }

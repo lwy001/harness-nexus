@@ -135,10 +135,15 @@
  * text-foreground, border-border, text-signal work. (Tailwind v4 @theme inline.)
  */
 @theme inline {
-  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, -apple-system,
-    'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
-    Menlo, monospace;
+  /* IBM Plex has no CJK glyphs — the zh locale falls through to the platform's
+   * system CJK faces (PingFang / Microsoft YaHei / Noto), keeping everything
+   * local (no webfont downloads). */
+  --font-sans:
+    'IBM Plex Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --font-mono:
+    'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, 'PingFang SC',
+    'Microsoft YaHei', 'Noto Sans CJK SC', monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

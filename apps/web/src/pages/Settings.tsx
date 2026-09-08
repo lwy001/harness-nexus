@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
+import { useI18n } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { HarnessNexusError } from '@harness-nexus/sdk';
 import { toast } from 'sonner';
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label';
 
 export function SettingsPage() {
   const { logout } = useAuth();
+  const { t } = useI18n();
   const [allow, setAllow] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,9 +25,9 @@ export function SettingsPage() {
     try {
       await withAuthGuard(() => api.setRegistration(next), logout);
       setAllow(next);
-      toast.success(next ? 'Registration opened' : 'Registration closed');
+      toast.success(next ? t('settings.registrationOpened') : t('settings.registrationClosed'));
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : 'Update failed');
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
     } finally {
       setBusy(false);
     }
@@ -34,30 +36,28 @@ export function SettingsPage() {
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">System settings</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Instance-wide configuration.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('settings.title')}</h1>
+        <p className="text-muted-foreground mt-1 text-sm">{t('settings.subtitle')}</p>
       </div>
 
       <Card className="max-w-xl">
         <CardHeader>
-          <CardTitle className="text-base">Registration</CardTitle>
-          <CardDescription>
-            When enabled, anyone can create an account. When disabled, only admins can add users.
-          </CardDescription>
+          <CardTitle className="text-base">{t('settings.registration')}</CardTitle>
+          <CardDescription>{t('settings.registrationDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="flex flex-col gap-1">
               <Label htmlFor="reg-switch" className="text-sm font-medium">
-                Allow public registration
+                {t('settings.allowPublicRegistration')}
               </Label>
               <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-xs">Current state:</span>
+                <span className="text-muted-foreground text-xs">{t('settings.currentState')}</span>
                 {allow === null ? (
                   <span className="text-muted-foreground text-xs">…</span>
                 ) : (
                   <Badge variant={allow ? 'default' : 'secondary'} className="text-[10px]">
-                    {allow ? 'Open' : 'Closed'}
+                    {allow ? t('settings.open') : t('settings.closed')}
                   </Badge>
                 )}
               </div>
