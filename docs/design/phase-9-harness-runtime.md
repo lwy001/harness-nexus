@@ -15,15 +15,21 @@ run with, and cannot view the harness's effective config from the UI.
 
 ## 2. Goals
 
-1. **Runtime inventory** — per machine × target: installed?, bin path, version,
+1. **Agent-first inventory** — the *Agent* (installed harness runtime) is the
+   primary object: cards group by Agent, items nest under it, a target without
+   a runtime says "not installed" instead of showing empty lists; an Agent in
+   default state (no platform items) can be **captured as a profile**.
+2. **Runtime inventory** — per machine × target: installed?, bin path, version,
    install method; refreshed by the same scan cycle as C3 inventory.
-2. **One-click install / upgrade / pin** of claude-code, codex, deepseek on a
+3. **One-click install / upgrade / pin** of claude-code, codex, deepseek on a
    machine, as C4-style jobs with progress and failure reporting.
-3. **Provider config push** — set the LLM route (provider label, base URL, API
+4. **Provider config push** — set the LLM route (provider label, base URL, API
    flavor, model, API key) a harness uses, from a server-side entity that
    references a *distributable* credential.
-4. **Redacted config viewing** in the web UI — click a runtime, see the
+5. **Redacted config viewing** in the web UI — click a runtime, see the
    harness's effective config with secrets masked.
+6. **Chat keys off the Agent, not the deploy record** — any detected runtime
+   (including emitter-installed claude-code) is a chat target.
 
 ## 3. Non-goals (v1)
 
@@ -59,6 +65,10 @@ export const runtimeInfoSchema = z.object({
   contents in the snapshot.
 - Stored inside the existing `machine_inventory` latest-row JSON (no
   migration); `GET /api/machines/:id/inventory` returns it alongside items.
+- **Primacy:** `runtimes` becomes the grouping key of the MachineDetail
+  inventory view — items render *under* their Agent card; a target with
+  `installed: false` renders a single "Agent not installed" state (plus the
+  W2 install button) instead of an empty item list.
 
 ### 4.2 Runtime jobs — a new `Job.type` on the C4 pipeline
 
@@ -118,6 +128,34 @@ Per-target native placement (daemon-side writer, all files 0600):
 Writers are **merge-preserving**: unknown/user keys survive; every write is
 idempotent and re-runnable (upgrade = re-apply).
 
+### 4.4 AgentInstance auto-registration (`source`)
+
+`AgentInstance` gains an additive `source: 'deploy' | 'detected'` (migration
+`0011`, same one as `RuntimeConfig`):
+
+- **deploy** — today's rows (C4 upsert, `profileId` set).
+- **detected** — upserted by the server whenever an inventory report shows an
+  installed runtime for (machine, target) and no deploy row exists:
+  `profileId: null`, `name: <target>` — the Agent in its current (possibly
+  default) state. Two consecutive scans without the runtime remove the
+  detected row (hysteresis against a flaky probe). A later deploy upgrades the
+  row to `source: 'deploy'` in place.
+
+**Chat re-gating** (C5 change): the gating chain drops its implicit
+deploy-only assumption — `instance exists (any source) → remoteChatEnabled →
+online → capability → cap` — and the session-open failure path (adapter
+missing / no auth) stays the honest signal for an Agent that is installed but
+not chat-ready. No wire-protocol change.
+
+### 4.5 Capture-as-profile (default state → save as profile)
+
+An Agent card action: **"Capture current state as profile"** — the C3
+collect+import pipeline (reuse-or-create; MCP items become `McpServer` rows,
+env/header values already redacted daemon-side) invoked **without** a diff
+baseline. The Agent's default state becomes a named, deployable profile. The
+existing diff view stays as the comparison tool; nothing about import
+semantics changes.
+
 ## 5. Daemon protocol
 
 - New capability string **`runtime`** advertised in `machine:hello`; routes gate
@@ -144,7 +182,9 @@ idempotent and re-runnable (upgrade = re-apply).
 
 ## 7. Web UI (MachineDetail — no new nav entry)
 
-A **Runtimes card** per target (claude-code / codex / deepseek):
+The inventory view regroups per **Agent card** (claude-code / codex /
+deepseek) — items nest under their Agent; a not-installed Agent shows a muted
+"not installed" line with the install button. Each card:
 
 - status line: installed version in `IBM Plex Mono` (`2.1.211`) + method badge
   (`npm`/`native`/`brew`), or a muted "not installed";
@@ -155,6 +195,8 @@ A **Runtimes card** per target (claude-code / codex / deepseek):
   (distributable credentials only) → PUT queues apply-config;
 - **View config** → drawer with the redacted files (mono, wrap), source
   `text-muted-foreground` note when values were masked.
+- **Capture as profile** (confirm-first) → C3 import without a baseline;
+  links to the created profile.
 
 Signal discipline: no new colors; version/mono as data; the accent stays on
 live links/focus only. All strings via `strings/machineDetail.ts` (en/zh,
@@ -173,8 +215,11 @@ full-width punctuation rules for zh).
 
 ## 9. Waves
 
-- **W1 Runtime inventory** — shared schema + daemon probe + inventory arm +
-  Runtimes card (version/method display only). Verify with the docker machine.
+- **W1 Agent-first inventory** — shared schema + daemon runtime probe +
+  inventory `runtimes` arm + Agent-card regrouping + `AgentInstance`
+  auto-registration (`source: 'detected'`) + chat re-gating + capture-as-
+  profile action. Verify on the docker machine: emitter-installed claude-code
+  becomes a chat target.
 - **W2 Install/upgrade/pin jobs** — job type, daemon executor, REST widening,
   job UI affordance. Verify: install dsh@pin into the docker machine, upgrade.
 - **W3 Provider config** — RuntimeConfig table + apply-config writers + form.
@@ -201,5 +246,7 @@ Each wave lands independently (branch → tests → smoke section `[9]` → docs
   vs a `dsh` wrapper script on PATH — decide after watching the acp-ref pattern.
 - Claude Code `stable` vs `latest` default channel for managed installs
   (proposal: `stable`).
+- Detected-instance lifecycle edge cases: multiple claude binaries on PATH
+  (nvm/venv shadows) — keep first-found and surface the path in the card.
 - Whether codex custom-provider keys can consistently avoid `env_key` (auth.json
   per provider) — verify against current codex behavior in W3 spike.
