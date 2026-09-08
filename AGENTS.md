@@ -89,6 +89,22 @@ Run a single package by filter, e.g. `pnpm --filter @harness-nexus/core run buil
 
 To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server`.
 
+### Releasing to npm
+
+Five packages publish in lockstep (`@harness-nexus/{core,shared,mcp-runtime,sdk,cli}`):
+bump `version` in all five manifests, push, then run the `release` workflow
+(GitHub Actions → release → Run workflow). It publishes via **OIDC trusted
+publishing** — zero npm credentials in GitHub (per-package trusted publisher
+registered on npmjs.com: sinrimin/harness-nexus + `release.yml`). pnpm itself
+doesn't support tokenless publishing, so the workflow `pnpm pack`s each package
+(which substitutes `workspace:` versions) and `npm publish`es the tarballs with
+`--tag latest` (npm ≥ 12 demands an explicit tag for prereleases; pre-1.0 the
+alphas ARE latest so `npx` works out of the box). Manual channel from a dev
+machine: `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish` with
+a granular bypass-2FA token in `~/.npmrc` — a machine whose `~/.npmrc` defaults
+to a registry mirror MUST override the registry explicitly or auth silently
+targets the mirror.
+
 ## Coding conventions
 
 - **TypeScript strict**, ESM (`"type": "module"`), `moduleResolution: "Bundler"`,
@@ -717,7 +733,13 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   `${cred:KEY}` shape) derives server-dial and used to CRASH the
   fire-and-forget reload — `serverDialedDefinitions` now skips unresolvable
   rows with a warning and `connectServer` maps them to `409 not_dialable`
-  (`server/test/registry-resilience.test.ts`). Remaining:
+  (`server/test/registry-resilience.test.ts`).
+  **Release infrastructure shipped (2026-09):** the five `@harness-nexus/*`
+  packages are on npm (`0.1.0-alpha.2`; `latest` = alpha by design — `npx`
+  must work pre-1.0; `packages/cli/README.md` is the npm landing page), with
+  GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
+  trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
+  token stored). See "Releasing to npm" under Common commands. Remaining:
   C6 (orchestration).
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you

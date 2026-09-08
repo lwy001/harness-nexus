@@ -271,3 +271,24 @@ STDIO_REQUIRES_CLIENT` / `409 CREDENTIAL_NOT_DISTRIBUTABLE` /
   crashed the fire-and-forget reload — now skipped with a warning
   (`registry-resilience.test.ts`). Supported harnesses (install + ACP):
   Claude Code, Codex, DeepSeek Harness.
+
+## Release & CI infrastructure (2026-09)
+
+Cross-cutting (not a numbered phase):
+
+- ✅ **npm alpha shipped** — `@harness-nexus/{core,shared,mcp-runtime,sdk,cli}`
+  @ `0.1.0-alpha.2`, public, `latest` = alpha by design (young tool, `npx`
+  must work out of the box). Manifest prep: `files` allowlists, `exports`
+  maps, `publishConfig.access`, `prepublishOnly` build guards,
+  `packages/cli/README.md` as the npm landing page.
+- ✅ **`ci.yml`** — install → build → typecheck → test on every push + PR
+  (Node 20, the engine floor). First run green on `f37e746`.
+- ✅ **`release.yml`** — manual workflow_dispatch publishing via **OIDC
+  trusted publishing** (per-package trusted publisher registered on npmjs.com;
+  zero npm credentials in GitHub). Encoded gotchas: pnpm lacks tokenless
+  publishing → `pnpm pack` (workspace-version substitution) then
+  `npm publish <tarball> --tag latest`; node ≥ 22.22.2 for npm@latest; npm ≥ 12
+  requires an explicit `--tag` for prerelease versions.
+- Manual channel (dev machine): granular bypass-2FA token + IP allowlist,
+  `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish`.
+- Release procedure: bump the five manifests → push → run the workflow.

@@ -5,6 +5,8 @@
 > 面向编码代理的自托管控制平面——MCP 服务器、技能、钩子、子代理、规则与配置集，
 > 集中管理、部署到你自己的机器，并通过 ACP 远程对话。
 
+[![CI](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml)
+
 **⚠️ 早期阶段。** Harness Nexus 尚处于活跃开发期：功能、API 与线上协议可能随时变更，
 路线图中仍有未完成的部分（见[项目状态](#项目状态)），文档偶尔滞后于代码。目前它已经
 可以支撑下文描述的工作流——但请预期各种毛边，暂不要把不可替代的数据放入其中。
@@ -42,6 +44,7 @@
 | 远程部署作业                     | ✅ 已完成                    |
 | ACP 聊天                         | ✅ 已完成                    |
 | Web UI 界面语言（英/中）         | ✅ 已完成                    |
+| npm 发布（@harness-nexus/cli）   | ✅ 0.1.0-alpha               |
 | 编排（多代理）                   | 🧪 未设计                    |
 | 其余导入适配器（ECC/Superpower） | 🧪 计划中                    |
 
@@ -87,6 +90,13 @@ pnpm dev:web            # Web UI 监听 :5173
 
 第一个注册的用户成为管理员。在 Web UI（`/admin/users`、`/admin/settings`）中管理
 用户与注册开关。界面默认跟随浏览器语言，可通过页头按钮切换英文/简体中文。
+
+### CI 与发布
+
+每次 push 与 PR 都会运行 CI（install → build → typecheck → test，
+`.github/workflows/ci.yml`）。发版方式：改五个包的版本号
+（`packages/{core,shared,sdk-ts,mcp-runtime,cli}`）后运行 `release` 工作流——
+它通过 OIDC trusted publishing 发布到 npm，仓库中不保存任何 npm 令牌。
 
 ## Docker
 

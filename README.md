@@ -6,6 +6,8 @@ English | [简体中文](README.zh-CN.md)
 > hooks, sub-agents, rules and profiles in one place, deployed to your own
 > machines, with remote chat over ACP.
 
+[![CI](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml)
+
 **⚠️ Early stage.** Harness Nexus is young software under active development:
 features, APIs, and the wire protocol may change without notice, parts of the
 roadmap are still unbuilt (see [Status](#status)), and the docs sometimes lag
@@ -48,6 +50,8 @@ while a small client (`hnx`) on each of your machines does the local work.
 | Inventory / diff / import              | ✅ shipped                   |
 | Remote deploy jobs                     | ✅ shipped                   |
 | ACP chat                               | ✅ shipped                   |
+| Web UI languages (en / zh-CN)          | ✅ shipped                   |
+| npm: `@harness-nexus/cli` published    | ✅ 0.1.0-alpha               |
 | Orchestration (multi-agent)            | 🧪 undesigned                |
 | Other import adapters (ECC/Superpower) | 🧪 planned                   |
 
@@ -93,6 +97,14 @@ pnpm dev:web            # web UI on :5173
 
 The first user to register becomes the admin. Manage users and the registration
 switch from the web UI (`/admin/users`, `/admin/settings`).
+
+### CI & releases
+
+Every push and PR runs CI (install → build → typecheck → test,
+`.github/workflows/ci.yml`). Cut a release by bumping the five package
+versions (`packages/{core,shared,sdk-ts,mcp-runtime,cli}`) and running the
+`release` workflow — it publishes to npm via OIDC trusted publishing, so no
+npm token is stored in the repository.
 
 ## Docker
 
