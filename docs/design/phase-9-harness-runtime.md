@@ -1,6 +1,6 @@
 # Design: Phase 9 — Harness runtime lifecycle (install / upgrade / provider config)
 
-> Status: **designed** (2026-09), not yet implemented. Ground truth:
+> Status: **W1 shipped (2026-09), W2–W4 designed**. Ground truth:
 > `docs/research/phase-9-harness-runtime.md`. Rides Phase 8's machines /
 > daemon / jobs infrastructure (C1–C4); touches `shared` → `cli` → `server` →
 > `sdk-ts` → `web` in that order.
@@ -15,7 +15,7 @@ run with, and cannot view the harness's effective config from the UI.
 
 ## 2. Goals
 
-1. **Agent-first inventory** — the *Agent* (installed harness runtime) is the
+1. **Agent-first inventory** — the _Agent_ (installed harness runtime) is the
    primary object: cards group by Agent, items nest under it, a target without
    a runtime says "not installed" instead of showing empty lists; an Agent in
    default state (no platform items) can be **captured as a profile**.
@@ -25,7 +25,7 @@ run with, and cannot view the harness's effective config from the UI.
    machine, as C4-style jobs with progress and failure reporting.
 4. **Provider config push** — set the LLM route (provider label, base URL, API
    flavor, model, API key) a harness uses, from a server-side entity that
-   references a *distributable* credential.
+   references a _distributable_ credential.
 5. **Redacted config viewing** in the web UI — click a runtime, see the
    harness's effective config with secrets masked.
 6. **Chat keys off the Agent, not the deploy record** — any detected runtime
@@ -50,7 +50,7 @@ run with, and cannot view the harness's effective config from the UI.
 
 ```ts
 export const runtimeInfoSchema = z.object({
-  target: scannableTargetSchema,          // claude-code | codex | deepseek
+  target: scannableTargetSchema, // claude-code | codex | deepseek
   installed: z.boolean(),
   binPath: z.string().max(512).optional(),
   version: z.string().max(64).optional(), // raw `--version` output, trimmed
@@ -66,7 +66,7 @@ export const runtimeInfoSchema = z.object({
 - Stored inside the existing `machine_inventory` latest-row JSON (no
   migration); `GET /api/machines/:id/inventory` returns it alongside items.
 - **Primacy:** `runtimes` becomes the grouping key of the MachineDetail
-  inventory view — items render *under* their Agent card; a target with
+  inventory view — items render _under_ their Agent card; a target with
   `installed: false` renders a single "Agent not installed" state (plus the
   W2 install button) instead of an empty item list.
 
@@ -87,11 +87,11 @@ Same lifecycle, requeue rules, `AgentInstance`-free (harness jobs do NOT create
 agent instances), same `/app` `job:update` push. The daemon executor
 (`packages/cli/src/daemon/runtime.ts`) maps action × target to commands:
 
-| target | install / pin | upgrade |
-| --- | --- | --- |
+| target      | install / pin                                                                                                            | upgrade                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
 | claude-code | npm: `npm i -g @anthropic-ai/claude-code@<v>`; native fallback: `curl -fsSL https://claude.ai/install.sh \| bash -s <v>` | npm `@latest` / `claude update` (native); writes `DISABLE_AUTOUPDATER` into settings `env` on first manage |
-| codex | `npm i -g @openai/codex@<v>` | `npm i -g @openai/codex@latest` |
-| deepseek | `npm i -g @deepseek-ai/dsh@<v>` | `npm i -g @deepseek-ai/dsh@latest` |
+| codex       | `npm i -g @openai/codex@<v>`                                                                                             | `npm i -g @openai/codex@latest`                                                                            |
+| deepseek    | `npm i -g @deepseek-ai/dsh@<v>`                                                                                          | `npm i -g @deepseek-ai/dsh@latest`                                                                         |
 
 Installers spawn with the daemon's proxy/registry env forwarded, a generous
 per-command timeout, and stream stdout tail into `job:progress` (last ~4 KB).
@@ -119,11 +119,11 @@ the deploy bundle: machine-PAT-only REST surface, never logged, never returned.
 
 Per-target native placement (daemon-side writer, all files 0600):
 
-| target | config write | key write |
-| --- | --- | --- |
-| claude-code | `~/.claude/settings.json`: `env.ANTHROPIC_BASE_URL`, `env.ANTHROPIC_AUTH_TOKEN`, `model` (merge, preserve user keys) | same `env` block |
-| codex | `~/.codex/config.toml`: `model`, `model_providers.harness_nexus` block (`base_url`, `wire_api`, `env_key`) | `~/.codex/auth.json` `{"auth_mode":"apikey","OPENAI_API_KEY":…}` |
-| dsh | managed MARKED region in home `cordis.patch.yml` (extends the T1 region): `@deepseek-ai/dsh-llm-pi-ai` row with `providers.harness-nexus {api, baseURL, apiKeyEnv, models}` | `~/.dsh/env` (KEY=VALUE, 0600) — sourced by daemon-spawned dsh processes; user shells get a documented snippet |
+| target      | config write                                                                                                                                                                | key write                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| claude-code | `~/.claude/settings.json`: `env.ANTHROPIC_BASE_URL`, `env.ANTHROPIC_AUTH_TOKEN`, `model` (merge, preserve user keys)                                                        | same `env` block                                                                                               |
+| codex       | `~/.codex/config.toml`: `model`, `model_providers.harness_nexus` block (`base_url`, `wire_api`, `env_key`)                                                                  | `~/.codex/auth.json` `{"auth_mode":"apikey","OPENAI_API_KEY":…}`                                               |
+| dsh         | managed MARKED region in home `cordis.patch.yml` (extends the T1 region): `@deepseek-ai/dsh-llm-pi-ai` row with `providers.harness-nexus {api, baseURL, apiKeyEnv, models}` | `~/.dsh/env` (KEY=VALUE, 0600) — sourced by daemon-spawned dsh processes; user shells get a documented snippet |
 
 Writers are **merge-preserving**: unknown/user keys survive; every write is
 idempotent and re-runnable (upgrade = re-apply).
@@ -215,11 +215,45 @@ full-width punctuation rules for zh).
 
 ## 9. Waves
 
-- **W1 Agent-first inventory** — shared schema + daemon runtime probe +
-  inventory `runtimes` arm + Agent-card regrouping + `AgentInstance`
-  auto-registration (`source: 'detected'`) + chat re-gating + capture-as-
-  profile action. Verify on the docker machine: emitter-installed claude-code
-  becomes a chat target.
+- **W1 Agent-first inventory — SHIPPED (2026-09).** Implementation notes
+  (deviations settled during the build):
+  - The runtime arm rides the EXISTING `inventory:report` event as an optional
+    `runtimes: RuntimeInfo[]` array (one probe pass per scan cycle, folded
+    into every report — absent on daemons without the `runtime` capability);
+    the server picks the snapshot target's entry and stores it as a per-row
+    `runtime` column (migration `0011` alongside the agent_instances rework).
+    The standalone `runtime:scan` event stays unimplemented — no W1 consumer;
+    it lands with the wave that needs it.
+  - `RUNTIME_TARGETS = [claude-code, codex, deepseek]` in shared (hermes
+    unlisted — no runtime management); `probeRuntimes()` lives in
+    `packages/cli/src/inventory/runtime.ts` (PATH walk + known-location
+    fallback for the claude native launcher, `<bin> --version` with a 5 s
+    per-probe timeout, parallel probes, realpath-based method classification
+    with npm checked BEFORE the `~/.local` native guess so an npm prefix of
+    `~/.local` can't masquerade as native).
+  - Detected-instance sync (`server/src/realtime/runtime-instances.ts`) runs
+    fire-and-forget after each report is persisted (never blocks the report
+    path): `installed` + no deploy row for the target ⇒ upsert the
+    `source: 'detected'` row (`directory` = the snapshot's agent home — the
+    chat cwd); a null arm is NO signal (old daemons neither register nor
+    remove); two consecutive not-installed reports remove the row (in-memory
+    hysteresis counter). `JobService.registerInstance` upgrades a detected row
+    to `source: 'deploy'` in place when a deploy lands for that target.
+  - Chat re-gating needed NO code change — C5's chain already keys off any
+    `AgentInstance`; detected instances simply exist now (covered by
+    `server/test/runtime-instances.test.ts` opening a channel against a
+    detected claude-code instance).
+  - Capture-as-profile is `POST /api/machines/:id/inventory/capture`
+    (`{target, profileName}`) — the C3 collect+import core
+    (`collectAndBundle`, now shared by both routes) with the item list derived
+    server-side from the latest snapshot's importables; zero importables
+    bundle a zero-entry profile ("default state" capture). MachineDetail
+    regroups per Agent card (runtime status line: version + method badge or
+    muted "not installed"; not-installed Agents stop rendering empty item
+    tables) with the capture form on every card.
+  - Verified by: unit/integration tests (probe fixtures incl. a hanging bin,
+    sync hysteresis/deploy-precedence, capture idempotence, detected-instance
+    chat), smoke `[9 W1]` (fake bins on a fixture PATH), and the docker rig.
 - **W2 Install/upgrade/pin jobs** — job type, daemon executor, REST widening,
   job UI affordance. Verify: install dsh@pin into the docker machine, upgrade.
 - **W3 Provider config** — RuntimeConfig table + apply-config writers + form.

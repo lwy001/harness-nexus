@@ -35,6 +35,15 @@ export interface InventoryAgentData {
   items: InventoryItemData[];
 }
 
+/** Plain mirror of `RuntimeInfo` in shared (Phase 9 W1). */
+export interface RuntimeInfoData {
+  target: 'claude-code' | 'codex' | 'deepseek';
+  installed: boolean;
+  binPath?: string | undefined;
+  version?: string | undefined;
+  installMethod?: 'npm' | 'native' | 'brew' | 'unknown' | undefined;
+}
+
 export interface MachineInventorySnapshot {
   id: string;
   machineId: string;
@@ -44,4 +53,10 @@ export interface MachineInventorySnapshot {
   /** Daemon clock at scan time. */
   scannedAt: string;
   agents: InventoryAgentData[];
+  /**
+   * This target's harness runtime probe (Phase 9 W1). null = the reporting
+   * daemon build does not probe runtimes (or the target is not runtime-managed)
+   * — distinct from `installed: false`.
+   */
+  runtime: RuntimeInfoData | null;
 }

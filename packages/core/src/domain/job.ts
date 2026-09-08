@@ -29,23 +29,29 @@ export interface Job {
 }
 
 /**
- * One deployed agent on a machine — the addressable unit C5 chats with and
- * C6 orchestrates. Upserted by (machineId, profileId): re-deploying a profile
- * upgrades the same instance instead of duplicating it.
+ * One agent on a machine — the addressable unit C5 chats with and C6
+ * orchestrates. Two sources (Phase 9 W1):
+ *  - `deploy` — upserted by a successful deploy job, keyed (machine, profile).
+ *  - `detected` — auto-registered when an inventory report shows an installed
+ *    harness runtime for (machine, target) and no deploy row exists; it is the
+ *    Agent in its current (possibly default) state, chatable, and a later
+ *    deploy upgrades the row in place.
  */
 export interface AgentInstance {
   id: string;
   machineId: string;
   ownerId: string;
   target: AgentTarget;
-  profileId: string;
+  /** null for detected instances — they did not come from a profile. */
+  profileId: string | null;
   profileVersion: string | null;
-  /** Display name (the profile's name at deploy time unless overridden). */
+  /** Display name (the profile's name at deploy time; `<target>` for detected). */
   name: string;
-  /** Install root on the machine (daemon-reported, display only). */
+  /** Install root / agent home on the machine (daemon-reported, display + chat cwd). */
   directory: string;
-  /** The job that produced/upgraded this instance. */
-  jobId: string;
+  /** null for detected instances — no job produced them. */
+  jobId: string | null;
+  source: 'deploy' | 'detected';
   createdAt: string;
   updatedAt: string;
 }

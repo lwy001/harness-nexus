@@ -31,6 +31,7 @@ import type {
   ClientMcpConfig,
   InventorySnapshot,
   InventoryDiff,
+  RuntimeInfo,
 } from '@harness-nexus/shared';
 export {
   SCANNABLE_TARGETS,
@@ -47,6 +48,7 @@ export type {
   JobView,
   InventorySnapshot,
   InventoryDiff,
+  RuntimeInfo,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -88,17 +90,22 @@ export interface AcSessionView {
   closeReason: string | null;
 }
 
-/** A deployed agent on a machine (Phase 8 C4) — one per (machine, profile). */
+/**
+ * An agent on a machine (Phase 8 C4 deploy rows + Phase 9 W1 detected rows).
+ * Detected instances have null profile/job ids — they came from a runtime
+ * probe, not a deploy.
+ */
 export interface AgentInstanceView {
   id: string;
   machineId: string;
   ownerId: string;
   target: string;
-  profileId: string;
+  profileId: string | null;
   profileVersion: string | null;
   name: string;
   directory: string;
-  jobId: string;
+  jobId: string | null;
+  source: 'deploy' | 'detected';
   createdAt: string;
   updatedAt: string;
 }
@@ -306,7 +313,7 @@ export class HarnessNexusClient {
     await this.request('DELETE', `/api/machines/${id}`);
   }
 
-  // ---- machine inventory (Phase 8 C3) ----
+  // ---- machine inventory (Phase 8 C3; runtime arm Phase 9 W1) ----
   async getMachineInventory(machineId: string): Promise<
     {
       target: string;
@@ -314,6 +321,7 @@ export class HarnessNexusClient {
       reportedAt: string;
       scannedAt: string;
       agents: InventorySnapshot['agents'];
+      runtime: RuntimeInfo | null;
     }[]
   > {
     const res = await this.request('GET', `/api/machines/${machineId}/inventory`);
@@ -323,7 +331,14 @@ export class HarnessNexusClient {
   async scanMachineInventory(
     machineId: string,
     targets?: InventorySnapshot['target'][],
-  ): Promise<{ target: string; reportedAt: string; agents: InventorySnapshot['agents'] }[]> {
+  ): Promise<
+    {
+      target: string;
+      reportedAt: string;
+      agents: InventorySnapshot['agents'];
+      runtime: RuntimeInfo | null;
+    }[]
+  > {
     const res = await this.request('POST', `/api/machines/${machineId}/inventory/scan`, {
       ...(targets ? { targets } : {}),
     });
@@ -347,6 +362,14 @@ export class HarnessNexusClient {
     },
   ): Promise<ImportResult> {
     return this.request('POST', `/api/machines/${machineId}/inventory/import`, input);
+  }
+
+  /** Capture the Agent's current state as a profile (Phase 9 W1 — no baseline). */
+  async captureMachineInventory(
+    machineId: string,
+    input: { target: InventorySnapshot['target']; profileName: string },
+  ): Promise<ImportResult> {
+    return this.request('POST', `/api/machines/${machineId}/inventory/capture`, input);
   }
 
   // ---- jobs + agents (Phase 8 C4) ----

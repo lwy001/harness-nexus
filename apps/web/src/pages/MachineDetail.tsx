@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeftIcon,
   BoxesIcon,
+  CameraIcon,
   GitCompareArrowsIcon,
   LaptopIcon,
   MessageSquareIcon,
@@ -74,6 +75,16 @@ interface InventoryEntry {
     profileApplied: boolean | null;
     items: InventoryItemView[];
   }[];
+  /** Phase 9 W1 — null when the daemon build does not probe runtimes. */
+  runtime: RuntimeInfoView | null;
+}
+
+interface RuntimeInfoView {
+  target: string;
+  installed: boolean;
+  binPath?: string;
+  version?: string;
+  installMethod?: 'npm' | 'native' | 'brew' | 'unknown';
 }
 
 interface InventoryItemView {
@@ -89,10 +100,11 @@ interface InventoryItemView {
 }
 
 /**
- * Machine detail (Phase 8 C3): per-target inventory with live refresh, the
- * profile diff, and the one-click import wizard. Drill-down from the Machines
- * list — no sidebar entry. Signal rules: origin/import badges stay neutral;
- * `--signal` is not spent here.
+ * Machine detail (Phase 8 C3 + Phase 9 W1): the inventory view groups by
+ * AGENT card — the installed harness runtime is the primary object, items
+ * nest under it, a not-installed Agent says so instead of showing empty
+ * lists, and its current state is captureable as a profile. Signal rules:
+ * origin/method badges stay neutral; `--signal` is not spent here.
  */
 export function MachineDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -190,6 +202,7 @@ export function MachineDetailPage() {
           reportedAt: r.reportedAt,
           scannedAt: r.reportedAt,
           agents: r.agents,
+          runtime: r.runtime ?? null,
         })),
       );
       toast.success(t('machineDetail.scannedToast', { count: result.length }));
@@ -266,7 +279,7 @@ export function MachineDetailPage() {
       ) : (
         <div className="flex flex-col gap-6">
           {inventory.map((entry) => (
-            <TargetInventoryCard key={entry.target} entry={entry} />
+            <TargetInventoryCard key={entry.target} entry={entry} machineId={id!} />
           ))}
           {targets.length > 0 ? <DiffAndImport machineId={id!} targets={targets} /> : null}
           <DeploymentsCard
@@ -299,52 +312,146 @@ function OriginBadge({ origin }: { origin: 'platform' | 'local' }) {
   );
 }
 
-function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
+/** The Agent's runtime status line: version (mono) + method badge, or muted absence. */
+function RuntimeStatus({ runtime }: { runtime: RuntimeInfoView | null }) {
+  const { t } = useI18n();
+  if (runtime === null) {
+    return (
+      <span className="text-muted-foreground text-xs">{t('machineDetail.runtimeNotProbed')}</span>
+    );
+  }
+  if (!runtime.installed) {
+    return (
+      <span className="text-muted-foreground text-sm">
+        {t('machineDetail.runtimeNotInstalled')}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {runtime.version ? (
+        <span className="font-mono text-xs tabular-nums">{runtime.version}</span>
+      ) : null}
+      {runtime.installMethod ? (
+        <Badge variant="outline" className="font-mono text-[10px]">
+          {runtime.installMethod}
+        </Badge>
+      ) : null}
+      {runtime.binPath ? (
+        <span className="text-muted-foreground font-mono text-xs">{runtime.binPath}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Capture-as-profile footer (Phase 9 W1) — confirm-first, one input + button. */
+function CaptureForm({ machineId, target }: { machineId: string; target: string }) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function capture(): Promise<void> {
+    if (!window.confirm(t('machineDetail.captureConfirm'))) return;
+    setBusy(true);
+    try {
+      const res = await withAuthGuard(
+        () =>
+          api.captureMachineInventory(machineId, {
+            target: target as Parameters<typeof api.captureMachineInventory>[1]['target'],
+            profileName: name.trim(),
+          }),
+        logout,
+      );
+      toast.success(t('machineDetail.capturedToast', { name: res.profile.name, target }));
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('machineDetail.captureFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-3 border-t px-6 pt-4">
+      <div className="grid min-w-56 gap-2">
+        <Label htmlFor={`capture-${target}`}>{t('machineDetail.captureNameLabel')}</Label>
+        <Input
+          id={`capture-${target}`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('machineDetail.captureNamePlaceholder')}
+          autoComplete="off"
+          spellCheck={false}
+          required
+        />
+      </div>
+      <Button
+        variant="outline"
+        onClick={() => void capture()}
+        disabled={busy || name.trim() === ''}
+      >
+        <CameraIcon className="size-4" />
+        {busy ? t('machineDetail.capturing') : t('machineDetail.captureButton')}
+      </Button>
+    </div>
+  );
+}
+
+function TargetInventoryCard({ entry, machineId }: { entry: InventoryEntry; machineId: string }) {
   const { t, lang } = useI18n();
   const agent = entry.agents[0];
+  const items = entry.agents.flatMap((a) => a.items);
+  const notInstalled = entry.runtime !== null && !entry.runtime.installed;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           <LaptopIcon className="size-4" />
-          <span className="font-mono">{agent?.directory ?? entry.target}</span>
-          <Badge variant="outline" className="font-mono text-[10px]">
-            {entry.target}
-          </Badge>
+          <span className="font-mono">{entry.target}</span>
           {agent?.profileApplied ? (
             <Badge variant="secondary" className="text-[10px]">
               {t('machineDetail.profileApplied')}
             </Badge>
           ) : null}
+          <span className="ml-auto">
+            <RuntimeStatus runtime={entry.runtime} />
+          </span>
         </CardTitle>
         <CardDescription>
+          {notInstalled ? t('machineDetail.runtimeNotInstalled') + ' · ' : ''}
           {t('machineDetail.itemsReported', {
-            count: entry.agents.reduce((n, a) => n + a.items.length, 0),
+            count: items.length,
             time: new Date(entry.reportedAt).toLocaleString(dateLocale(lang)),
           })}
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="pl-6">{t('machineDetail.kind')}</TableHead>
-              <TableHead>{t('common.name')}</TableHead>
-              <TableHead>{t('machineDetail.origin')}</TableHead>
-              <TableHead>{t('machineDetail.summary')}</TableHead>
-              <TableHead className="pr-6">{t('machineDetail.path')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {entry.agents.flatMap((a) => a.items).length === 0 ? (
+      <CardContent className="flex flex-col gap-0 px-0">
+        {/* A not-installed Agent leads with its absence; leftover items (if
+            any) still render honestly below — files can outlive binaries. */}
+        {notInstalled && items.length === 0 ? (
+          <p className="text-muted-foreground px-6 py-6 text-center text-sm">
+            {t('machineDetail.runtimeNotInstalled')}
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground py-6 text-center">
-                  {t('machineDetail.emptyTarget')}
-                </TableCell>
+                <TableHead className="pl-6">{t('machineDetail.kind')}</TableHead>
+                <TableHead>{t('common.name')}</TableHead>
+                <TableHead>{t('machineDetail.origin')}</TableHead>
+                <TableHead>{t('machineDetail.summary')}</TableHead>
+                <TableHead className="pr-6">{t('machineDetail.path')}</TableHead>
               </TableRow>
-            ) : (
-              entry.agents.flatMap((a) =>
-                a.items.map((item) => (
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground py-6 text-center">
+                    {t('machineDetail.emptyTarget')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((item) => (
                   <TableRow key={`${item.kind}:${item.name}`}>
                     <TableCell className="pl-6">
                       <KindBadge kind={item.kind} />
@@ -364,11 +471,12 @@ function TargetInventoryCard({ entry }: { entry: InventoryEntry }) {
                       {item.path}
                     </TableCell>
                   </TableRow>
-                )),
-              )
-            )}
-          </TableBody>
-        </Table>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
+        <CaptureForm machineId={machineId} target={entry.target} />
       </CardContent>
     </Card>
   );
@@ -837,6 +945,11 @@ function DeploymentsCard({
                   <Badge variant="outline" className="font-mono text-[10px]">
                     {a.target}
                   </Badge>
+                  {a.source === 'detected' ? (
+                    <Badge variant="secondary" className="text-[10px]">
+                      {t('machineDetail.detectedSource')}
+                    </Badge>
+                  ) : null}
                   <span className="text-muted-foreground font-mono text-xs">{a.directory}</span>
                   {a.profileVersion ? (
                     <span className="text-muted-foreground font-mono text-xs tabular-nums">

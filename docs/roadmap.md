@@ -293,7 +293,7 @@ Cross-cutting (not a numbered phase):
   `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish`.
 - Release procedure: bump the five manifests → push → run the workflow.
 
-## Phase 9 — Harness runtime lifecycle 🧪 designed (2026-09)
+## Phase 9 — Harness runtime lifecycle 🚧 W1 shipped (2026-09)
 
 Manage the **harness software itself** on machines — presence, version,
 install/upgrade, and the LLM provider/model configuration it runs with — the
@@ -301,15 +301,17 @@ piece users asked for after Phase 8 shipped artifact management only
 ("一键部署/升级 claude code / codex / dsh 软件本体，扫描 bin 与版本，可查看配置").
 
 - Research: `docs/research/phase-9-harness-runtime.md` · Design:
-  `docs/design/phase-9-harness-runtime.md` (both 2026-09; implementation not
-  started). Rides the Phase 8 machine/daemon/job infrastructure.
-- Planned waves:
-  - **W1 Agent-first inventory** — `runtimes` arm on the inventory payload
-    (bin path, `--version`, install method) as the PRIMARY grouping: Agent
-    cards with items nested under them, "not installed" instead of empty
-    lists, `AgentInstance (source: 'detected')` auto-registration so **any
-    detected Agent is chatable** (closes the emitter-installed claude-code
-    gap), and capture-as-profile for an Agent's default state.
+  `docs/design/phase-9-harness-runtime.md` (both 2026-09). Rides the Phase 8
+  machine/daemon/job infrastructure.
+- Waves:
+  - **W1 Agent-first inventory — SHIPPED (2026-09)** — `runtimes` arm folded
+    into every inventory report (bin path, `--version`, install method;
+    daemon `runtime` capability), Agent cards with items nested under them +
+    "not installed" states (MachineDetail), `AgentInstance
+(source: 'detected')` auto-registration with two-report hysteresis and
+    deploy-precedence so **any detected Agent is chatable** (closes the
+    emitter-installed claude-code gap), and capture-as-profile
+    (`POST /api/machines/:id/inventory/capture`, zero-entry profiles allowed).
   - **W2 Install / upgrade / pin jobs** — `type: 'harness'` jobs on the C4
     pipeline; per-target command table (npm / claude native installer); CC
     auto-updater disabled on managed machines.

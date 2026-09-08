@@ -30,11 +30,11 @@ machine. Nothing in the platform today can answer or act on:
 
 ### Install methods
 
-| Method | Command | Notes |
-| --- | --- | --- |
-| Native (recommended) | `curl -fsSL https://claude.ai/install.sh \| bash` | No Node dependency. Pin: `bash -s 2.1.89` or `bash -s stable`. Windows: `install.ps1` / `install.cmd`. |
-| npm | `npm install -g @anthropic-ai/claude-code` | Node **22+** required since v2.1.198 (the package itself ships a native binary via optional deps). npm installs are soft-deprecated in favor of native. Never with sudo. |
-| Homebrew | `brew install --cask claude-code` (`@latest` for the bleeding-edge channel) | No auto-update by default. |
+| Method               | Command                                                                     | Notes                                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native (recommended) | `curl -fsSL https://claude.ai/install.sh \| bash`                           | No Node dependency. Pin: `bash -s 2.1.89` or `bash -s stable`. Windows: `install.ps1` / `install.cmd`.                                                                   |
+| npm                  | `npm install -g @anthropic-ai/claude-code`                                  | Node **22+** required since v2.1.198 (the package itself ships a native binary via optional deps). npm installs are soft-deprecated in favor of native. Never with sudo. |
+| Homebrew             | `brew install --cask claude-code` (`@latest` for the bleeding-edge channel) | No auto-update by default.                                                                                                                                               |
 
 ### Update semantics
 
@@ -126,9 +126,9 @@ expect movement across 0.1.x):
     config:
       providers:
         demo:
-          api: anthropic-messages     # or the OpenAI-compatible api
+          api: anthropic-messages # or the OpenAI-compatible api
           baseURL: https://…
-          apiKeyEnv: LLM_API_KEY      # env var NAME — the key never sits in the yml
+          apiKeyEnv: LLM_API_KEY # env var NAME — the key never sits in the yml
           models:
             - id: <model-id>
   ```
@@ -153,10 +153,10 @@ expect movement across 0.1.x):
    - claude-code → `settings.json` `env` (sanctioned; 0600 the file ourselves),
    - codex → `auth.json` (apikey mode, 0600) or a custom provider's `env_key`,
    - dsh → `apiKeyEnv` process env (no file slot at all).
-   The one genuinely awkward case is env-based key channels (dsh `apiKeyEnv`,
-   codex `env_key`): daemon-spawned ACP sessions can be given env directly, but
-   a key typed by the user into their own shell needs a persistent env file
-   (`~/.dsh/env` + shell hook, or a tiny wrapper) — W3 designs this per target.
+     The one genuinely awkward case is env-based key channels (dsh `apiKeyEnv`,
+     codex `env_key`): daemon-spawned ACP sessions can be given env directly, but
+     a key typed by the user into their own shell needs a persistent env file
+     (`~/.dsh/env` + shell hook, or a tiny wrapper) — W3 designs this per target.
 5. **Node prerequisites differ** (claude-code npm needs Node 22+, codex 18+,
    dsh is itself a Node runtime) — but every machine running our daemon already
    has Node ≥20 (hnx requires it), so npm is a viable universal channel; the
@@ -168,7 +168,7 @@ expect movement across 0.1.x):
 
 ## 6. Agent-first inventory — the model today vs. the model we want
 
-**Today (C3/C4/C5):** scanning enumerates *items* per target regardless of
+**Today (C3/C4/C5):** scanning enumerates _items_ per target regardless of
 whether the harness is even installed; `AgentInstance` rows exist only as a
 side effect of C4 deploys (`claude-code` deliberately excluded — the 3.5
 emitter is its preferred path); chat gating starts at `AgentInstance →
@@ -176,31 +176,31 @@ remoteChatEnabled → online → capability → cap`. Consequence: a machine wit
 perfectly good `claude` shows empty target cards (pre-fix: no explanation) and
 no chat target.
 
-**Wanted:** the *Agent* (installed harness runtime) is the primary object.
+**Wanted:** the _Agent_ (installed harness runtime) is the primary object.
 
 - "Agent present" = the runtime probe finds the binary (§5.1). Items nest
   under it; a target without a runtime renders "Agent not installed" instead
   of an empty item list.
 - **Profile attribution is optional.** Items already carry `origin:
-  platform | local` (install ledger, `harness-nexus*` names, CC marketplace
+platform | local` (install ledger, `harness-nexus*` names, CC marketplace
   cache names). An Agent whose items are all `local` is simply in its
   **default state (缺省)** — nothing wrong, nothing to attribute. C3's
-  collect+import (reuse-or-create) already *is* "save current state as
+  collect+import (reuse-or-create) already _is_ "save current state as
   profile"; it is just only reachable through the diff view today. Making it a
   first-class "capture as profile" action on the Agent is a UI/route
   reframing, not new machinery.
 - **Chat follows the Agent.** Per-target ACP adapter prerequisites (from
   `daemon/acp/adapters.ts`, verified):
 
-  | target | adapter command | prerequisites on the machine |
-  | --- | --- | --- |
+  | target      | adapter command                           | prerequisites on the machine                                          |
+  | ----------- | ----------------------------------------- | --------------------------------------------------------------------- |
   | claude-code | `npx -y @zed-industries/claude-agent-acp` | Node/npx + local Claude **auth** (the adapter bundles the CLI itself) |
-  | codex | `npx -y @zed-industries/codex-acp` | `codex` on PATH + auth (ChatGPT login or API key) |
-  | deepseek | `dsh --profile acp` | `dsh` on PATH + a configured provider route |
+  | codex       | `npx -y @zed-industries/codex-acp`        | `codex` on PATH + auth (ChatGPT login or API key)                     |
+  | deepseek    | `dsh --profile acp`                       | `dsh` on PATH + a configured provider route                           |
 
   So "detected Agent ⇒ chatable" is sound per target, with adapter failure
   (missing auth, missing dsh) surfacing at session open exactly as it does
-  today. What's missing is only the *instance registration* for non-deployed
+  today. What's missing is only the _instance registration_ for non-deployed
   agents — an auto-registered `AgentInstance (source: detected)` closes the
   emitter gap with no protocol change.
 
@@ -212,7 +212,7 @@ no chat target.
   succeeded/failed, requeue-on-disconnect) as a new job type with a per-target
   command table; the daemon gains a `runtime` capability.
 - **Provider/model config is a first-class server-side entity** referencing a
-  *distributable* credential (existing `Credential.distributable` rule), applied
+  _distributable_ credential (existing `Credential.distributable` rule), applied
   by the daemon into the native slots above — never into profile artifacts.
 - **Chat keys off the detected Agent**: runtime detection auto-registers
   `AgentInstance (source: 'detected')` rows (one per machine × target), so

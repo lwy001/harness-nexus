@@ -1600,13 +1600,15 @@ expect('deploy job succeeded', c4job?.status, 'succeeded');
 expect('deploy error empty', c4job?.error ?? null, null);
 
 r = await req('GET', `/api/machines/${c4LiveId}/agents`, { token: userToken });
-expect('one agent instance registered', r.json.agents.length, 1);
+// W1: detected instances (host PATH runtimes) may coexist — count deploy rows.
+const c4DeployRow = r.json.agents.find((a) => a.profileId !== null);
+expect('one DEPLOY agent instance registered', c4DeployRow !== undefined, true);
 expect(
   'instance directory is the fixture hermes home',
-  r.json.agents[0].directory,
+  c4DeployRow.directory,
   pathMod.join(c4Home, '.hermes'),
 );
-expect('instance carries profile version', r.json.agents[0].profileVersion, '1.0.0');
+expect('instance carries profile version', c4DeployRow.profileVersion, '1.0.0');
 expect('deploy-bundle secret-free (machine PAT path worked — job succeeded)', true, true);
 
 const pluginDir = pathMod.join(c4Home, '.hermes', 'plugins', 'c4-deploy');
@@ -1645,8 +1647,9 @@ for (let i = 0; i < 150; i++) {
 }
 expect('redeploy succeeded', c4job?.status, 'succeeded');
 r = await req('GET', `/api/machines/${c4LiveId}/agents`, { token: userToken });
-expect('still exactly one instance (upsert)', r.json.agents.length, 1);
-expect('instance upgraded by job 3', r.json.agents[0].jobId, c4Job3);
+const c4RedeployRows = r.json.agents.filter((a) => a.profileId !== null);
+expect('still exactly one deploy instance (upsert)', c4RedeployRows.length, 1);
+expect('instance upgraded by job 3', c4RedeployRows[0].jobId, c4Job3);
 
 log('\n--- [8 C4] claude-code target is refused with the marketplace hint ---');
 r = await req('POST', '/api/profiles', {
@@ -1745,14 +1748,15 @@ const c5Once = (event) =>
     setTimeout(() => reject(new Error(`timeout waiting for ${event}`)), 15000);
   });
 
-// Wait for the daemon to be online + capable.
+// Wait for the daemon to be online + capable (capability check, not a
+// version-string match — the daemon version moves every phase).
 let c5Online = false;
 for (let i = 0; i < 50 && !c5Online; i++) {
   r = await req('GET', `/api/machines/${c5MachineId}`, { token: userToken });
-  c5Online = r.json.machine.online && (r.json.machine.daemonVersion ?? '').includes('c5');
+  c5Online = r.json.machine.online && (r.json.machine.capabilities ?? []).includes('chat');
   await new Promise((s2) => setTimeout(s2, 100));
 }
-expect('c5 daemon online (0.4.0-c5, chat capability)', c5Online, true);
+expect('c5 daemon online (chat capability)', c5Online, true);
 
 // Deploy the C4 profile to get an AgentInstance (chat's addressable unit).
 r = await req('POST', `/api/machines/${c5MachineId}/jobs`, {
@@ -1770,7 +1774,9 @@ for (let i = 0; i < 150; i++) {
 }
 expect('c5 deploy succeeded', c5job?.status, 'succeeded');
 r = await req('GET', `/api/machines/${c5MachineId}/agents`, { token: userToken });
-const c5AgentId = r.json.agents[0]?.id;
+// W1: detected instances may precede the deploy row — chat targets the DEPLOYED
+// hermes row here (its ACP adapter is the fixture override).
+const c5AgentId = r.json.agents.find((a) => a.profileId !== null)?.id;
 expect('c5 agent instance exists', Boolean(c5AgentId), true);
 
 // Chat disabled by default ⇒ refused.
@@ -1893,6 +1899,133 @@ rmSync(c5Home, { recursive: true, force: true });
 if (c5Err.includes('Error:')) {
   log(
     `(c5 daemon stderr note): ${c5Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
+// ===========================================================================
+// [9 W1] Agent-first inventory — runtime probe arm, detected instances,
+// capture-as-profile. Fake claude/dsh bins on a fixture PATH (no network);
+// codex deliberately absent so the not-installed arm is exercised too.
+// ===========================================================================
+log('\n--- [9 W1] fixture HOME + fake runtime bins ---');
+const { chmodSync } = await import('node:fs');
+const w1Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w1-'));
+const w1Bin = pathMod.join(w1Home, 'bin');
+mkdirSync(w1Bin, { recursive: true });
+const w1BinScript = (name, out) => {
+  const file = pathMod.join(w1Bin, name);
+  writeFileSync(file, `#!/bin/sh\necho "${out}"\n`, 'utf8');
+  chmodSync(file, 0o755);
+};
+w1BinScript('claude', '9.9.7-fake (Claude Code)');
+w1BinScript('dsh', '0.1.2-fake');
+// claude + codex artifacts: items nest under the Agent card
+mkdirSync(pathMod.join(w1Home, '.claude/skills/cc-w1'), { recursive: true });
+writeFileSync(
+  pathMod.join(w1Home, '.claude/skills/cc-w1/SKILL.md'),
+  '---\nname: cc-w1\ndescription: W1 smoke skill\n---\nBody.\n',
+  'utf8',
+);
+mkdirSync(pathMod.join(w1Home, '.codex/skills/cx-w1'), { recursive: true });
+writeFileSync(pathMod.join(w1Home, '.codex/skills/cx-w1/SKILL.md'), 'Codex W1 body.\n', 'utf8');
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'w1-laptop' } });
+expect('w1 enroll status', r.status, 201);
+const w1MachineId = r.json.machine.id;
+const w1Token = r.json.token;
+
+const w1Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    w1Token,
+    '--machine-id',
+    w1MachineId,
+  ],
+  {
+    env: { ...process.env, HOME: w1Home, PATH: `${w1Bin}:${process.env.PATH}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  },
+);
+let w1Err = '';
+w1Daemon.stderr.on('data', (d) => {
+  w1Err += d.toString();
+});
+let w1Online = false;
+for (let i = 0; i < 100 && !w1Online; i++) {
+  r = await req('GET', `/api/machines/${w1MachineId}`, { token: userToken });
+  w1Online = r.json.machine.online;
+  if (!w1Online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('w1 daemon online', w1Online, true);
+r = await req('GET', `/api/machines/${w1MachineId}`, { token: userToken });
+expect('daemon advertises runtime capability', r.json.machine.capabilities.includes('runtime'), true);
+
+log('\n--- [9 W1] scan carries the runtimes arm ---');
+r = await req('POST', `/api/machines/${w1MachineId}/inventory/scan`, {
+  token: userToken,
+  body: {},
+});
+expect('w1 scan status', r.status, 200);
+const w1Rows = r.json.inventory;
+expect('w1 scanned 4 targets', w1Rows.length, 4);
+const w1Cc = w1Rows.find((i) => i.target === 'claude-code');
+expect('cc runtime installed', w1Cc.runtime?.installed, true);
+expect('cc runtime version', w1Cc.runtime?.version, '9.9.7-fake (Claude Code)');
+expect('cc runtime method', w1Cc.runtime?.installMethod, 'unknown');
+const w1Cx = w1Rows.find((i) => i.target === 'codex');
+expect('codex runtime not installed', w1Cx.runtime?.installed, false);
+expect('codex runtime has no binPath', w1Cx.runtime?.binPath, undefined);
+const w1Ds = w1Rows.find((i) => i.target === 'deepseek');
+expect('dsh runtime installed', w1Ds.runtime?.installed, true);
+const w1Hermes = w1Rows.find((i) => i.target === 'hermes');
+expect('hermes runtime arm is null (not runtime-managed)', w1Hermes.runtime, null);
+
+log('\n--- [9 W1] detected AgentInstances auto-register (chat targets) ---');
+r = await req('GET', `/api/machines/${w1MachineId}/agents`, { token: userToken });
+const w1Detected = r.json.agents.filter((a) => a.source === 'detected');
+expect('two detected instances (claude-code + deepseek)', w1Detected.length, 2);
+expect(
+  'detected targets',
+  w1Detected.map((a) => a.target).sort().join(','),
+  'claude-code,deepseek',
+);
+expect('detected instance has no profile', w1Detected.every((a) => a.profileId === null), true);
+
+log('\n--- [9 W1] capture-as-profile (no baseline) ---');
+r = await req('POST', `/api/machines/${w1MachineId}/inventory/capture`, {
+  token: userToken,
+  body: { target: 'codex', profileName: 'w1-codex-capture' },
+});
+expect('capture status', r.status, 200);
+expect('captured profile target', r.json.profile?.target, 'codex');
+expect('captured one entry', r.json.profile?.entries?.length, 1);
+expect('capture created one resource', r.json.created.length, 1);
+r = await req('POST', `/api/machines/${w1MachineId}/inventory/capture`, {
+  token: userToken,
+  body: { target: 'codex', profileName: 'w1-codex-capture-2' },
+});
+expect('re-capture reuses (idempotent)', r.json.reused.length, 1);
+r = await req('POST', `/api/machines/${w1MachineId}/inventory/capture`, {
+  token: userToken,
+  body: { target: 'hermes', profileName: 'w1-hermes-empty' },
+});
+expect('default-state capture → zero-entry profile', r.json.profile?.entries?.length, 0);
+
+w1Daemon.kill('SIGTERM');
+await req('DELETE', `/api/machines/${w1MachineId}`, { token: userToken });
+rmSync(w1Home, { recursive: true, force: true });
+if (w1Err.includes('Error:')) {
+  log(
+    `(w1 daemon stderr note): ${w1Err
       .split('\n')
       .filter((l) => l.includes('Error:'))
       .slice(0, 3)

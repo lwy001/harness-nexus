@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  captureMachineInventorySchema,
   diffInventory,
   importMachineInventorySchema,
   inventoryItemSchema,
   inventoryReportEventSchema,
   inventorySnapshotSchema,
   inventoryPayloadEventSchema,
+  runtimeInfoSchema,
+  RUNTIME_TARGETS,
   type InventoryItem,
 } from '../src/index.js';
 
@@ -59,6 +62,33 @@ describe('inventorySnapshotSchema', () => {
   });
 });
 
+describe('runtimeInfoSchema (phase 9 W1)', () => {
+  it('accepts an installed runtime and a bare not-installed arm', () => {
+    expect(
+      runtimeInfoSchema.safeParse({
+        target: 'claude-code',
+        installed: true,
+        binPath: '/home/me/.local/bin/claude',
+        version: '2.1.211 (Claude Code)',
+        installMethod: 'native',
+      }).success,
+    ).toBe(true);
+    expect(runtimeInfoSchema.safeParse({ target: 'codex', installed: false }).success).toBe(true);
+  });
+
+  it('rejects non-runtime targets and bad install methods', () => {
+    expect(runtimeInfoSchema.safeParse({ target: 'hermes', installed: true }).success).toBe(false);
+    expect(
+      runtimeInfoSchema.safeParse({ target: 'codex', installed: true, installMethod: 'scoop' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('RUNTIME_TARGETS is the managed subset of scannable targets', () => {
+    expect(RUNTIME_TARGETS).toEqual(['claude-code', 'codex', 'deepseek']);
+  });
+});
+
 describe('inventory realtime event schemas', () => {
   it('report event validates the nested snapshot', () => {
     const ok = inventoryReportEventSchema.safeParse({
@@ -75,6 +105,37 @@ describe('inventory realtime event schemas', () => {
     expect(inventoryReportEventSchema.safeParse({ snapshot: { target: 'nope' } }).success).toBe(
       false,
     );
+  });
+
+  it('report event carries the W1 runtimes arm (optional, per-cycle probe)', () => {
+    const base = {
+      snapshot: {
+        target: 'claude-code',
+        scannedAt: new Date().toISOString(),
+        agents: [
+          { name: '~/.claude', directory: '/home/me/.claude', profileApplied: false, items: [] },
+        ],
+      },
+    };
+    const ok = inventoryReportEventSchema.safeParse({
+      ...base,
+      runtimes: [
+        { target: 'claude-code', installed: true, version: '2.1.211 (Claude Code)' },
+        { target: 'codex', installed: false },
+        { target: 'deepseek', installed: false },
+      ],
+    });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.runtimes).toHaveLength(3);
+    // absent on old daemons — still valid
+    expect(inventoryReportEventSchema.safeParse(base).success).toBe(true);
+    // hermes is not a runtime target
+    expect(
+      inventoryReportEventSchema.safeParse({
+        ...base,
+        runtimes: [{ target: 'hermes', installed: false }],
+      }).success,
+    ).toBe(false);
   });
 
   it('payload event carries redacted mcp artifacts', () => {
@@ -118,6 +179,18 @@ describe('importMachineInventorySchema', () => {
         items: [{ kind: 'skill', name: 'docx' }],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('captureMachineInventorySchema (phase 9 W1)', () => {
+  it('takes a target and a profile name — no items (all importables are captured)', () => {
+    expect(
+      captureMachineInventorySchema.safeParse({ target: 'codex', profileName: 'My capture' })
+        .success,
+    ).toBe(true);
+    expect(
+      captureMachineInventorySchema.safeParse({ target: 'codex', profileName: '' }).success,
+    ).toBe(false);
   });
 });
 

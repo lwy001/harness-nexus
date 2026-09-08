@@ -720,6 +720,7 @@ interface InventoryRow {
   reported_at: string;
   scanned_at: string;
   report: string;
+  runtime: string | null;
 }
 
 function mapInventory(row: InventoryRow): MachineInventorySnapshot {
@@ -731,6 +732,10 @@ function mapInventory(row: InventoryRow): MachineInventorySnapshot {
     reportedAt: row.reported_at,
     scannedAt: row.scanned_at,
     agents: JSON.parse(row.report) as InventoryAgentData[],
+    runtime:
+      row.runtime === null
+        ? null
+        : (JSON.parse(row.runtime) as MachineInventorySnapshot['runtime']),
   };
 }
 
@@ -751,14 +756,15 @@ export function sqliteInventoryRepository(db: Database): InventoryRepository {
     async save(snapshot) {
       db.prepare(
         `INSERT INTO machine_inventory
-           (id, machine_id, target, daemon_version, reported_at, scanned_at, report)
-         VALUES (@id, @machine_id, @target, @daemon_version, @reported_at, @scanned_at, @report)
+           (id, machine_id, target, daemon_version, reported_at, scanned_at, report, runtime)
+         VALUES (@id, @machine_id, @target, @daemon_version, @reported_at, @scanned_at, @report, @runtime)
          ON CONFLICT(machine_id, target) DO UPDATE SET
            id             = excluded.id,
            daemon_version = excluded.daemon_version,
            reported_at    = excluded.reported_at,
            scanned_at     = excluded.scanned_at,
-           report         = excluded.report`,
+           report         = excluded.report,
+           runtime        = excluded.runtime`,
       ).run({
         id: snapshot.id,
         machine_id: snapshot.machineId,
@@ -767,6 +773,7 @@ export function sqliteInventoryRepository(db: Database): InventoryRepository {
         reported_at: snapshot.reportedAt,
         scanned_at: snapshot.scannedAt,
         report: JSON.stringify(snapshot.agents),
+        runtime: snapshot.runtime === null ? null : JSON.stringify(snapshot.runtime),
       });
       return snapshot;
     },
@@ -866,11 +873,12 @@ interface AgentInstanceRow {
   machine_id: string;
   owner_id: string;
   target: string;
-  profile_id: string;
+  profile_id: string | null;
   profile_version: string | null;
+  source: string;
   name: string;
   directory: string;
-  job_id: string;
+  job_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -883,6 +891,7 @@ function mapAgentInstance(row: AgentInstanceRow): AgentInstance {
     target: row.target as AgentInstance['target'],
     profileId: row.profile_id,
     profileVersion: row.profile_version,
+    source: row.source as AgentInstance['source'],
     name: row.name,
     directory: row.directory,
     jobId: row.job_id,
@@ -910,14 +919,25 @@ export function sqliteAgentInstanceRepository(db: Database): AgentInstanceReposi
         .get(machineId, profileId) as AgentInstanceRow | undefined;
       return row ? mapAgentInstance(row) : null;
     },
+    async findByMachineAndTarget(machineId, target) {
+      const row = db
+        .prepare(
+          "SELECT * FROM agent_instances WHERE machine_id = ? AND target = ? AND source = 'detected'",
+        )
+        .get(machineId, target) as AgentInstanceRow | undefined;
+      return row ? mapAgentInstance(row) : null;
+    },
     async save(instance) {
+      // Upsert by id — identity resolution (deploy keyed by machine+profile,
+      // detected by machine+target) belongs to the CALLER, not the driver.
       db.prepare(
         `INSERT INTO agent_instances
-           (id, machine_id, owner_id, target, profile_id, profile_version, name, directory, job_id, created_at, updated_at)
-         VALUES (@id, @machine_id, @owner_id, @target, @profile_id, @profile_version, @name, @directory, @job_id, @created_at, @updated_at)
-         ON CONFLICT(machine_id, profile_id) DO UPDATE SET
-           id              = excluded.id,
+           (id, machine_id, owner_id, target, profile_id, profile_version, source, name, directory, job_id, created_at, updated_at)
+         VALUES (@id, @machine_id, @owner_id, @target, @profile_id, @profile_version, @source, @name, @directory, @job_id, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           profile_id      = excluded.profile_id,
            profile_version = excluded.profile_version,
+           source          = excluded.source,
            name            = excluded.name,
            directory       = excluded.directory,
            job_id          = excluded.job_id,
@@ -929,6 +949,7 @@ export function sqliteAgentInstanceRepository(db: Database): AgentInstanceReposi
         target: instance.target,
         profile_id: instance.profileId,
         profile_version: instance.profileVersion,
+        source: instance.source,
         name: instance.name,
         directory: instance.directory,
         job_id: instance.jobId,
@@ -936,6 +957,9 @@ export function sqliteAgentInstanceRepository(db: Database): AgentInstanceReposi
         updated_at: instance.updatedAt,
       });
       return instance;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM agent_instances WHERE id = ?').run(id);
     },
     async deleteByMachine(machineId) {
       db.prepare('DELETE FROM agent_instances WHERE machine_id = ?').run(machineId);

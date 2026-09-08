@@ -288,23 +288,37 @@ export function createMemoryUnitOfWork(): UnitOfWork {
 
   const agentInstanceRepo: AgentInstanceRepository = {
     async findById(id) {
-      return [...agentInstances.values()].find((a) => a.id === id) ?? null;
+      return agentInstances.get(id) ?? null;
     },
     async listByMachine(machineId) {
       return [...agentInstances.values()]
         .filter((a) => a.machineId === machineId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     },
     async findByMachineAndProfile(machineId, profileId) {
-      return agentInstances.get(`${machineId}\u0000${profileId}`) ?? null;
+      return (
+        [...agentInstances.values()].find(
+          (a) => a.machineId === machineId && a.profileId === profileId,
+        ) ?? null
+      );
+    },
+    async findByMachineAndTarget(machineId, target) {
+      return (
+        [...agentInstances.values()].find(
+          (a) => a.machineId === machineId && a.target === target && a.source === 'detected',
+        ) ?? null
+      );
     },
     async save(instance) {
-      agentInstances.set(`${instance.machineId}\u0000${instance.profileId}`, instance);
+      agentInstances.set(instance.id, instance);
       return instance;
     },
+    async delete(id) {
+      agentInstances.delete(id);
+    },
     async deleteByMachine(machineId) {
-      for (const key of [...agentInstances.keys()]) {
-        if (key.split('\u0000')[0] === machineId) agentInstances.delete(key);
+      for (const [id, a] of [...agentInstances.entries()]) {
+        if (a.machineId === machineId) agentInstances.delete(id);
       }
     },
   };
