@@ -214,7 +214,7 @@ TARGET_IMMUTABLE`).
 ## Further Notes
 
 - The install architecture is adapted from **ECC** (Enhanced Claude Code,
-  `/home/ubuntu/workspace/ECC`), a mature harness-agnostic operator system that
+  `~/ECC`), a mature harness-agnostic operator system that
   installs one source tree into 14 targets. Its explicit philosophy — "treating
   any one agent harness as the canonical interface is a non-goal; the per-target
   adapter compliance matrix is the product" — mirrors Harness Nexus's thesis.

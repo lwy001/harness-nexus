@@ -28,11 +28,11 @@ function setupHome(): string {
   w('.claude/skills/binary-skill/SKILL.md', 'before\u0000after\n'); // binary sniff
   // ---- claude-code marketplace plugin cache (the 3.5 install path) ----
   w(
-    '.claude/plugins/cache/harness-nexus-ashen/cc-kit/1.0.0/skills/cc-plugin-skill/SKILL.md',
+    '.claude/plugins/cache/harness-nexus-demo/cc-kit/1.0.0/skills/cc-plugin-skill/SKILL.md',
     '---\nname: cc-plugin-skill\ndescription: from plugin\n---\n\nPlugin skill body.\n',
   );
   w(
-    '.claude/plugins/cache/harness-nexus-ashen/cc-kit/1.0.0/commands/plug-cmd.md',
+    '.claude/plugins/cache/harness-nexus-demo/cc-kit/1.0.0/commands/plug-cmd.md',
     'Plugin command body.\n',
   );
   w(
@@ -186,7 +186,7 @@ describe('claude-code scanner', () => {
     const pluginSkill = items.find((i) => i.name === 'cc-plugin-skill')!;
     expect(pluginSkill.kind).toBe('skill');
     expect(pluginSkill.origin).toBe('platform');
-    expect(pluginSkill.meta?.plugin).toBe('harness-nexus-ashen/cc-kit/1.0.0');
+    expect(pluginSkill.meta?.plugin).toBe('harness-nexus-demo/cc-kit/1.0.0');
     expect(pluginSkill.summary).toBe('Plugin skill body.');
 
     expect(items.find((i) => i.name === 'plug-cmd')?.origin).toBe('platform');
