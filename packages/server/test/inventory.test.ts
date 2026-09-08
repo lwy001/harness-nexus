@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { io, type Socket } from 'socket.io-client';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
@@ -236,8 +236,16 @@ describe('scan round-trip', () => {
     expect(rows).toHaveLength(4);
     expect(rows.find((r) => r.target === 'claude-code')!.agents[0]!.items).toHaveLength(3);
 
-    // /app got one freshness push per stored target.
-    expect(updated.filter((e) => e.machineId === machineId).length).toBeGreaterThanOrEqual(3);
+    // /app got one freshness push per stored target. The push is emitted
+    // asynchronously after the store (best-effort freshness signal), so wait
+    // for the flush instead of asserting immediately — asserting inline raced
+    // on slow CI runners (all pushes still in flight) and flaked.
+    await vi.waitFor(
+      () => {
+        expect(updated.filter((e) => e.machineId === machineId).length).toBeGreaterThanOrEqual(3);
+      },
+      { timeout: 5000, interval: 50 },
+    );
   });
 
   it('reports an empty snapshot for targets whose home is absent', async () => {
