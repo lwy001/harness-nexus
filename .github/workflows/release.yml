@@ -57,6 +57,8 @@ jobs:
         run: |
           for tgz in "$RUNNER_TEMP/tgz"/*.tgz; do
             echo "::group::publish $(basename "$tgz")"
-            npm publish "$tgz"
+            # npm >= 12 requires an explicit tag for prerelease versions; while
+            # pre-1.0 the alphas ARE the latest (npx must work out of the box).
+            npm publish "$tgz" --tag latest
             echo "::endgroup::"
           done
