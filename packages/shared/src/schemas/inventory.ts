@@ -19,6 +19,29 @@ import { agentTargetSchema } from './profile.js';
  */
 export const SCANNABLE_TARGETS = ['claude-code', 'codex', 'hermes', 'deepseek'] as const;
 
+/**
+ * Targets whose harness RUNTIME the daemon probes (Phase 9 W1) — a subset of
+ * SCANNABLE_TARGETS: hermes is unlisted (no runtime management, no ACP row).
+ * Kept in lockstep with `packages/cli/src/inventory/runtime.ts`.
+ */
+export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek'] as const;
+export const runtimeTargetSchema = z.enum(RUNTIME_TARGETS);
+export type RuntimeTarget = z.infer<typeof runtimeTargetSchema>;
+
+/**
+ * One probed harness runtime (Phase 9 W1). Metadata only — no config file
+ * contents ride the snapshot (those are W4's redacted viewer).
+ */
+export const runtimeInfoSchema = z.object({
+  target: runtimeTargetSchema,
+  installed: z.boolean(),
+  binPath: z.string().max(512).optional(),
+  /** Raw `<bin> --version` output, trimmed. */
+  version: z.string().max(64).optional(),
+  installMethod: z.enum(['npm', 'native', 'brew', 'unknown']).optional(),
+});
+export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
+
 /** Kinds an inventory item can carry — `ResourceKind` minus `hook` (no target has a scanner for it in C3). */
 export const inventoryItemKindSchema = z.enum(['skill', 'command', 'sub_agent', 'rule', 'mcp']);
 export type InventoryItemKind = z.infer<typeof inventoryItemKindSchema>;
@@ -122,6 +145,17 @@ export const importMachineInventorySchema = z.object({
     .max(200),
 });
 export type ImportMachineInventoryInput = z.infer<typeof importMachineInventorySchema>;
+
+/**
+ * Capture-as-profile (Phase 9 W1): import the Agent's CURRENT state (all
+ * importable items of the latest snapshot, no diff baseline). An Agent in
+ * default state captures as a profile with zero entries.
+ */
+export const captureMachineInventorySchema = z.object({
+  target: agentTargetSchema,
+  profileName: z.string().min(1).max(64),
+});
+export type CaptureMachineInventoryInput = z.infer<typeof captureMachineInventorySchema>;
 
 /** One row of a diff result (`GET /api/machines/:id/inventory/diff?profile=`). */
 export const inventoryDiffEntrySchema = z.object({

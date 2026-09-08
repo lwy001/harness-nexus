@@ -567,6 +567,44 @@ index.json`, URL-query only), `UrlSource` (fetch-only, `search` no-op),
   `TRUSTED_REPOS`), `SKILL_SEARCH_TIMEOUT_MS` (30s), `SKILL_DISABLED_SOURCES`
   (test mode).
 
+## Agent-first inventory & detected agents (Phase 9 W1)
+
+Full design in `docs/design/phase-9-harness-runtime.md` (W1 shipped; W2–W4
+designed). Summary for daily work:
+
+- **The Agent (installed harness runtime) is the primary inventory object.**
+  `RUNTIME_TARGETS = [claude-code, codex, deepseek]` (shared; hermes is not
+  runtime-managed). The daemon probes them once per scan cycle
+  (`probeRuntimes`, `packages/cli/src/inventory/runtime.ts` — PATH walk +
+  `~/.local/bin` fallback for the claude native launcher, `<bin> --version`
+  with a 5s per-probe timeout, parallel, realpath-based method classification)
+  and folds the resulting `runtimes: RuntimeInfo[]` into EVERY
+  `inventory:report` (the daemon now advertises the `runtime` capability;
+  older daemons simply omit the arm).
+- **Per-row storage, not a new table:** the server picks the snapshot
+  target's entry out of the array and stores it on the `machine_inventory`
+  row (`runtime` column, migration `0011`). `GET /api/machines/:id/inventory`
+  rows carry `runtime: RuntimeInfo | null` (null = daemon doesn't probe /
+  target not runtime-managed — DISTINCT from `installed: false`).
+- **`AgentInstance.source: 'deploy' | 'detected'`** (migration `0011` also
+  made `profileId`/`jobId` nullable — detected rows carry neither). The
+  `DetectedInstanceSync` service (`server/src/realtime/runtime-instances.ts`,
+  run fire-and-forget from the report handler) upserts a detected row when a
+  report shows an installed runtime and NO deploy row owns the target; two
+  consecutive not-installed reports remove it (in-memory hysteresis); a null
+  arm is no signal at all. A later deploy (`JobService.registerInstance`)
+  upgrades the detected row to `source: 'deploy'` in place. The agentInstances
+  repo save is keyed by `id` — identity resolution belongs to the callers.
+- **Chat keys off any AgentInstance** (no C5 code change): detected instances
+  are chatable, which closes the emitter-installed claude-code gap. Their
+  `directory` is the snapshot's agent home (the chat cwd).
+- **Capture-as-profile:** `POST /api/machines/:id/inventory/capture
+{target, profileName}` — the C3 collect+import core (`collectAndBundle`,
+  shared with the import route) with ALL importable items of the latest
+  snapshot; zero importables bundle a zero-entry profile (an Agent's default
+  state is captureable). MachineDetail renders per-AGENT cards (runtime
+  status line, not-installed state, capture form per card).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -757,11 +795,12 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
-  C6 (orchestration). **Phase 9 — harness runtime lifecycle — is designed
-  (2026-09), not yet implemented:** managing the harness software itself on
-  machines (runtime inventory: bin/version/install-method; `harness`-type
+  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 is SHIPPED
+  (2026-09, see its section above): Agent-first inventory with the runtime
+  probe arm, detected AgentInstances (chatable), and capture-as-profile.**
+  Remaining waves W2–W4 are designed, not implemented: `harness`-type
   install/upgrade/pin jobs on the C4 pipeline; `RuntimeConfig` provider/model
-  push referencing distributable credentials; redacted config viewing). Read
+  push referencing distributable credentials; redacted config viewing. Read
   `docs/research/phase-9-harness-runtime.md` + `docs/design/phase-9-harness-runtime.md`
   first — waves W1–W4 land independently. Local verification-rig notes
   (machine container lifecycle, JWT minting, the FAKE dsh shim that must be

@@ -11,6 +11,7 @@ import type {
 } from '@harness-nexus/core';
 import {
   AppError,
+  captureMachineInventorySchema,
   diffInventory,
   importMachineInventorySchema,
   scanMachineInventorySchema,
@@ -20,12 +21,13 @@ import {
   type InventoryDiff,
   type InventoryDiffEntry,
   type InventoryItem,
+  type InventoryPayloadEvent,
 } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
- * Machine inventory, diff & one-click import (Phase 8 C3).
- * docs/design/phase-8-c3.md.
+ * Machine inventory, diff & one-click import (Phase 8 C3), plus W1's
+ * capture-as-profile. docs/design/phase-8-c3.md · phase-9-harness-runtime.md.
  *
  * All endpoints hang off a machine and inherit its owner-or-admin guard with
  * 404 existence-hiding. Scan and import are direct request/response flows over
@@ -46,6 +48,8 @@ export interface MachineInventoryView {
   reportedAt: string;
   scannedAt: string;
   agents: MachineInventorySnapshot['agents'];
+  /** This target's harness runtime probe (Phase 9 W1; null = daemon doesn't probe). */
+  runtime: MachineInventorySnapshot['runtime'];
 }
 
 export interface ImportResultView {
@@ -104,6 +108,7 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
     reportedAt: s.reportedAt,
     scannedAt: s.scannedAt,
     agents: s.agents,
+    runtime: s.runtime,
   });
 
   // ---- GET /api/machines/:id/inventory — latest snapshot per target ----
@@ -227,21 +232,81 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const requestId = generateId();
-    const payloadPromise = app.realtime.inventory.awaitPayload(machine.id, requestId);
-    emitToMachine(machine.id, 'inventory:collect', {
-      requestId,
-      target: input.target,
-      items: input.items,
-    });
-    const outcome = await payloadPromise;
-    if (!outcome.ok) {
-      if (outcome.reason === 'timeout') {
-        throw new AppError('Import body collection timed out', 504, 'INVENTORY_COLLECT_TIMEOUT');
+    return collectAndBundle(
+      machine,
+      snapshot,
+      input.target,
+      input.profileName,
+      input.items,
+      'import',
+    );
+  });
+
+  // ---- POST /api/machines/:id/inventory/capture — W1: current state → profile ----
+  // The C3 collect+import pipeline invoked WITHOUT a diff baseline: every
+  // importable item of the latest snapshot. An Agent in default state captures
+  // as a profile with zero entries.
+  app.post<{ Params: { id: string } }>(
+    '/api/machines/:id/inventory/capture',
+    guard,
+    async (req) => {
+      const machine = await visible(req.params.id, req.user!);
+      if (!machine) throw notFound();
+      requireOnlineScanner(machine);
+      const input = captureMachineInventorySchema.parse(req.body);
+
+      const snapshot = await app.uow.inventories.findLatest(machine.id, input.target);
+      if (!snapshot) {
+        throw new AppError(
+          `No ${input.target} inventory for this machine — scan first`,
+          404,
+          'INVENTORY_NOT_SCANNED',
+        );
       }
-      throw new AppError('Machine daemon disconnected during import', 409, 'MACHINE_OFFLINE');
+      const items = snapshot.agents
+        .flatMap((a) => a.items)
+        .filter((item) => item.importable)
+        .map((item) => ({ kind: item.kind, name: item.name }));
+      return collectAndBundle(machine, snapshot, input.target, input.profileName, items, 'capture');
+    },
+  );
+
+  /**
+   * Shared core of import & capture: collect bodies over /ctl (unless nothing
+   * was selected), reuse-or-create resources + MCP rows, bundle everything
+   * into a personal profile. Capture (`mode: 'capture'`, Phase 9 W1) also
+   * bundles an Agent in default state into a zero-entry profile.
+   */
+  const collectAndBundle = async (
+    machine: Machine,
+    snapshot: MachineInventorySnapshot,
+    target: MachineInventorySnapshot['target'],
+    profileName: string,
+    items: readonly { kind: InventoryItem['kind']; name: string }[],
+    mode: 'import' | 'capture',
+  ): Promise<ImportResultView> => {
+    const byKey = new Map(
+      snapshot.agents.flatMap((a) => a.items).map((item) => [`${item.kind}:${item.name}`, item]),
+    );
+
+    let payloadItems: InventoryPayloadEvent['items'] = [];
+    if (items.length > 0) {
+      const requestId = generateId();
+      const payloadPromise = app.realtime.inventory.awaitPayload(machine.id, requestId);
+      emitToMachine(machine.id, 'inventory:collect', {
+        requestId,
+        target,
+        items,
+      });
+      const outcome = await payloadPromise;
+      if (!outcome.ok) {
+        if (outcome.reason === 'timeout') {
+          throw new AppError('Import body collection timed out', 504, 'INVENTORY_COLLECT_TIMEOUT');
+        }
+        throw new AppError('Machine daemon disconnected during import', 409, 'MACHINE_OFFLINE');
+      }
+      payloadItems = outcome.items ?? [];
     }
-    const payloadItems = outcome.items ?? [];
 
     const created: ImportResultView['created'] = [];
     const reused: ImportResultView['reused'] = [];
@@ -352,7 +417,7 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
           source,
           scope: 'personal',
           ownerId: machine.ownerId,
-          targets: [input.target],
+          targets: [target],
           labels: { imported: 'true', 'imported-from': machine.name },
           createdAt: now,
           updatedAt: now,
@@ -374,7 +439,7 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    if (entries.length === 0) {
+    if (entries.length === 0 && mode !== 'capture') {
       throw new AppError(
         `No items could be imported (${failed.map((f) => `${f.kind}/${f.name}: ${f.error}`).join('; ')})`,
         409,
@@ -385,10 +450,13 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
     const now = new Date().toISOString();
     const profile: Profile = {
       id: generateId(),
-      name: input.profileName,
-      description: `Imported from machine '${machine.name}' (${input.target}) on ${now.slice(0, 10)}`,
+      name: profileName,
+      description:
+        mode === 'capture'
+          ? `Captured from machine '${machine.name}' (${target}) on ${now.slice(0, 10)}`
+          : `Imported from machine '${machine.name}' (${target}) on ${now.slice(0, 10)}`,
       version: '0.1.0',
-      target: input.target,
+      target,
       scope: 'personal',
       ownerId: machine.ownerId,
       entries,
@@ -397,13 +465,12 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
     };
     await app.uow.profiles.save(profile);
 
-    const result: ImportResultView = {
+    return {
       profile,
       created,
       reused,
       failed,
       warnings: [...warnings],
     };
-    return result;
-  });
+  };
 }

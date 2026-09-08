@@ -3,17 +3,29 @@ import { io } from 'socket.io-client';
 import {
   inventoryCollectRequestSchema,
   inventoryScanRequestSchema,
+  type InventorySnapshot,
   type MachineHelloAck,
 } from '@harness-nexus/shared';
-import { collectItems, scanAllTargets, scanTarget } from '../inventory/scan.js';
+import { collectItems, scanAllTargets, scanTarget, scannerFor } from '../inventory/scan.js';
+import { probeRuntimes } from '../inventory/runtime.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.4.0-c5';
+export const DAEMON_VERSION = '0.5.0-p9w1';
 
-/** Capabilities this daemon build carries (C3: inventory; C4: deploy; C5: chat). */
-export const DAEMON_CAPABILITIES = ['inventory', 'deploy', 'chat'];
+/** Capabilities this daemon build carries (C3: inventory; C4: deploy; C5: chat; 9 W1: runtime). */
+export const DAEMON_CAPABILITIES = ['inventory', 'deploy', 'chat', 'runtime'];
+
+/** Placeholder snapshot for a target this daemon build has no scanner for. */
+function emptySnapshot(target: InventorySnapshot['target']): InventorySnapshot {
+  const home = `~/.${target}`;
+  return {
+    target,
+    scannedAt: new Date().toISOString(),
+    agents: [{ name: home, directory: home, profileApplied: false, items: [] }],
+  };
+}
 
 export interface DaemonOptions {
   server: string;
@@ -44,8 +56,15 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
 
   const reportAll = (requestId?: string): void => {
     void (async () => {
+      // One runtime probe per scan cycle (Phase 9 W1) — folded into EVERY
+      // report so each target's row carries its own runtime arm.
+      const runtimes = await probeRuntimes().catch(() => undefined);
       for (const snapshot of scanAllTargets()) {
-        socket.emit('inventory:report', { ...(requestId ? { requestId } : {}), snapshot });
+        socket.emit('inventory:report', {
+          ...(requestId ? { requestId } : {}),
+          ...(runtimes ? { runtimes } : {}),
+          snapshot,
+        });
       }
     })();
   };
@@ -85,23 +104,18 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
     ack?.({ accepted: true });
     const { requestId, targets } = parsed.data;
     void (async () => {
+      // One runtime probe per scan cycle (Phase 9 W1) — folded into every
+      // report so each target's row carries its own runtime arm.
+      const runtimes = await probeRuntimes().catch(() => undefined);
       for (const target of targets) {
-        try {
-          const snapshot = scanTarget(target);
-          socket.emit('inventory:report', { requestId, snapshot });
-        } catch {
-          // No scanner for this target on this build — still report the empty
-          // shape so the server's waiter never hangs on it.
-          const home = `~/.${target}`;
-          socket.emit('inventory:report', {
-            requestId,
-            snapshot: {
-              target,
-              scannedAt: new Date().toISOString(),
-              agents: [{ name: home, directory: home, profileApplied: false, items: [] }],
-            },
-          });
-        }
+        // No scanner for this target on this build — still report the empty
+        // shape so the server's waiter never hangs on it.
+        const snapshot = scannerFor(target) ? scanTarget(target) : emptySnapshot(target);
+        socket.emit('inventory:report', {
+          requestId,
+          ...(runtimes ? { runtimes } : {}),
+          snapshot,
+        });
       }
     })();
   });

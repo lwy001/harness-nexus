@@ -3,6 +3,7 @@ import {
   inventoryArtifactSchema,
   inventoryItemKindSchema,
   inventorySnapshotSchema,
+  runtimeInfoSchema,
 } from './schemas/inventory.js';
 import { agentTargetSchema } from './schemas/profile.js';
 
@@ -137,9 +138,15 @@ export const inventoryScanRequestSchema = z.object({
   targets: z.array(agentTargetSchema).min(1).max(8),
 });
 
-/** daemon → server: a fresh snapshot. `requestId` present when answering a scan request. */
+/**
+ * daemon → server: a fresh snapshot. `requestId` present when answering a scan
+ * request. `runtimes` (Phase 9 W1) carries the full runtime-probe result of the
+ * scan cycle — the daemon folds it into every report (one probe feeds all
+ * targets' rows). Absent on daemon builds without the `runtime` capability.
+ */
 export const inventoryReportEventSchema = z.object({
   requestId: z.string().min(1).max(64).optional(),
+  runtimes: z.array(runtimeInfoSchema).max(8).optional(),
   snapshot: inventorySnapshotSchema,
 });
 

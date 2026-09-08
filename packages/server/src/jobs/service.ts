@@ -200,7 +200,12 @@ export class JobService {
     }
   }
 
-  /** Deploy succeeded — upsert the AgentInstance (one per machine+profile). */
+  /**
+   * Deploy succeeded — upsert the AgentInstance. Identity: re-deploying the
+   * same (machine, profile) upgrades that row; deploying onto a target with a
+   * DETECTED instance (Phase 9 W1) upgrades that row in place; otherwise a
+   * fresh `source: 'deploy'` row.
+   */
   private async registerInstance(
     job: Job,
     data: {
@@ -212,17 +217,18 @@ export class JobService {
     },
   ): Promise<void> {
     const now = new Date().toISOString();
-    const existing = await this.deps.uow.agentInstances.findByMachineAndProfile(
-      job.machineId,
-      data.profileId,
-    );
+    const target = data.target as AgentInstance['target'];
+    const existing =
+      (await this.deps.uow.agentInstances.findByMachineAndProfile(job.machineId, data.profileId)) ??
+      (await this.deps.uow.agentInstances.findByMachineAndTarget(job.machineId, target));
     const instance: AgentInstance = {
       id: existing?.id ?? generateId(),
       machineId: job.machineId,
       ownerId: job.ownerId,
-      target: data.target as AgentInstance['target'],
+      target,
       profileId: data.profileId,
       profileVersion: data.profileVersion ?? null,
+      source: 'deploy',
       name: data.name,
       directory: data.directory,
       jobId: job.id,

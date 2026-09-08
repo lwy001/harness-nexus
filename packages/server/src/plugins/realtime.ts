@@ -26,6 +26,7 @@ import {
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
+import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
 import { JobService } from '../jobs/service.js';
 
@@ -79,6 +80,7 @@ export async function registerRealtime(
 
   const presence = new MachinePresence();
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
+  const runtimeInstances = new DetectedInstanceSync(app.uow);
   const chat = new ChatService(
     {
       uow: app.uow,
@@ -142,6 +144,7 @@ export async function registerRealtime(
       const wasOnline = presence.forceOffline(machine.id);
       app.io.of('/ctl').in(`machine:${machine.id}`).disconnectSockets(true);
       void chat.onMachineDeleted(machine.id);
+      runtimeInstances.forgetMachine(machine.id);
       if (wasOnline) realtime.broadcastStatus(machine, false);
     },
   };
@@ -225,6 +228,7 @@ export async function registerRealtime(
 
     // C3 — daemon scan result: validate, persist (latest per machine+target),
     // resolve any pending scan waiter, and push the freshness signal to /app.
+    // W1 — the event's `runtimes` arm drives the detected AgentInstance sync.
     socket.on('inventory:report', (payload: unknown, ack?: (res: unknown) => void) => {
       const parsed = inventoryReportEventSchema.safeParse(payload);
       if (!parsed.success) {
@@ -238,6 +242,7 @@ export async function registerRealtime(
           socket.disconnect(true);
           return;
         }
+        const runtime = parsed.data.runtimes?.find((r) => r.target === snapshot.target) ?? null;
         const row = {
           id: generateId(),
           machineId,
@@ -246,6 +251,7 @@ export async function registerRealtime(
           reportedAt: new Date().toISOString(),
           scannedAt: snapshot.scannedAt,
           agents: snapshot.agents,
+          runtime,
         };
         await app.uow.inventories.save(row);
         inventory.onReport(machineId, row);
@@ -259,6 +265,9 @@ export async function registerRealtime(
           .to([`user:${machine.ownerId}`, 'admins'])
           .emit('inventory:updated', event);
         ack?.({ stored: true });
+        // Detected-instance sync is idempotent and eventually consistent —
+        // never block the report path (or its ack) on it.
+        void runtimeInstances.onReport(machine, runtime, snapshot.agents[0]?.directory);
       })();
     });
 

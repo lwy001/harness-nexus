@@ -130,7 +130,13 @@ export interface AgentInstanceRepository {
   listByMachine(machineId: string): Promise<AgentInstance[]>;
   /** One instance per (machine, profile) — re-deploy upserts. */
   findByMachineAndProfile(machineId: string, profileId: string): Promise<AgentInstance | null>;
+  /** The `source: 'detected'` instance for (machine, target) — W1 auto-registration. */
+  findByMachineAndTarget(
+    machineId: string,
+    target: AgentInstance['target'],
+  ): Promise<AgentInstance | null>;
   save(instance: AgentInstance): Promise<AgentInstance>;
+  delete(id: string): Promise<void>;
   deleteByMachine(machineId: string): Promise<void>;
 }
 

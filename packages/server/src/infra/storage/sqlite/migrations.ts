@@ -239,6 +239,44 @@ CREATE INDEX IF NOT EXISTS idx_ac_sessions_machine ON ac_sessions(machine_id, cl
 CREATE INDEX IF NOT EXISTS idx_ac_sessions_agent ON ac_sessions(agent_instance_id, opened_at);
     `,
   },
+  {
+    version: 11,
+    description:
+      'phase 9 W1 — agent_instances.source + nullable profile_id/job_id (detected instances); machine_inventory.runtime',
+    sql: `
+-- agent_instances: detected instances (Phase 9 W1) carry no profile and no
+-- job. SQLite cannot relax NOT NULL in place, so recreate the table. The
+-- UNIQUE (machine_id, profile_id) survives: NULL profile_ids are distinct,
+-- letting one detected row per (machine, target) coexist with deploy rows —
+-- the sync layer keeps detected rows unique per pair.
+CREATE TABLE IF NOT EXISTS agent_instances_v11 (
+  id              TEXT PRIMARY KEY,
+  machine_id      TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+  owner_id        TEXT NOT NULL,
+  target          TEXT NOT NULL,
+  profile_id      TEXT,
+  profile_version TEXT,
+  source          TEXT NOT NULL DEFAULT 'deploy',
+  name            TEXT NOT NULL,
+  directory       TEXT NOT NULL,
+  job_id          TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE (machine_id, profile_id)
+);
+INSERT INTO agent_instances_v11
+  (id, machine_id, owner_id, target, profile_id, profile_version, source, name, directory, job_id, created_at, updated_at)
+SELECT id, machine_id, owner_id, target, profile_id, profile_version, 'deploy', name, directory, job_id, created_at, updated_at
+FROM agent_instances;
+DROP TABLE agent_instances;
+ALTER TABLE agent_instances_v11 RENAME TO agent_instances;
+CREATE INDEX IF NOT EXISTS idx_agent_instances_machine ON agent_instances(machine_id, target);
+
+-- per-target runtime probe arm on the latest-snapshot row (null = the
+-- reporting daemon build does not probe runtimes)
+ALTER TABLE machine_inventory ADD COLUMN runtime TEXT;
+    `,
+  },
 ] as const;
 
 /**
