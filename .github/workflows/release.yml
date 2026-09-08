@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.14.0
+          node-version: 22 # latest 22.x LTS — npm@latest requires >= 22.22.2
           cache: pnpm
 
       - run: npm install -g npm@latest # runners ship an npm older than 11.5.1
