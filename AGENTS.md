@@ -155,6 +155,41 @@ mesh-topology.tsx`) renders upstreams as "configured" (muted), **never** a
   conditionals with ternaries, not `&&`. Hoist static objects/JSX out of
   components.
 
+## Web UI i18n (en / zh-CN)
+
+The web UI is fully internationalized with a **zero-dependency, compile-time-checked**
+system in `apps/web/src/i18n/`. Rules for daily work:
+
+- **Never hardcode user-visible strings in pages.** Add them to a namespace file
+  under `src/i18n/strings/<page>.ts`, which holds the English `en` object and the
+  Chinese `zh` object SIDE BY SIDE, with `const zh: typeof en = { ... }` — the
+  annotation makes a missing/mismatched key a compile error. The aggregator
+  (`strings/index.ts`) zips them into the two runtime dictionaries and derives
+  the `TranslationKey` dot-path union that `t()` is typed against, so a typo'd
+  key also fails `tsc`.
+- **Usage:** `const { t, lang } = useI18n();` (from `@/i18n`) in every component
+  that renders text — including module-scope sub-components. `t('ns.key',
+{ name })` interpolates `{name}` placeholders. Never call `t()` at module
+  scope; module-scope tables may hold `TranslationKey`s resolved at render.
+- **Dates** must pass `dateLocale(lang)` instead of `undefined` to
+  `toLocaleDateString`/`toLocaleString`.
+- **Language choice** persists in `localStorage` (`hnx.lang`), first visit
+  follows `navigator.language`, `<html lang>` is kept in sync; the header
+  toggle is `components/language-toggle.tsx`.
+- **What stays English in both locales:** wire/protocol values rendered from
+  data in mono badges (transport types, status enums, hook events, resource
+  kinds, AgentTarget values), `${cred:...}` placeholders, code/`<pre>` contents,
+  product names (Harness Nexus, Claude Code, MCP). Scope/role values are
+  data-mapped via `common.scopeGlobal/scopePersonal/roleAdmin/roleUser`.
+- **Terminology** (keep consistent): profile→配置集, credential→凭据, access
+  token→访问令牌, machine→机器, daemon→守护进程, deploy→部署, job→作业, agent
+  instance→代理实例, inventory→清单, dial site→拨号端 (server-/client-dialed→服务端/
+  客户端拨号), scope→作用域, skill→技能, hub→技能中心, marketplace→市场. Chinese
+  copy uses full-width punctuation and a half-width space between CJK and
+  Latin/numbers.
+- `index.css` `--font-sans`/`--font-mono` carry the CJK fallback chain (IBM Plex
+  has no CJK glyphs) — don't remove it.
+
 ## Feature development workflow
 
 When building a new feature pillar (one spanning multiple packages and

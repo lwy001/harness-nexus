@@ -1,5 +1,7 @@
 # Harness Nexus
 
+English | [简体中文](README.zh-CN.md)
+
 > A self-hosted control plane for your coding agents — MCP servers, skills,
 > hooks, sub-agents, rules and profiles in one place, deployed to your own
 > machines, with remote chat over ACP.
