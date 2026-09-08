@@ -1,7 +1,7 @@
 # Research: Phase 8 C5 — ACP web-demo reference (web-vibecoding-demo)
 
-> Status: **reference studied** (2026-09). Local copy: `/home/ubuntu/acp-ref/`
-> (extracted from `/home/ubuntu/web-demo.7z`, 83 entries). This note distills
+> Status: **reference studied** (2026-09). Local copy: `~/acp-ref/`
+> (extracted from `web-demo.7z`, 83 entries). This note distills
 > what the demo teaches for C5 (ACP chat) and the future file-management /
 > web-terminal channels. Parent design: `docs/design/phase-8-client.md`
 > § "ACP chat (C5)".

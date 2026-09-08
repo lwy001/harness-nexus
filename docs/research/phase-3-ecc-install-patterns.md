@@ -1,7 +1,7 @@
 # Phase 3 research: ECC install pipeline patterns
 
 > Status: research complete. Extracts the reusable install-pipeline architecture
-> from ECC (Enhanced Claude Code, `/home/ubuntu/workspace/ECC`) — a mature,
+> from ECC (Enhanced Claude Code, `~/ECC`) — a mature,
 > harness-agnostic operator system that installs one source tree into 14 target
 > Agent tools. This doc is the evidence base for the Phase 3 design rewrite
 > (`docs/design/phase-3-install.md`), which adopts ECC's adapter factory + plan/
@@ -308,7 +308,7 @@ and unique manifest `interface` block make sharing with CC a conditional mess.
   the runtime closure the same way).
 - ECC's Codex bash sidecar — we unify into one adapter.
 
-## Sources (ECC repo, `/home/ubuntu/workspace/ECC`)
+## Sources (ECC repo, `~/ECC`)
 
 - `scripts/lib/install-targets/helpers.js` — `createInstallTargetAdapter`,
   `isForeignPlatformPath`, `PLATFORM_SOURCE_PATH_OWNERS`.

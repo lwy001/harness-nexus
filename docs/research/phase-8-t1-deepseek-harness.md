@@ -3,7 +3,7 @@
 > Status: **studied** (2026-09). Ground truth: the `deepseek-ai/deepseek-harness`
 > repo at tag **`dsh-v0.1.2-rc.1`** (commit `a66e470`, sparse checkout of
 > `docs/`, `apps/cli/`, `packages/`), cross-checked against the local ACP
-> reference demo (`/home/ubuntu/acp-ref/` — a working DSH plugin, studied for
+> reference demo (`~/acp-ref/` — a working DSH plugin, studied for
 > C5 in `phase-8-c5-acp-web-demo.md`). dsh is a **developer preview** ("THERE
 > WILL BE COMPATIBILITY-BREAKING CHANGES"), MIT, 214k+ stars. Re-verify the
 > concrete paths below when bumping past 0.1.x. Parent design:
