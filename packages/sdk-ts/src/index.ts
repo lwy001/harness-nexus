@@ -454,6 +454,21 @@ export class HarnessNexusClient {
     );
   }
 
+  /** The redacted effective-config view (Phase 9 W4; requires the daemon online). */
+  async getRuntimeConfigView(
+    machineId: string,
+    target: RuntimeTarget,
+  ): Promise<{
+    target: RuntimeTarget;
+    files: { path: string; content: string }[];
+    redacted: string[];
+  }> {
+    return this.request(
+      'GET',
+      `/api/machines/${machineId}/runtimes/${encodeURIComponent(target)}/config`,
+    );
+  }
+
   /** The resolved `{spec, secret}` bundle an apply-config job fetches (machine PAT only). */
   async getRuntimeConfigBundle(target: RuntimeTarget): Promise<{
     target: RuntimeTarget;

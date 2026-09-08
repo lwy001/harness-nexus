@@ -2351,6 +2351,56 @@ expect('machine PAT bundle resolves the secret', r.json.secret, 'sk-w3-secret');
 r = await req('GET', `/api/client/runtime-config?target=codex`, { token: userToken });
 expect('user tokens get a flat 404 on the bundle surface', r.status, 404);
 
+// ===========================================================================
+// [9 W4] Redacted config view — the SAME live daemon (real dist) answers
+// `runtime:config.get`; the files it wrote in W3 come back MASKED. The
+// load-bearing assertion: the planted secret never appears in the view.
+// ===========================================================================
+log('\n--- [9 W4] redacted view: codex files masked, plaintext absent ---');
+r = await req('GET', `/api/machines/${w3MachineId}/runtimes/codex/config`, { token: userToken });
+expect('w4 codex view status', r.status, 200);
+expect('w4 view target', r.json.target, 'codex');
+const w4Paths = (r.json.files ?? []).map((f) => f.path).join(',');
+expect('w4 codex view lists both files', w4Paths, '~/.codex/config.toml,~/.codex/auth.json');
+expect('w4 view carries NO plaintext secret', JSON.stringify(r.json).includes('sk-w3-secret'), false);
+const w4AuthFile = r.json.files.find((f) => f.path === '~/.codex/auth.json');
+expect('w4 auth.json key masked', JSON.parse(w4AuthFile.content).OPENAI_API_KEY, '${redacted}');
+expect(
+  'w4 redacted list names the key',
+  r.json.redacted.some((x) => x.includes('OPENAI_API_KEY')),
+  true,
+);
+const w4TomlView = r.json.files.find((f) => f.path === '~/.codex/config.toml');
+expect(
+  'w4 toml keeps the provider block readable',
+  w4TomlView.content.includes('requires_openai_auth = true'),
+  true,
+);
+
+log('\n--- [9 W4] redacted view: deepseek patch rows + fully masked .env ---');
+r = await req('GET', `/api/machines/${w3MachineId}/runtimes/deepseek/config`, { token: userToken });
+expect('w4 deepseek view status', r.status, 200);
+expect('w4 deepseek view carries NO plaintext secret', JSON.stringify(r.json).includes('sk-w3-secret'), false);
+const w4Env = r.json.files.find((f) => f.path === '~/.dsh/.env');
+expect(
+  'w4 .env fully masked (both the planted user key and ours)',
+  w4Env.content,
+  'DEEPSEEK_API_KEY=${redacted}\nHARNESS_NEXUS_API_KEY=${redacted}\n',
+);
+const w4Patch = r.json.files.find((f) => f.path === '~/.dsh/cordis.patch.yml');
+expect(
+  'w4 patch rows readable',
+  w4Patch.content.includes("name: '@deepseek-ai/dsh-llm-pi-ai'"),
+  true,
+);
+expect('w4 patch key channel masked', w4Patch.content.includes('apiKeyEnv: ${redacted}'), true);
+
+log('\n--- [9 W4] gates: admin view ok, bad target 400 ---');
+r = await req('GET', `/api/machines/${w3MachineId}/runtimes/codex/config`, { token: adminToken });
+expect('admin may view the redacted config', r.status, 200);
+r = await req('GET', `/api/machines/${w3MachineId}/runtimes/hermes/config`, { token: userToken });
+expect('non-runtime target rejected (400)', r.status, 400);
+
 w3Daemon.kill('SIGTERM');
 await req('DELETE', `/api/machines/${w3MachineId}`, { token: userToken });
 rmSync(w3Home, { recursive: true, force: true });

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Machine, RuntimeConfig } from '@harness-nexus/core';
 import {
   AppError,
+  runtimeConfigGetRequestSchema,
   runtimeConfigSpecSchema,
   runtimeSpecUnsupportedReason,
   runtimeTargetSchema,
@@ -12,7 +13,7 @@ import { generateId } from '../infra/crypto.js';
 import { jobView } from '../jobs/service.js';
 
 /**
- * Runtime provider-config routes (Phase 9 W3).
+ * Runtime provider-config routes (Phase 9 W3 + W4).
  * docs/design/phase-9-harness-runtime.md §4.3/§6.
  *
  * One spec per (machine, target). GET is owner-or-admin (404 existence-hiding,
@@ -23,6 +24,11 @@ import { jobView } from '../jobs/service.js';
  * the server inside the daemon's machine-PAT bundle) — the same gate the
  * dial-site model applies. The secret itself NEVER appears in any response
  * here; the daemon fetches `{spec, secret}` from `/api/client/runtime-config`.
+ *
+ * W4 adds the redacted effective-config view (§5/§6): a live round-trip to
+ * the daemon (`runtime:config.get` → `runtime:config`), gated on presence +
+ * the `runtime-config-view` capability, returning display-pathed files whose
+ * secret-ish values the daemon has already masked.
  */
 export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };
@@ -50,6 +56,54 @@ export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
+
+  // ---- GET /api/machines/:id/runtimes/:target/config — redacted view (W4) ----
+  // Live round-trip to the daemon: the files are masked DAEMON-SIDE before
+  // they ever reach the server. Requires the machine online (nothing is
+  // cached — a stale config view would lie) and the viewer capability.
+  app.get<{ Params: { id: string; target: string } }>(
+    '/api/machines/:id/runtimes/:target/config',
+    guard,
+    async (req) => {
+      const machine = await visibleMachine(req.params.id, req.user!);
+      const parsedTarget = runtimeTargetSchema.safeParse(req.params.target);
+      if (!parsedTarget.success) {
+        throw new AppError(
+          `Target '${req.params.target}' is not runtime-managed`,
+          400,
+          'RUNTIME_TARGET_INVALID',
+        );
+      }
+      if (!app.realtime.presence.isOnline(machine.id)) {
+        throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+      }
+      if (!machine.capabilities.includes('runtime-config-view')) {
+        throw new AppError(
+          'Daemon does not advertise the runtime-config-view capability (upgrade hnx on the machine)',
+          409,
+          'DAEMON_NO_RUNTIME_CONFIG_VIEW',
+        );
+      }
+      const { requestId, done } = app.realtime.configView.awaitView(machine.id);
+      const request = runtimeConfigGetRequestSchema.parse({
+        requestId,
+        target: parsedTarget.data,
+      });
+      app.io.of('/ctl').to(`machine:${machine.id}`).emit('runtime:config.get', request);
+      const outcome = await done;
+      if (!outcome.ok) {
+        if (outcome.reason === 'disconnected') {
+          throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+        }
+        throw new AppError('Daemon did not answer the config view in time', 504, 'VIEW_TIMEOUT');
+      }
+      const view = outcome.view!;
+      if (view.error !== undefined) {
+        throw new AppError(view.error, 502, 'DAEMON_VIEW_FAILED');
+      }
+      return { target: view.target, files: view.files ?? [], redacted: view.redacted };
+    },
+  );
 
   // ---- GET /api/machines/:id/runtime-config/:target — echo the spec (never a secret) ----
   app.get<{ Params: { id: string; target: string } }>(

@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon,
   BoxesIcon,
   CameraIcon,
+  FileCogIcon,
   GitCompareArrowsIcon,
   LaptopIcon,
   MessageSquareIcon,
@@ -39,6 +40,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Drawer,
+  DrawerBody,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
 import { RocketIcon, SquareIcon } from 'lucide-react';
 import {
   HarnessNexusError,
@@ -425,6 +434,106 @@ function RuntimeManage({
 }
 
 /**
+ * Redacted effective-config viewer (Phase 9 W4) — a live round-trip to the
+ * daemon; the drawer shows display-pathed files whose secret-ish values were
+ * masked daemon-side before upload. `--signal` is not spent (data, not
+ * liveness); masked values render as the literal `${redacted}`.
+ */
+function ViewConfigButton({
+  machineId,
+  target,
+  runtime,
+}: {
+  machineId: string;
+  target: string;
+  runtime: RuntimeInfoView | null;
+}) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<{
+    files: { path: string; content: string }[];
+    redacted: string[];
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (runtime === null) return null;
+
+  async function load(): Promise<void> {
+    setView(null);
+    setError(null);
+    try {
+      const res = await withAuthGuard(
+        () => api.getRuntimeConfigView(machineId, target as RuntimeTarget),
+        logout,
+      );
+      setView({ files: res.files, redacted: res.redacted });
+    } catch (e) {
+      setError(e instanceof HarnessNexusError ? e.message : t('machineDetail.viewFailed'));
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          setOpen(true);
+          void load();
+        }}
+      >
+        <FileCogIcon className="size-4" />
+        {t('machineDetail.viewConfigButton')}
+      </Button>
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle className="font-mono">
+              {t('machineDetail.viewConfigTitle', { target })}
+            </DrawerTitle>
+            <DrawerDescription>{t('machineDetail.viewConfigDesc')}</DrawerDescription>
+          </DrawerHeader>
+          <DrawerBody className="flex flex-col gap-4">
+            {error !== null ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : view === null ? (
+              <p className="text-muted-foreground py-8 text-center text-sm">
+                {t('machineDetail.viewLoading')}
+              </p>
+            ) : (
+              <>
+                {view.redacted.length > 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    {t('machineDetail.viewRedacted', { count: view.redacted.length })}
+                  </p>
+                ) : null}
+                {view.files.length === 0 ? (
+                  <p className="text-muted-foreground py-8 text-center text-sm">
+                    {t('machineDetail.viewNoFiles')}
+                  </p>
+                ) : (
+                  view.files.map((f) => (
+                    <div key={f.path} className="flex flex-col gap-1.5">
+                      <p className="text-muted-foreground font-mono text-xs">{f.path}</p>
+                      <pre className="bg-muted overflow-x-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap">
+                        {f.content}
+                      </pre>
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+          </DrawerBody>
+        </DrawerContent>
+      </Drawer>
+    </>
+  );
+}
+
+/**
  * Provider config sub-form (Phase 9 W3) — the Agent's LLM route, applied into
  * the harness's NATIVE config by an `apply-config` job (confirm-first: the
  * write ships the credential's plaintext to the machine). Renders nothing for
@@ -675,6 +784,7 @@ function TargetInventoryCard({ entry, machineId }: { entry: InventoryEntry; mach
           ) : null}
           <span className="ml-auto flex flex-wrap items-center gap-3">
             <RuntimeStatus runtime={entry.runtime} />
+            <ViewConfigButton machineId={machineId} target={entry.target} runtime={entry.runtime} />
             <RuntimeManage machineId={machineId} target={entry.target} runtime={entry.runtime} />
           </span>
         </CardTitle>

@@ -9,6 +9,7 @@ import {
   machineHelloSchema,
   inventoryReportEventSchema,
   inventoryPayloadEventSchema,
+  runtimeConfigViewEventSchema,
   type InventoryUpdatedEvent,
   type MachineStatusEvent,
 } from '@harness-nexus/shared';
@@ -26,6 +27,7 @@ import {
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
+import { ConfigViewerCoordinator } from '../realtime/config-viewer.js';
 import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
 import { JobService } from '../jobs/service.js';
@@ -51,6 +53,8 @@ export interface RealtimeService {
   jobs: JobService;
   /** Chat routing/gating/audit (C5) — /app ↔ /ctl with permission watchdogs. */
   chat: ChatService;
+  /** Redacted config-view waiters (Phase 9 W4). */
+  configView: ConfigViewerCoordinator;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -62,6 +66,7 @@ export async function registerRealtime(
   opts: {
     maxHttpBufferSize: number;
     inventoryTimeoutMs: number;
+    runtimeConfigViewTimeoutMs: number;
     jobAckTimeoutMs: number;
     jobSweepIntervalMs: number;
     jobMaxAttempts: number;
@@ -80,6 +85,7 @@ export async function registerRealtime(
 
   const presence = new MachinePresence();
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
+  const configView = new ConfigViewerCoordinator(opts.runtimeConfigViewTimeoutMs);
   const runtimeInstances = new DetectedInstanceSync(app.uow);
   const chat = new ChatService(
     {
@@ -135,6 +141,7 @@ export async function registerRealtime(
     inventory,
     jobs,
     chat,
+    configView,
     broadcastStatus(machine, online) {
       appNs
         .to([`user:${machine.ownerId}`, 'admins'])
@@ -282,6 +289,19 @@ export async function registerRealtime(
       ack?.(known ? { accepted: true } : { error: 'unknown-request' });
     });
 
+    // 9 W4 — daemon reply for `runtime:config.get`: resolve the waiter; a
+    // late/unknown id (already timed out) is dropped.
+    socket.on('runtime:config', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = runtimeConfigViewEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { requestId, ...view } = parsed.data;
+      const known = configView.onView(requestId, view);
+      ack?.(known ? { accepted: true } : { error: 'unknown-request' });
+    });
+
     // C4 — daemon job reporting. Progress accepts queued/dispatched/running;
     // result settles the job (terminal states ignore stale replay).
     socket.on('job:progress', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -341,6 +361,7 @@ export async function registerRealtime(
       const wentOffline = presence.disconnected(socket.id);
       if (wentOffline === null) return;
       inventory.failMachine(wentOffline);
+      configView.failMachine(wentOffline);
       void realtime.jobs.recoverMachine(wentOffline);
       // ACP has no resume in v1 — every open channel of the machine dies with
       // its daemon; viewers are notified via chat:session.closed.

@@ -1,6 +1,6 @@
 # Design: Phase 9 — Harness runtime lifecycle (install / upgrade / provider config)
 
-> Status: **W1 + W2 shipped (2026-09), W3–W4 designed**. Ground truth:
+> Status: **W1–W4 shipped (2026-09) — Phase 9 complete**. Ground truth:
 > `docs/research/phase-9-harness-runtime.md`. Rides Phase 8's machines /
 > daemon / jobs infrastructure (C1–C4); touches `shared` → `cli` → `server` →
 > `sdk-ts` → `web` in that order.
@@ -358,8 +358,48 @@ full-width punctuation rules for zh).
     rig (codex + deepseek apply jobs succeeded; files verified in the
     container; `dsh --version` still boots with the patch rows; UI form
     prefilled per Agent card).
-- **W4 Config viewer + drift** — `runtime:config.get` redaction, drawer,
-  re-scan after apply. Fold anything learned about dsh env ergonomics.
+- **W4 Config viewer — SHIPPED (2026-09).** Implementation notes (deviations
+  settled during the build):
+  - Protocol: the design's `runtime:config.get` pair, shaped exactly like C3's
+    inventory flow — `ConfigViewerCoordinator` (`server/src/realtime/
+config-viewer.ts`, requestId waiters + timeout + failMachine on disconnect/
+    revoke) and `GET /api/machines/:id/runtimes/:target/config` (owner-or-admin,
+    404-hiding). Nothing is cached — every view is a live round-trip (a stale
+    config view would lie). Errors: offline → 409 `MACHINE_OFFLINE`, no
+    capability → 409, timeout → 504 `VIEW_TIMEOUT`, daemon error arm → 502.
+    Config: `RUNTIME_CONFIG_VIEW_TIMEOUT_MS` (5 s default).
+  - The gate is the NEW **`runtime-config-view`** capability, not the design's
+    `runtime` (W3 daemons advertise `runtime`/`runtime-config` without the
+    viewer; the executor-tag rule from W2 applies). Daemon `0.8.0-p9w4`
+    advertises all seven.
+  - Redaction happens DAEMON-SIDE before upload (`cli/src/daemon/
+config-view.ts`): a key-name-aware JSON walk (`token|key|secret|password|
+passwd|credential|authorization|bearer`), UNANCHORED line masking for
+    TOML/YAML (also catches inline maps and `headers = { Authorization: … }`),
+    a quoted-pair scrub as the broken-JSON fallback (an anchored matcher misses
+    `"KEY":"value"` shapes — caught in review), and `.env` files masked
+    WHOLESALE (they exist to hold credentials). Over-redaction is safe;
+    under-redaction is not. Files over 128 KiB or containing NUL are skipped
+    with a placeholder; paths are display paths (`~/.codex/auth.json`) — the
+    daemon's home never leaks. `~/.dsh/.credentials.yaml` is deliberately
+    NOT read (pure secret store, not config).
+  - Files per target: claude-code `~/.claude/settings.json`; codex
+    `~/.codex/config.toml` + `~/.codex/auth.json`; deepseek home
+    `cordis.patch.yml` + `~/.dsh/.env`.
+  - "Re-scan after apply" from the wave plan was DROPPED as a no-op:
+    apply-config doesn't touch anything a C3 scan enumerates, so a rescan
+    would return identical rows — the View button (live read) is the
+    post-apply verification.
+  - Web: a right-side Drawer (`components/ui/drawer.tsx`, the first Sheet —
+    Radix Dialog primitives re-composed for tall read-only content; prefer
+    it over centered dialogs there) with per-file mono `<pre>` blocks and a
+    muted `text-xs` count of daemon-masked values; masked values render as
+    the literal `${redacted}`. No `--signal` (data, not liveness).
+  - Verified by: unit/integration (redactor fixtures incl. broken JSON and
+    the W3-written shapes; round-trip with a fake daemon + gates + late-
+    reply drop), smoke `[9 W4]` (the W3 fixture machine's real files come
+    back masked — the planted secret never appears), and the rig (REST +
+    drawer: `${redacted}` in auth.json, the masked-count note, zero leak).
 
 Each wave lands independently (branch → tests → smoke section `[9]` → docs).
 

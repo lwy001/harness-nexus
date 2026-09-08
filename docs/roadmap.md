@@ -329,7 +329,13 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     open questions resolved with source-verified facts (research §8): codex
     removed `wire_api="chat"` (Responses-only), CC version-less installs
     track `@stable`.
-  - **W4 Redacted config viewer** — daemon-side `runtime:config.get` with
-    key-name-aware masking; UI drawer.
+  - **W4 Redacted config viewer — SHIPPED (2026-09)** — daemon-side
+    `runtime:config.get` with key-name-aware masking (JSON walk, unanchored
+    TOML/YAML line masking, wholesale `.env` masking, broken-JSON fallback;
+    masked before upload, display paths only) over the inventory-style
+    coordinator; `GET /api/machines/:id/runtimes/:target/config` (live
+    round-trip, `runtime-config-view` capability gate); right-side Drawer in
+    MachineDetail. "Re-scan after apply" dropped as a no-op (config files
+    aren't scanned artifacts — the View button is the fresh read).
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies.

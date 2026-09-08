@@ -66,6 +66,8 @@ export interface ServerConfig {
   socketMaxHttpBufferSize: number;
   /** How long a scan/collect REST handler waits for the daemon's reply (C3). */
   inventoryRequestTimeoutMs: number;
+  /** `runtime:config.get` round-trip budget (Phase 9 W4). */
+  runtimeConfigViewTimeoutMs: number;
   jobAckTimeoutMs: number;
   jobSweepIntervalMs: number;
   jobMaxAttempts: number;
@@ -125,6 +127,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     ...(env.SKILL_DISABLED_SOURCES ? { skillDisabledSources: env.SKILL_DISABLED_SOURCES } : {}),
     socketMaxHttpBufferSize: Number(env.SOCKET_MAX_HTTP_BUFFER ?? String(8 * 1024 * 1024)),
     inventoryRequestTimeoutMs: Number(env.INVENTORY_REQUEST_TIMEOUT_MS ?? '60000'),
+    runtimeConfigViewTimeoutMs: Number(env.RUNTIME_CONFIG_VIEW_TIMEOUT_MS ?? '5000'),
     jobAckTimeoutMs: Number(env.JOB_ACK_TIMEOUT_MS ?? '60000'),
     jobSweepIntervalMs: Number(env.JOB_SWEEP_INTERVAL_MS ?? '15000'),
     jobMaxAttempts: Number(env.JOB_MAX_ATTEMPTS ?? '3'),

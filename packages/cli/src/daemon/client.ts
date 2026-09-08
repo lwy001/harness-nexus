@@ -3,21 +3,23 @@ import { io } from 'socket.io-client';
 import {
   inventoryCollectRequestSchema,
   inventoryScanRequestSchema,
+  runtimeConfigGetRequestSchema,
   type InventorySnapshot,
   type MachineHelloAck,
 } from '@harness-nexus/shared';
 import { collectItems, scanAllTargets, scanTarget, scannerFor } from '../inventory/scan.js';
 import { probeRuntimes } from '../inventory/runtime.js';
+import { runtimeConfigViewPayload } from './config-view.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.7.0-p9w3';
+export const DAEMON_VERSION = '0.8.0-p9w4';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
  * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
- * 9 W3: provider-config apply).
+ * 9 W3: provider-config apply; 9 W4: redacted config view).
  */
 export const DAEMON_CAPABILITIES = [
   'inventory',
@@ -26,6 +28,7 @@ export const DAEMON_CAPABILITIES = [
   'runtime',
   'harness',
   'runtime-config',
+  'runtime-config-view',
 ];
 
 /** Placeholder snapshot for a target this daemon build has no scanner for. */
@@ -145,6 +148,28 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
       const payloadItems = await collectItems(target, items);
       socket.emit('inventory:payload', { requestId, items: payloadItems });
     })();
+  });
+
+  // 9 W4 — redacted effective-config read-back. Masking happens HERE, before
+  // anything crosses the wire (the same rule as inventory collect).
+  socket.on('runtime:config.get', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = runtimeConfigGetRequestSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    ack?.({ accepted: true });
+    try {
+      socket.emit('runtime:config', {
+        requestId: parsed.data.requestId,
+        ...runtimeConfigViewPayload(parsed.data.target),
+      });
+    } catch (e) {
+      socket.emit('runtime:config', {
+        requestId: parsed.data.requestId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   });
 
   socket.on('connect_error', (err: Error) => {
