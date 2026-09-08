@@ -61,6 +61,11 @@
   /* Semantic status — the one place color carries meaning. */
   --signal: oklch(0.55 0.11 230); /* cyan-700 */
   --signal-foreground: oklch(0.98 0.004 250);
+  /* Brand palette (hexagonal-ribbon logo): the mark carries its own blues,
+   * deliberately separate from the UI's single --signal accent. */
+  --brand-bright: #2e9dfd;
+  --brand-mid: #2776dd;
+  --brand-deep: #142f5d; /* navy — lifted in dark so the mark stays readable */
   --ok: oklch(0.62 0.16 150); /* green */
   --warn: oklch(0.7 0.16 65); /* amber */
   --danger: oklch(0.58 0.22 25);
@@ -111,6 +116,9 @@
 
   --signal: oklch(0.72 0.13 200); /* brighter cyan in dark */
   --signal-foreground: oklch(0.18 0.02 260);
+  --brand-bright: #2e9dfd;
+  --brand-mid: #2776dd;
+  --brand-deep: #6c8fd6; /* navy lifted: #142f5d would sink into dark chrome */
   --ok: oklch(0.72 0.16 155);
   --warn: oklch(0.78 0.16 70);
   --danger: oklch(0.7 0.2 22);
@@ -167,6 +175,9 @@
 
   --color-signal: var(--signal);
   --color-signal-foreground: var(--signal-foreground);
+  --color-brand-bright: var(--brand-bright);
+  --color-brand-mid: var(--brand-mid);
+  --color-brand-deep: var(--brand-deep);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);

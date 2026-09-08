@@ -160,9 +160,12 @@ this before adding screens or components so the look stays consistent.
   — never load external font CDNs; this product handles secrets and makes no
   outbound requests for assets. Use the `.nums` helper or `tabular-nums` for any
   column of figures or monospaced protocol strings.
-- **Brand.** The mark, wordmark, and favicon are inline SVG (`components/
-brand-mark.tsx`, `public/favicon.svg`) encoding the thesis (upstreams
-  converging on a nexus node). Reuse `<Brand>`; don't introduce a raster logo.
+- **Brand.** The mark (hexagonal ribbon), wordmark, and favicon are inline SVG
+  (`components/brand-mark.tsx`, `public/favicon.svg`); the full logo asset is
+  `docs/assets/logo.svg` (used by the README headers). The mark carries its own
+  brand blues via `--brand-{bright,mid,deep}` tokens (deep navy is lifted in
+  dark theme) — separate from the UI's `--signal` accent. Reuse `<Brand>`;
+  don't introduce a raster logo.
 - **Honesty over decoration.** The Dashboard mesh topology (`components/
 mesh-topology.tsx`) renders upstreams as "configured" (muted), **never** a
   green "online" dot — live aggregation is Phase 2.2 and faking status would
