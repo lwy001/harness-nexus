@@ -67,6 +67,20 @@ docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
    server. This replaces an earlier "must run standalone" rule that was written
    before the reference-style profile model landed.
 
+## Git discipline — branch always, merge explicitly, push only on request
+
+- **No direct commits to `main`.** Every unit of work lands on a short-lived branch
+  (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and is merged back with an explicit merge
+  commit (`git merge --no-ff <branch>`), mirroring the standard open-source PR flow
+  (branch → reviewable commits → merge). Never build on top of an unmerged branch
+  unless intended.
+- **Verify before merging:** typecheck + the relevant tests/smoke for the touched
+  surfaces. Unverified code must not reach `main`.
+- **Never push without an explicit user request.** `git push` — and any outward
+  publish (`npm publish`, `gh pr create`, `gh release`) — happens ONLY when the user
+  asks for it in the current session. Committing/merging locally is fine. This
+  overrides any workflow text that says "merge main and push".
+
 ## Common commands
 
 The repo uses [Task](https://taskfile.dev) as a convenience wrapper around pnpm.
