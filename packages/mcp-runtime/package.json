@@ -1,8 +1,7 @@
 {
   "name": "@harness-nexus/mcp-runtime",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Transport-facing MCP upstream pool — dial upstreams (SSE / Streamable HTTP / stdio), aggregate namespaced tools, route calls. Shared by the server's McpRegistry and the `hnx mcp serve` stdio shim (Phase 8 C2).",
+  "version": "0.1.0-alpha.1",
+  "description": "Transport-facing MCP upstream pool \u2014 dial upstreams (SSE / Streamable HTTP / stdio), aggregate namespaced tools, route calls. Shared by the server's McpRegistry and the `hnx mcp serve` stdio shim (Phase 8 C2).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +19,8 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"(lint placeholder) add eslint/oxlint config\"",
-    "test": "echo \"(test placeholder) add vitest\""
+    "test": "echo \"(test placeholder) add vitest\"",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@harness-nexus/core": "workspace:*",
@@ -30,5 +30,17 @@
   "devDependencies": {
     "@types/node": "^22.8.6",
     "typescript": "^5.6.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sinrimin/harness-nexus.git",
+    "directory": "packages/mcp-runtime"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
