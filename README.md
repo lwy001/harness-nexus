@@ -132,6 +132,9 @@ is required at runtime and never baked into either image.
 On the machine you want to manage (can be the same host):
 
 ```bash
+# one-time: install the client (Node.js ≥ 20)
+npm install -g @harness-nexus/cli
+
 # in the web UI: Machines → Enroll — shows a one-time token + machine id
 hnx daemon --server https://your-instance --token <machine-token> --machine-id <machine-id>
 ```

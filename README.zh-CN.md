@@ -122,6 +122,9 @@ open http://127.0.0.1:15922
 在你想管理的机器上（可以是同一台主机）：
 
 ```bash
+# 一次性安装客户端（需要 Node.js ≥ 20）
+npm install -g @harness-nexus/cli
+
 # 在 Web UI：机器 → 注册——会显示一次性令牌 + 机器 id
 hnx daemon --server https://your-instance --token <machine-token> --machine-id <machine-id>
 ```
