@@ -763,7 +763,11 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   install/upgrade/pin jobs on the C4 pipeline; `RuntimeConfig` provider/model
   push referencing distributable credentials; redacted config viewing). Read
   `docs/research/phase-9-harness-runtime.md` + `docs/design/phase-9-harness-runtime.md`
-  first — waves W1–W4 land independently.
+  first — waves W1–W4 land independently. Model shift decided with the
+  user: inventory is **Agent-first** (runtime detection primary, items nested
+  under the Agent, "not installed" instead of empty lists, default state
+  captureable as a profile) and **chat keys off the detected Agent** via
+  auto-registered `source: 'detected'` instances — not off deploy records.
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant `docs/`

@@ -304,8 +304,12 @@ piece users asked for after Phase 8 shipped artifact management only
   `docs/design/phase-9-harness-runtime.md` (both 2026-09; implementation not
   started). Rides the Phase 8 machine/daemon/job infrastructure.
 - Planned waves:
-  - **W1 Runtime inventory** — `runtimes` arm on the inventory payload (bin
-    path, `--version`, install method) + MachineDetail card.
+  - **W1 Agent-first inventory** — `runtimes` arm on the inventory payload
+    (bin path, `--version`, install method) as the PRIMARY grouping: Agent
+    cards with items nested under them, "not installed" instead of empty
+    lists, `AgentInstance (source: 'detected')` auto-registration so **any
+    detected Agent is chatable** (closes the emitter-installed claude-code
+    gap), and capture-as-profile for an Agent's default state.
   - **W2 Install / upgrade / pin jobs** — `type: 'harness'` jobs on the C4
     pipeline; per-target command table (npm / claude native installer); CC
     auto-updater disabled on managed machines.

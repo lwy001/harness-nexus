@@ -98,7 +98,7 @@ Cross-cutting overviews live at the docs root: [`architecture.md`](./architectur
 ### Phase 9 — Harness runtime lifecycle 🧪 designed
 
 - Research: [`research/phase-9-harness-runtime.md`](./research/phase-9-harness-runtime.md) — ground truth for managing the harness software itself: per-CLI install methods (claude native/npm/brew incl. channel + auto-updater interference, codex npm/brew, dsh npm), `--version` shapes, install-method detection by bin path, and each harness's native provider/key config slots (CC `settings.json` env, codex `config.toml` + `auth.json`, dsh `dsh-llm-pi-ai` patch rows + `apiKeyEnv`).
-- Design: [`design/phase-9-harness-runtime.md`](./design/phase-9-harness-runtime.md) — runtime arm on the inventory payload, `harness` job type on the C4 pipeline (install/upgrade/pin), `RuntimeConfig` entity (migration `0011`) referencing distributable credentials, per-target native config writers, redacted `runtime:config.get` viewing, the MachineDetail Runtimes card, waves W1–W4.
+- Design: [`design/phase-9-harness-runtime.md`](./design/phase-9-harness-runtime.md) — **Agent-first** runtime arm on the inventory payload (the Agent is the primary object; items nest under it), `AgentInstance (source: 'detected')` auto-registration so any detected Agent is chatable (closes the emitter claude-code gap), capture-as-profile for default state, `harness` job type on the C4 pipeline (install/upgrade/pin), `RuntimeConfig` entity (migration `0011`) referencing distributable credentials, per-target native config writers, redacted `runtime:config.get` viewing, waves W1–W4.
 
 ### Concept notes (design/)
 

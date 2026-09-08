@@ -20,6 +20,11 @@ machine. Nothing in the platform today can answer or act on:
 - Configure the **LLM provider route** (provider, base URL, model, API key)
   the harness should use — remotely, without SSH.
 - **View** the harness's effective configuration from the web UI (redacted).
+- And the model question underneath it all: inventory should be **Agent-first**
+  (detect the Agent — the installed harness — then what's inside it), and
+  **chat should key off the detected Agent**, not off a deploy record: a
+  claude-code installed via the 3.5 emitter can't be chatted with today purely
+  because that install path never creates an `AgentInstance`.
 
 ## 2. Claude Code (`claude`)
 
@@ -161,7 +166,45 @@ expect movement across 0.1.x):
    job executor should forward `HTTP(S)_PROXY`/`npm_config_registry` from its
    own environment.
 
-## 6. Consequences (bridge to the design)
+## 6. Agent-first inventory — the model today vs. the model we want
+
+**Today (C3/C4/C5):** scanning enumerates *items* per target regardless of
+whether the harness is even installed; `AgentInstance` rows exist only as a
+side effect of C4 deploys (`claude-code` deliberately excluded — the 3.5
+emitter is its preferred path); chat gating starts at `AgentInstance →
+remoteChatEnabled → online → capability → cap`. Consequence: a machine with a
+perfectly good `claude` shows empty target cards (pre-fix: no explanation) and
+no chat target.
+
+**Wanted:** the *Agent* (installed harness runtime) is the primary object.
+
+- "Agent present" = the runtime probe finds the binary (§5.1). Items nest
+  under it; a target without a runtime renders "Agent not installed" instead
+  of an empty item list.
+- **Profile attribution is optional.** Items already carry `origin:
+  platform | local` (install ledger, `harness-nexus*` names, CC marketplace
+  cache names). An Agent whose items are all `local` is simply in its
+  **default state (缺省)** — nothing wrong, nothing to attribute. C3's
+  collect+import (reuse-or-create) already *is* "save current state as
+  profile"; it is just only reachable through the diff view today. Making it a
+  first-class "capture as profile" action on the Agent is a UI/route
+  reframing, not new machinery.
+- **Chat follows the Agent.** Per-target ACP adapter prerequisites (from
+  `daemon/acp/adapters.ts`, verified):
+
+  | target | adapter command | prerequisites on the machine |
+  | --- | --- | --- |
+  | claude-code | `npx -y @zed-industries/claude-agent-acp` | Node/npx + local Claude **auth** (the adapter bundles the CLI itself) |
+  | codex | `npx -y @zed-industries/codex-acp` | `codex` on PATH + auth (ChatGPT login or API key) |
+  | deepseek | `dsh --profile acp` | `dsh` on PATH + a configured provider route |
+
+  So "detected Agent ⇒ chatable" is sound per target, with adapter failure
+  (missing auth, missing dsh) surfacing at session open exactly as it does
+  today. What's missing is only the *instance registration* for non-deployed
+  agents — an auto-registered `AgentInstance (source: detected)` closes the
+  emitter gap with no protocol change.
+
+## 7. Consequences (bridge to the design)
 
 - A **runtime arm on the existing inventory report** is the natural carrier for
   presence/version/method (C3 already round-trips per-target data on scan).
@@ -171,6 +214,9 @@ expect movement across 0.1.x):
 - **Provider/model config is a first-class server-side entity** referencing a
   *distributable* credential (existing `Credential.distributable` rule), applied
   by the daemon into the native slots above — never into profile artifacts.
+- **Chat keys off the detected Agent**: runtime detection auto-registers
+  `AgentInstance (source: 'detected')` rows (one per machine × target), so
+  emitter-installed claude-code becomes chatable with zero protocol change.
 - **Config viewing** is a redacted read-back of the harness's own files/env
   (extend the daemon-side redactor that already scrubs env/header values to
   `${cred:<KEY>}`).
