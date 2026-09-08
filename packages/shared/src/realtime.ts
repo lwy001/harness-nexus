@@ -232,6 +232,40 @@ export const inventoryPayloadEventSchema = z.object({
     .max(200),
 });
 
+// ---- /ctl runtime config view events (Phase 9 W4) ----
+//
+// The redacted effective-config read-back: the server asks the daemon for a
+// target's config files, the daemon MASKS secret-ish values (key-name-aware
+// JSON walk + line masking for TOML/YAML; `.env` values are masked wholesale
+// — the file exists to hold secrets) and replies. `path` values are display
+// paths (`~/.codex/config.toml`) — the daemon's real home never leaks.
+
+/** server → daemon: read + redact this target's effective config. */
+export const runtimeConfigGetRequestSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  target: runtimeTargetSchema,
+});
+
+/** daemon → server: the redacted view. `error` arm settles the waiter honestly. */
+export const runtimeConfigViewEventSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  target: runtimeTargetSchema,
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(512),
+        content: z.string().max(131072),
+      }),
+    )
+    .max(8)
+    .optional(),
+  /** What was hidden — `"<display-path>:<key>"` entries; empty iff nothing matched. */
+  redacted: z.array(z.string().max(128)).max(64).default([]),
+  error: z.string().max(512).optional(),
+});
+export type RuntimeConfigGetRequest = z.infer<typeof runtimeConfigGetRequestSchema>;
+export type RuntimeConfigViewEvent = z.infer<typeof runtimeConfigViewEventSchema>;
+
 // ---- /app events (C3) ----
 
 /** server → browser: a machine's latest snapshot for one target changed. */

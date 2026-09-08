@@ -172,6 +172,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   await registerRealtime(app, {
     maxHttpBufferSize: config.socketMaxHttpBufferSize,
     inventoryTimeoutMs: config.inventoryRequestTimeoutMs,
+    runtimeConfigViewTimeoutMs: config.runtimeConfigViewTimeoutMs,
     jobAckTimeoutMs: config.jobAckTimeoutMs,
     jobSweepIntervalMs: config.jobSweepIntervalMs,
     jobMaxAttempts: config.jobMaxAttempts,

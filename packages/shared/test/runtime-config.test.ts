@@ -3,7 +3,9 @@ import {
   createMachineJobSchema,
   harnessJobPayloadSchema,
   harnessResultDataSchema,
+  runtimeConfigGetRequestSchema,
   runtimeConfigSpecSchema,
+  runtimeConfigViewEventSchema,
   runtimeSpecUnsupportedReason,
   RUNTIME_API_SUPPORT,
 } from '../src/index.js';
@@ -110,5 +112,46 @@ describe('apply-config job arm', () => {
       harnessResultDataSchema.safeParse({ target: 'codex', action: 'pin', version: '0.12.0' })
         .success,
     ).toBe(true);
+  });
+});
+
+describe('runtime:config view events (W4)', () => {
+  it('validates the request shape', () => {
+    expect(
+      runtimeConfigGetRequestSchema.safeParse({ requestId: 'r1', target: 'codex' }).success,
+    ).toBe(true);
+    expect(
+      runtimeConfigGetRequestSchema.safeParse({ requestId: 'r1', target: 'hermes' }).success,
+    ).toBe(false);
+    expect(runtimeConfigGetRequestSchema.safeParse({ requestId: '' }).success).toBe(false);
+  });
+
+  it('validates the reply (files + redacted list, or the error arm)', () => {
+    const ok = runtimeConfigViewEventSchema.safeParse({
+      requestId: 'r1',
+      target: 'codex',
+      files: [
+        { path: '~/.codex/auth.json', content: '{\\n  "OPENAI_API_KEY": "\\${redacted}"\\n}\\n' },
+      ],
+      redacted: ['~/.codex/auth.json:OPENAI_API_KEY'],
+    });
+    expect(ok.success).toBe(true);
+    // redacted defaults to [] when absent
+    const minimal = runtimeConfigViewEventSchema.parse({ requestId: 'r2', target: 'deepseek' });
+    expect(minimal.redacted).toEqual([]);
+    const errored = runtimeConfigViewEventSchema.safeParse({
+      requestId: 'r3',
+      target: 'codex',
+      error: 'read failed',
+    });
+    expect(errored.success).toBe(true);
+    // oversized content is rejected (the wire cap is the backstop)
+    expect(
+      runtimeConfigViewEventSchema.safeParse({
+        requestId: 'r4',
+        target: 'codex',
+        files: [{ path: 'x', content: 'a'.repeat(131073) }],
+      }).success,
+    ).toBe(false);
   });
 });

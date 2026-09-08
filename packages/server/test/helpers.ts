@@ -22,6 +22,7 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     skillSearchTimeoutMs: 100,
     socketMaxHttpBufferSize: 1024 * 1024,
     inventoryRequestTimeoutMs: 5000,
+    runtimeConfigViewTimeoutMs: 700,
     jobAckTimeoutMs: 700,
     jobSweepIntervalMs: 200,
     jobMaxAttempts: 3,

@@ -688,6 +688,33 @@ credentialName, extra?}` — never a secret; it names a credential that MUST
   `undefined`, so production daemons never wrote `DISABLE_AUTOUPDATER`;
   `runHarnessJob` now defaults to `os.homedir()`.
 
+## Redacted config viewer (Phase 9 W4)
+
+Extends the section above. Full design in `docs/design/phase-9-harness-runtime.md`
+§5/§6/§9 (W4 notes). Summary for daily work:
+
+- **A live round-trip, never cached**: `GET /api/machines/:id/runtimes/:target/config`
+  (owner-or-admin, 404-hiding) emits `runtime:config.get` over `/ctl`, the
+  daemon reads the target's NATIVE config files, MASKS them, and replies
+  `runtime:config` (inventory-style requestId waiters in
+  `ConfigViewerCoordinator`, `server/src/realtime/config-viewer.ts`;
+  disconnect/revoke fails waiters). Gates: offline → 409 `MACHINE_OFFLINE`,
+  missing `runtime-config-view` capability → 409 (W3 daemons lack the reader),
+  timeout → 504 `VIEW_TIMEOUT`. Config: `RUNTIME_CONFIG_VIEW_TIMEOUT_MS`.
+- **Masking is daemon-side, before upload** (`cli/src/daemon/config-view.ts`):
+  key-name-aware JSON walk + UNANCHORED TOML/YAML line masking (catches
+  inline maps too) + quoted-pair scrub as the broken-JSON fallback; `.env`
+  files are masked WHOLESALE (credential storage by construction). Files
+  > 128 KiB or binary are skipped with a placeholder; paths are display paths
+  > (`~/.codex/auth.json`). `~/.dsh/.credentials.yaml` is never read. Masked
+  > values render as the literal `${redacted}`; the reply lists what was
+  > hidden in `redacted[]` (`"<display-path>:<key>"`).
+- **Web**: a "View config" button per Agent card opens a right-side Drawer
+  (`components/ui/drawer.tsx` — Dialog primitives composed as a sheet, the
+  go-to for tall read-only content) with mono `<pre>` blocks and a muted
+  masked-count note. Strings in `strings/machineDetail.ts` (en/zh).
+- Daemon `0.8.0-p9w4` advertises `runtime-config-view` alongside the W3 set.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
