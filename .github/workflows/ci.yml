@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # reads packageManager from package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # the documented engine floor
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build before typecheck: cross-package project references need dist/.
+      - run: pnpm -r build
+      - run: pnpm -r typecheck
+      - run: pnpm -r test

@@ -1,0 +1,62 @@
+# npm release via OIDC trusted publishing — NO npm token stored anywhere.
+#
+# Prerequisites (one-time, per package, on npmjs.com):
+#   Package → Settings → Trusted publishing → GitHub Actions:
+#     Organization or user : sinrimin
+#     Repository           : harness-nexus
+#     Workflow filename    : release.yml
+#     Environment          : (leave empty)
+#     Allowed actions      : direct `npm publish` allowed
+#
+# To cut a release: bump `version` in the five package manifests in a commit
+# on main, then run this workflow (Actions → release → Run workflow). Versions
+# already on npm are rejected by the registry, which is the double-publish
+# guard.
+#
+# pnpm is not supported for tokenless publishing — we use `pnpm pack` (it
+# substitutes `workspace:` versions) and `npm publish` the tarballs, which is
+# the OIDC-authenticated path. Requires npm ≥ 11.5.1 + Node ≥ 22.14.0.
+
+name: release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write # mint the OIDC token npm verifies
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+
+      - run: npm install -g npm@latest # runners ship an npm older than 11.5.1
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm -r test
+
+      - name: Pack (workspace versions substituted)
+        run: |
+          mkdir -p "$RUNNER_TEMP/tgz"
+          for d in core shared sdk-ts mcp-runtime cli; do
+            (cd "packages/$d" && pnpm pack --pack-destination "$RUNNER_TEMP/tgz")
+          done
+          ls -l "$RUNNER_TEMP/tgz"
+
+      - name: Publish (OIDC — no token)
+        run: |
+          for tgz in "$RUNNER_TEMP/tgz"/*.tgz; do
+            echo "::group::publish $(basename "$tgz")"
+            npm publish "$tgz"
+            echo "::endgroup::"
+          done
