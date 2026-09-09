@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Dialog as DialogPrimitive } from 'radix-ui';
 import {
   ServerIcon,
   PlusIcon,
@@ -48,6 +47,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { FormDialog } from '@/components/ui/form-dialog';
+import {
   HarnessNexusError,
   resolveDialSite,
   type McpServer,
@@ -93,6 +101,7 @@ export function McpManagementPage() {
   // name → distributable, for deriving `auto` dial sites client-side (display
   // only; the server derives authoritatively).
   const [distributable, setDistributable] = useState<Map<string, boolean>>(new Map());
+  const [creating, setCreating] = useState(false);
   const isAdmin = user?.role === 'admin';
 
   const refresh = useCallback(async () => {
@@ -148,18 +157,25 @@ export function McpManagementPage() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('mcp.title')}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {t('mcp.subtitleLead')} <span className="font-medium">{t('mcp.subtitleServerWord')}</span>
-          {t('mcp.subtitleServerText')}
-          <code className="font-mono">/mcp</code>
-          {t('mcp.subtitleServerAfter')}
-          <span className="font-medium">{t('mcp.subtitleClientWord')}</span>
-          {t('mcp.subtitleClientText')}
-          <code className="font-mono">hnx mcp serve</code>
-          {t('mcp.subtitleClientAfter')}
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('mcp.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('mcp.subtitleLead')}{' '}
+            <span className="font-medium">{t('mcp.subtitleServerWord')}</span>
+            {t('mcp.subtitleServerText')}
+            <code className="font-mono">/mcp</code>
+            {t('mcp.subtitleServerAfter')}
+            <span className="font-medium">{t('mcp.subtitleClientWord')}</span>
+            {t('mcp.subtitleClientText')}
+            <code className="font-mono">hnx mcp serve</code>
+            {t('mcp.subtitleClientAfter')}
+          </p>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <PlusIcon className="size-4" />
+          {t('mcp.addServer')}
+        </Button>
       </div>
 
       <Card>
@@ -214,7 +230,15 @@ export function McpManagementPage() {
         </CardContent>
       </Card>
 
-      <CreateMcpServer onCreated={refresh} />
+      {creating ? (
+        <CreateMcpServer
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            void refresh();
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }
@@ -678,7 +702,7 @@ function parseStringRecord(raw: string): Record<string, string> | undefined {
   }
 }
 
-function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
+function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { logout, user } = useAuth();
   const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
@@ -771,12 +795,6 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
         );
       }
       toast.success(t('mcp.addedToast'));
-      setName('');
-      setUrl('');
-      setCommand('');
-      setArgs('');
-      setEnvJson(DEFAULT_ENV_JSON);
-      setHeadersJson(DEFAULT_HEADERS_JSON);
       onCreated();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
@@ -786,32 +804,31 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <PlusIcon className="size-4" />
-          {t('mcp.addServer')}
+    <FormDialog
+      open
+      onClose={onClose}
+      title={t('mcp.addServer')}
+      description={
+        dialSite === 'server'
+          ? t('mcp.descServer')
+          : dialSite === 'client'
+            ? t('mcp.descClient')
+            : t('mcp.descAuto')
+      }
+      size="lg"
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="ml-auto"
             onClick={() => setImportOpen(true)}
           >
             <FileJsonIcon className="size-4" />
             {t('mcp.importJson')}
           </Button>
-        </CardTitle>
-        <CardDescription>
-          {dialSite === 'server'
-            ? t('mcp.descServer')
-            : dialSite === 'client'
-              ? t('mcp.descClient')
-              : t('mcp.descAuto')}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="mcp-name">{t('common.name')}</Label>
@@ -939,16 +956,18 @@ function CreateMcpServer({ onCreated }: { onCreated: () => void }) {
 
           <PlaceholderChips creds={creds} />
 
-          <div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
             <Button type="submit" disabled={busy}>
               {busy ? t('mcp.adding') : t('mcp.addServer')}
             </Button>
           </div>
         </form>
-      </CardContent>
 
       <ImportJsonDialog open={importOpen} onOpenChange={setImportOpen} onImport={applyImport} />
-    </Card>
+    </FormDialog>
   );
 }
 
@@ -1029,14 +1048,11 @@ function ImportJsonDialog({
   }
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="bg-black/50 fixed inset-0 z-40" />
-        <DialogPrimitive.Content className="bg-background fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg">
-          <DialogPrimitive.Title className="text-lg font-semibold">
-            {t('mcp.importTitle')}
-          </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="text-muted-foreground mt-1 text-sm">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('mcp.importTitle')}</DialogTitle>
+          <DialogDescription>
             {t('mcp.importDescLead')}
             <code className="font-mono">{'{ "mcpServers": { "name": {...} } }'}</code>
             {t('mcp.importDescMid')}
@@ -1044,30 +1060,28 @@ function ImportJsonDialog({
             {t('mcp.importDescArrowDirect')}
             <code className="font-mono">serverUrl</code>
             {t('mcp.importDescArrowProxy')}
-          </DialogPrimitive.Description>
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="mt-4 font-mono text-xs"
-            rows={10}
-            spellCheck={false}
-            placeholder={
-              '{\n  "mcpServers": {\n    "context7": {\n      "serverUrl": "https://mcp.context7.com/mcp",\n      "headers": { "CONTEXT7_API_KEY": "${cred:context7-key}" }\n    }\n  }\n}'
-            }
-            autoFocus
-          />
-          <div className="mt-4 flex justify-end gap-2">
-            <DialogPrimitive.Close asChild>
-              <Button type="button" variant="ghost">
-                {t('common.cancel')}
-              </Button>
-            </DialogPrimitive.Close>
-            <Button type="button" onClick={onParse}>
-              {t('mcp.parse')}
-            </Button>
-          </div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+          </DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="font-mono text-xs"
+          rows={10}
+          spellCheck={false}
+          placeholder={
+            '{\n  "mcpServers": {\n    "context7": {\n      "serverUrl": "https://mcp.context7.com/mcp",\n      "headers": { "CONTEXT7_API_KEY": "${cred:context7-key}" }\n    }\n  }\n}'
+          }
+          autoFocus
+        />
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" onClick={onParse}>
+            {t('mcp.parse')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

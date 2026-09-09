@@ -42,6 +42,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { FormDialog } from '@/components/ui/form-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { HarnessNexusError, type MachineView } from '@harness-nexus/sdk';
 
@@ -55,6 +56,7 @@ export function MachinesPage() {
   const { logout } = useAuth();
   const { t } = useI18n();
   const [items, setItems] = useState<MachineView[] | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
   const [reveal, setReveal] = useState<{ machine: MachineView; token: string } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -95,12 +97,18 @@ export function MachinesPage() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('machines.title')}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {t('machines.subtitleA')} <code className="font-mono">hnx daemon</code>{' '}
-          {t('machines.subtitleB')}
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('machines.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('machines.subtitleA')} <code className="font-mono">hnx daemon</code>{' '}
+            {t('machines.subtitleB')}
+          </p>
+        </div>
+        <Button onClick={() => setEnrolling(true)}>
+          <PlusIcon className="size-4" />
+          {t('machines.enrollButton')}
+        </Button>
       </div>
 
       <Card>
@@ -145,7 +153,16 @@ export function MachinesPage() {
         </CardContent>
       </Card>
 
-      <EnrollCard onEnrolled={refresh} onReveal={setReveal} />
+      {enrolling ? (
+        <EnrollCard
+          onClose={() => setEnrolling(false)}
+          onEnrolled={() => {
+            setEnrolling(false);
+            void refresh();
+          }}
+          onReveal={setReveal}
+        />
+      ) : null}
       <RevealDialog reveal={reveal} onClose={() => setReveal(null)} />
     </AppShell>
   );
@@ -253,9 +270,11 @@ function MachineRow({ machine, onRevoke }: { machine: MachineView; onRevoke: () 
 }
 
 function EnrollCard({
+  onClose,
   onEnrolled,
   onReveal,
 }: {
+  onClose: () => void;
   onEnrolled: () => void;
   onReveal: (r: { machine: MachineView; token: string }) => void;
 }) {
@@ -271,7 +290,6 @@ function EnrollCard({
       const res = await withAuthGuard(() => api.createMachine({ name }), logout);
       toast.success(t('machines.enrolledToast'));
       onReveal(res);
-      setName('');
       onEnrolled();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : t('machines.enrollFailed'));
@@ -281,42 +299,41 @@ function EnrollCard({
   }
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <PlusIcon className="size-4" />
-          {t('machines.enrollTitle')}
-        </CardTitle>
-        <CardDescription>
+    <FormDialog
+      open
+      onClose={onClose}
+      title={t('machines.enrollTitle')}
+      description={
+        <>
           {t('machines.enrollDescA')}{' '}
-          <code className="font-mono">
-            hnx enroll --server &lt;url&gt; --token &lt;your-pat&gt;
-          </code>
+          <code className="font-mono">hnx enroll --server &lt;url&gt; --token &lt;your-pat&gt;</code>
           {t('machines.enrollDescB')}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="grid flex-1 gap-2">
-            <Label htmlFor="machine-name">{t('common.name')}</Label>
-            <Input
-              id="machine-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('machines.namePlaceholder')}
-              autoComplete="off"
-              spellCheck={false}
-              required
-            />
-          </div>
-          <div>
-            <Button type="submit" disabled={busy}>
-              {busy ? t('machines.enrolling') : t('machines.enrollButton')}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="machine-name">{t('common.name')}</Label>
+          <Input
+            id="machine-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('machines.namePlaceholder')}
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? t('machines.enrolling') : t('machines.enrollButton')}
+          </Button>
+        </div>
+      </form>
+    </FormDialog>
   );
 }
 
