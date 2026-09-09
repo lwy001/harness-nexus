@@ -175,7 +175,12 @@ export class AcpAgentConnection {
       this.pending.delete(Number(msg.id));
       clearTimeout(pending.timer);
       if (msg.error !== undefined) {
-        pending.reject(new Error(msg.error.message ?? 'ACP request failed'));
+        // Error `data` (e.g. dsh's `details: "no adapter registered for …"`)
+        // rides along — the callers key retry/surface logic off it.
+        const details = (msg.error as { data?: { details?: string } }).data?.details;
+        pending.reject(
+          new Error(`${msg.error.message ?? 'ACP request failed'}${details ? `: ${details}` : ''}`),
+        );
       } else {
         pending.resolve(msg.result);
       }

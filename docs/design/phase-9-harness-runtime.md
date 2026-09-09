@@ -360,16 +360,22 @@ full-width punctuation rules for zh).
     prefilled per Agent card).
   - **Follow-up fix (2026-09-09): the dsh half was rewritten.** The insert
     rows above DOUBLE-REGISTER plugins the composition already mounts and
-    crash `dsh --profile acp` (chat!). The writer now manages the SETTINGS
-    layer instead — a marked region in `~/.dsh/settings.yaml` with the
-    `llm-pi-ai` (provider route) and `agent-default-model` (selection)
-    namespaces; a hand-managed namespace section is refused (duplicate keys
-    brick boot); the legacy patch region is retired by the same apply (an
-    emptied patch normalizes to `[]`). Separately discovered: **dsh's plugin
-    tree needs Node ≥22.15** (zlib zstd + `Promise.withResolvers`) — deepseek
-    jobs on older daemons now carry a result `warning`. Rig verified
-    end-to-end: Node upgraded, config re-applied, `--profile acp` boots,
-    chat session ready.
+    crash `dsh --profile acp` (chat!). The writer now manages THREE slots:
+    (1) a marked region in `~/.dsh/settings.yaml` with the `llm-pi-ai`
+    (provider route) and `agent-default-model` (selection) namespaces — the
+    general default; (2) an id-targeted CONFIG OVERRIDE of the `acp` entry in
+    the home `cordis.patch.yml` — the dsh-acp-app composition PINS
+    `provider: deepseek-official` on the acp plugin itself, and a plugin's
+    explicit config beats the settings default for its sessions, so chat
+    needs the override; (3) `~/.dsh/.env` with the key. A hand-managed
+    namespace section or acp override is refused (no clobbering), the legacy
+    W3 region is retired by the same apply, and `[]`/`{}` placeholder bases
+    are absorbed (appending after them yields two YAML documents — a boot
+    error). Separately discovered: **dsh's plugin tree needs Node ≥22.15**
+    (zlib zstd + `Promise.withResolvers`) — deepseek jobs on older daemons
+    now carry a result `warning`. Rig verified end-to-end: Node upgraded,
+    config re-applied, `--profile acp` boots, chat session ready on our
+    route (the fake rig key surfaces as a visible 401 turn error).
 - **W4 Config viewer — SHIPPED (2026-09).** Implementation notes (deviations
   settled during the build):
   - Protocol: the design's `runtime:config.get` pair, shaped exactly like C3's

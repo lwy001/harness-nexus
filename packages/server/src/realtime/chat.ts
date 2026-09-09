@@ -37,7 +37,7 @@ export interface ChatServiceDeps {
 }
 
 export type ChatOpenResult =
-  | { ok: true; sessionId: string; joined: boolean }
+  | { ok: true; sessionId: string; joined: boolean; phase: 'starting' | 'ready' }
   | {
       ok: false;
       code:
@@ -59,6 +59,9 @@ interface LiveSession {
   phase: 'starting' | 'ready';
   /** Last reported turn state — the server-side SESSION_BUSY gate. */
   busy: boolean;
+  /** Reported agent identity — re-pushed to re-joining viewers. */
+  agentName?: string | undefined;
+  agentVersion?: string | undefined;
   /** Socket of the browser that opened the channel; joined on ready. */
   openerSocketId: string | null;
   readyTimer: NodeJS.Timeout | null;
@@ -111,7 +114,19 @@ export class ChatService {
       if (!existing || existing.ownerId !== ownerId || existing.phase === 'starting') {
         return { ok: false, code: 'SESSION_NOT_FOUND' };
       }
-      return { ok: true, sessionId: existing.sessionId, joined: true };
+      // A re-join may be a page refresh whose listeners were attached after
+      // the original ready push — re-push so every viewer settles.
+      this.deps.io.toChannel(existing.sessionId, 'chat:session.ready', {
+        sessionId: existing.sessionId,
+        ...(existing.agentName !== undefined ? { agentName: existing.agentName } : {}),
+        ...(existing.agentVersion !== undefined ? { agentVersion: existing.agentVersion } : {}),
+      });
+      return {
+        ok: true,
+        sessionId: existing.sessionId,
+        joined: true,
+        phase: existing.phase,
+      };
     }
 
     const agent = await this.deps.uow.agentInstances.findById(agentInstanceId);
@@ -162,7 +177,7 @@ export class ChatService {
       target: agent.target,
       cwd: agent.directory,
     });
-    return { ok: true, sessionId, joined: false };
+    return { ok: true, sessionId, joined: false, phase: 'starting' };
   }
 
   /** Daemon's `chat:session.ready` — spawn+initialize+session/new done (or failed). */
@@ -189,6 +204,8 @@ export class ChatService {
     if (session.readyTimer !== null) clearTimeout(session.readyTimer);
     session.readyTimer = null;
     session.phase = 'ready';
+    session.agentName = evt.agentName;
+    session.agentVersion = evt.agentVersion;
 
     // The opener joined at open(); if they disconnected before the agent came
     // up, nobody is watching — close instead of running an agent subprocess
@@ -314,6 +331,22 @@ export class ChatService {
       if (session.machineId === machineId) {
         await this.closeInternal(session, 'connection-lost', { notifyDaemon: false });
       }
+    }
+  }
+
+  /**
+   * Boot sweep: rows left open by a previous server process can never become
+   * live again (the in-memory map starts empty and v1 has no resume) — close
+   * them so the UI's session list stops offering them as joinable.
+   */
+  async sweepOrphanedSessions(reason = 'server-restarted'): Promise<void> {
+    for (const row of await this.deps.uow.acSessions.listOpen()) {
+      if (this.live.has(row.id)) continue;
+      await this.deps.uow.acSessions.save({
+        ...row,
+        closedAt: new Date().toISOString(),
+        closeReason: reason,
+      });
     }
   }
 

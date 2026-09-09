@@ -202,59 +202,49 @@ const SETTINGS_END = '# END harness-nexus (managed)';
 
 /**
  * Strip a marked block (full-line comment markers) from a document. Returns
- * the remainder with collapsed surrounding blank lines.
+ * the remainder with collapsed surrounding blank lines. A base that is JUST
+ * an empty placeholder (`[]` / `{}`) is treated as empty — appending entries
+ * after it would produce two YAML documents (a boot-time parse error).
  */
 export function stripMarkedBlock(existing: string, begin: string, end: string): string {
   const b = existing.indexOf(begin);
-  if (b === -1) return existing;
-  const e = existing.indexOf(end, b);
-  if (e === -1) return existing;
-  const before = existing.slice(0, b);
-  const after = existing.slice(e + end.length).replace(/^\n+/, '');
-  return `${before.replace(/\s+$/, '')}${before.trim().length > 0 ? '\n\n' : ''}${after}`;
+  let doc = existing;
+  if (b !== -1) {
+    const e = existing.indexOf(end, b);
+    if (e !== -1) {
+      const before = existing.slice(0, b);
+      const after = existing.slice(e + end.length).replace(/^\n+/, '');
+      doc = `${before.replace(/\s+$/, '')}${before.trim().length > 0 ? '\n\n' : ''}${after}`;
+    }
+  }
+  const trimmed = doc.trim();
+  return trimmed === '[]' || trimmed === '{}' ? '' : doc;
 }
 
 /**
- * Manage the dsh SETTINGS layer (`~/.dsh/settings.yaml`, the
- * `dsh-settings-file` document — a mapping of namespace → user section).
+ * Manage the dsh provider route across its THREE native slots:
  *
- * The W3 build inserted `dsh-llm-pi-ai` / `dsh-agent-default-model` as loader
- * entries in the home `cordis.patch.yml`; that DOUBLE-REGISTERS plugins the
- * dsh composition already mounts ("configurable provider amazon-bedrock is
- * already declared" / "service agentDefaultModel has been registered") and
- * crashes `--profile acp`. The sanctioned channel for an already-mounted
- * plugin is its settings section: llm-pi-ai is dormant without one and
- * activates routes the moment `llm-pi-ai.providers` appears; the default
- * model selection layers the same way.
- *
- * A namespace key hand-written OUTSIDE our markers is refused (a duplicate
- * top-level key would fail dsh's loud boot); the legacy W3 patch region is
- * removed as part of the same apply.
+ *  1. `~/.dsh/settings.yaml` (`dsh-settings-file`) — the `llm-pi-ai` namespace
+ *     (the provider route; dormant until a section appears) and
+ *     `agent-default-model` (the default selection). The general channel for
+ *     already-mounted plugins; a hand-managed namespace section is refused
+ *     (duplicate keys brick boot).
+ *  2. `~/.dsh/cordis.patch.yml` — an id-targeted CONFIG OVERRIDE of the `acp`
+ *     entry: the dsh-acp-app composition pins `provider: deepseek-official`
+ *     on the acp plugin itself, and a plugin's explicit config beats the
+ *     settings default for its sessions — without this override CHAT keeps
+ *     hitting the old route. (The W3 build INSERTED duplicate plugins here,
+ *     which double-registered and crashed `--profile acp`; inserts are gone,
+ *     and the same apply retires any legacy region.)
+ *  3. `~/.dsh/.env` — the key under `HARNESS_NEXUS_API_KEY`, dsh's user-env
+ *     credential layer (read on every launch, user shells included).
  */
 function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string): string[] {
   const dir = join(homeDir, '.dsh');
   const files: string[] = [];
-
-  // 1. Retire the W3-era patch region (it crashes the ACP profile).
   const patchPath = join(dir, DSH_PATCH_FILENAME);
-  try {
-    const patch = readFileSync(patchPath, 'utf8');
-    const stripped = stripMarkedBlock(
-      patch,
-      beginMarker(PROVIDER_REGION),
-      endMarker(PROVIDER_REGION),
-    );
-    if (stripped !== patch) {
-      // An EMPTY patch document is itself a boot error — normalize to [].
-      const next = stripped.trim().length === 0 ? '[]\n' : `${stripped.replace(/\s+$/, '')}\n`;
-      writeSecretFile(patchPath, next);
-      files.push(display(homeDir, patchPath));
-    }
-  } catch {
-    // No patch file — nothing to clean up.
-  }
 
-  // 2. The settings document.
+  // 1. The settings document.
   const settingsPath = join(dir, 'settings.yaml');
   let doc = '';
   try {
@@ -292,7 +282,42 @@ function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string
   writeSecretFile(settingsPath, nextDoc);
   files.push(display(homeDir, settingsPath));
 
-  // 3. The key itself — dsh's user-env credential layer.
+  // 3. The ACP app pins its OWN provider in the dsh-acp-app composition
+  //    (`- id: acp … config: {provider: deepseek-official…}`), and a plugin's
+  //    explicit config beats the settings-layer default for its sessions —
+  //    chat would keep hitting the old route. The patch layer's id-targeted
+  //    CONFIG OVERRIDE (its documented purpose) reroutes it; an insert would
+  //    double-register, an override does not.
+  let patchDoc = '';
+  try {
+    patchDoc = readFileSync(patchPath, 'utf8');
+  } catch {
+    patchDoc = '[]\n'; // absent file — a fresh empty entry list
+  }
+  const patchBase = stripMarkedBlock(
+    patchDoc,
+    beginMarker(PROVIDER_REGION),
+    endMarker(PROVIDER_REGION),
+  );
+  if (/^- id: acp$/m.test(patchBase)) {
+    throw new Error(
+      '~/.dsh/cordis.patch.yml already overrides the "acp" entry by hand — hnx will not touch it; ' +
+        'remove that override and re-apply',
+    );
+  }
+  const patchRegion = [
+    `${beginMarker(PROVIDER_REGION)} — rewritten by hnx; keep edits outside the markers`,
+    `- id: acp`,
+    `  config:`,
+    `    provider: harness-nexus`,
+    `    model: ${yq(spec.model)}`,
+    endMarker(PROVIDER_REGION),
+  ].join('\n');
+  const patchNext = `${patchBase.replace(/\s+$/, '')}${patchBase.trim().length > 0 ? '\n\n' : ''}${patchRegion}\n`;
+  writeSecretFile(patchPath, patchNext);
+  files.push(display(homeDir, patchPath));
+
+  // 4. The key itself — dsh's user-env credential layer.
   const envPath = join(dir, '.env');
   let envDoc = '';
   try {

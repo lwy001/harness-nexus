@@ -54,8 +54,15 @@ function runPrompt(id, text) {
   };
   promptIds.add(id);
 
-  if (text.includes('ask-permission')) {
-    const permId = nextId++;
+  if (text.includes('please error')) {
+    // A PROTOCOL error (like claude-code's "Authentication required" on
+    // prompt): the request fails, the process stays alive.
+    promptIds.delete(id);
+    respondError(id, -32000, 'Authentication required');
+    return;
+  }
+
+  if (text.includes('ask-permission')) {    const permId = nextId++;
     const toolCallId = `tool-${randomUUID().slice(0, 8)}`;
     send({
       jsonrpc: '2.0',

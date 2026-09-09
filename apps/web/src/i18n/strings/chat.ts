@@ -38,6 +38,9 @@ const en = {
   errMachineOffline: 'The machine is offline.',
   errDaemonNoChat: "The machine's daemon does not support chat (upgrade hnx).",
   errSessionLimit: 'Too many open chat channels on this machine — close one first.',
+  errSessionGone:
+    'This channel is no longer live (the server or agent restarted) — open a new one.',
+  roleError: 'Error',
   turnBusy: 'A turn is already running',
 };
 
@@ -70,6 +73,8 @@ const zh: typeof en = {
   emptyTitle: '选择机器和代理，然后开启一个会话。',
   emptyHint: '机器上的守护进程会在本地拉起代理。',
   roleYou: '你',
+  errSessionGone: '该通道已不再在线（服务器或 Agent 重启过）—— 请重新打开一个。',
+  roleError: '错误',
   roleAgent: '代理',
   roleThinking: '思考中',
   permissionAsk: '代理请求权限',

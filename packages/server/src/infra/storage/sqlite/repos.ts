@@ -1008,6 +1008,12 @@ export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
         .all(agentInstanceId) as AcSessionRow[];
       return rows.map(mapAcSession);
     },
+    async listOpen() {
+      const rows = db
+        .prepare('SELECT * FROM ac_sessions WHERE closed_at IS NULL')
+        .all() as AcSessionRow[];
+      return rows.map(mapAcSession);
+    },
     async listOpenByMachine(machineId) {
       const rows = db
         .prepare('SELECT * FROM ac_sessions WHERE machine_id = ? AND closed_at IS NULL')

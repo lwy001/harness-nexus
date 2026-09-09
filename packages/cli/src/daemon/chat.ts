@@ -45,6 +45,24 @@ export interface ChatHandlersOptions {
   spawnEnv?: NodeJS.ProcessEnv;
 }
 
+/**
+ * `session/new` with a retry for the agent-startup registration race (see the
+ * call site): a rejection mentioning "no adapter registered" is retried with a
+ * short backoff — the adapter finishes registering moments later.
+ */
+async function newSession(conn: AcpAgentConnection, cwd: string, attempt = 1): Promise<unknown> {
+  try {
+    return await conn.request('session/new', { cwd, mcpServers: [] }, 20000);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (attempt < 4 && /no adapter registered/i.test(msg)) {
+      await new Promise((r) => setTimeout(r, 600 * attempt));
+      return newSession(conn, cwd, attempt + 1);
+    }
+    throw e;
+  }
+}
+
 export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {}): void {
   const env = opts.env ?? process.env;
   const sessions = new Map<string, DaemonSession>();
@@ -89,9 +107,11 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         // @zed-industries/claude-agent-acp zod-validates session/new and
         // rejects an absent field with `Invalid params` — adapters are pulled
         // latest by `npx -y`, so the client must be maximally spec-shaped.
-        const created = (await conn.request('session/new', { cwd, mcpServers: [] }, 20000)) as {
-          sessionId?: string;
-        };
+        // Startup race (seen on real dsh 0.1.2-rc.1): a session/new fired the
+        // instant initialize resolves can beat the agent's model-adapter
+        // REGISTRATION ("-32603 no adapter registered for provider …").
+        // Retry that specific failure a few times before giving up.
+        const created = (await newSession(conn, cwd)) as { sessionId?: string };
         const session: DaemonSession = {
           sessionId,
           acpSessionId: created?.sessionId ?? sessionId,
@@ -138,7 +158,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       return;
     }
     ack?.({ accepted: true });
-    void runPrompt(session, parsed.data.prompt, emitEvent, teardown);
+    void runPrompt(session, parsed.data.prompt, emitEvent);
   });
 
   socket.on('chat:turn.cancel', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -245,7 +265,6 @@ async function runPrompt(
   session: DaemonSession,
   prompt: PromptBlock[],
   emitEvent: (sessionId: string, event: ChatStreamEvent) => void,
-  teardown: (session: DaemonSession, reason: string) => void,
 ): Promise<void> {
   session.busy = true;
   emitEvent(session.sessionId, { kind: 'session_status', state: 'active' });
@@ -264,15 +283,16 @@ async function runPrompt(
       : 'end_turn';
     emitEvent(session.sessionId, { kind: 'turn_result', stopReason });
   } catch (e) {
+    // A rejected prompt is a TURN error (adapters answer protocol failures —
+    // "Authentication required", upstream API errors — through JSON-RPC
+    // errors while staying alive), not a dead subprocess. Real process death
+    // is conn.onExit's job. Surface the error, end the turn, keep the channel.
     emitEvent(session.sessionId, {
       kind: 'raw',
       method: 'hnx/prompt-error',
       params: { message: e instanceof Error ? e.message : String(e) },
     });
     emitEvent(session.sessionId, { kind: 'turn_result', stopReason: 'end_turn' });
-    // The subprocess is unusable — end the channel honestly.
-    teardown(session, 'agent-exited');
-    return;
   } finally {
     session.busy = false;
     emitEvent(session.sessionId, { kind: 'session_status', state: 'idle' });

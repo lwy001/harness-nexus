@@ -32,11 +32,11 @@ const openSession = async (
   sock: Socket,
   agentInstanceId: string,
   sessionId?: string,
-): Promise<{ sessionId?: string; error?: string }> =>
+): Promise<{ sessionId?: string; phase?: 'starting' | 'ready'; error?: string }> =>
   (await emitAck(sock, 'chat:session.open', {
     agentInstanceId,
     ...(sessionId !== undefined ? { sessionId } : {}),
-  })) as { sessionId?: string; error?: string };
+  })) as { sessionId?: string; phase?: 'starting' | 'ready'; error?: string };
 
 /** Daemon-side ready reply for a start event. */
 const readyFor = (sock: Socket, start: { sessionId: string }): void => {
@@ -181,6 +181,57 @@ describe('gating', () => {
     });
     expect(rest.statusCode).toBe(404);
     other.close();
+  });
+});
+
+describe('rejoin + boot orphan sweep', () => {
+  it('fresh open acks phase starting; a rejoin acks ready AND re-pushes ready', async () => {
+    // Local socket — the lifecycle suite below reuses the gating suite's
+    // shared `daemon`; closing it here would starve them.
+    const d = await connectDaemon(['chat']);
+    const startPromise = new Promise<{ sessionId: string }>((resolve) => {
+      d.on('chat:session.start', (p: { sessionId: string }) => resolve(p));
+    });
+    const fresh = await openSession(browser, agentId);
+    const start = await startPromise;
+    expect(fresh.sessionId).toBe(start.sessionId);
+    expect(fresh.phase).toBe('starting');
+
+    readyFor(d, start);
+    await once(browser, 'chat:session.ready');
+
+    // Rejoin: ack says ready, and the ready push is re-delivered to the room.
+    const gotPush = once(browser, 'chat:session.ready');
+    const rejoin = await openSession(browser, agentId, start.sessionId);
+    expect(rejoin.sessionId).toBe(start.sessionId);
+    expect(rejoin.phase).toBe('ready');
+    await gotPush;
+
+    await emitAck(d, 'chat:session.closed', {
+      sessionId: start.sessionId,
+      reason: 'user',
+    });
+    await once(browser, 'chat:session.closed');
+    d.close();
+  }, 15000);
+
+  it('sweepOrphanedSessions closes rows a previous server process left open', async () => {
+    const now = new Date().toISOString();
+    await app.uow.acSessions.save({
+      id: 'orphan-1',
+      agentInstanceId: agentId,
+      machineId,
+      ownerId: (await app.uow.users.findByUsername('chatter'))!.id,
+      openedAt: now,
+      closedAt: null,
+      closeReason: null,
+    });
+    expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).toContain('orphan-1');
+    await app.realtime.chat.sweepOrphanedSessions();
+    const row = await app.uow.acSessions.findById('orphan-1');
+    expect(row?.closedAt).not.toBeNull();
+    expect(row?.closeReason).toBe('server-restarted');
+    expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).not.toContain('orphan-1');
   });
 });
 
