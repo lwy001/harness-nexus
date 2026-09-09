@@ -304,13 +304,40 @@ export const acpLocationSchema = z.object({
   lineEnd: z.number().int().min(0).optional(),
 });
 
-/** Bounded view of an ACP ToolCallUpdate — enough for tool rows and permission cards. */
+/**
+ * Bounded view of an ACP ToolCallContent item — the structured arm
+ * (`diff` for Edit/Write, `content` for Read-style text, `terminal`) the
+ * rich tool cards (9 W6) prefer over raw output text.
+ */
+export const acpToolContentItemSchema = z.object({
+  type: z.enum(['content', 'diff', 'terminal']),
+  content: z
+    .object({ type: z.string().max(64), text: z.string().max(100000).optional() })
+    .optional(),
+  path: z.string().max(1024).optional(),
+  oldText: z.string().max(100000).nullable().optional(),
+  newText: z.string().max(100000).optional(),
+  terminalId: z.string().max(128).optional(),
+});
+
+/**
+ * Bounded view of an ACP ToolCallUpdate — enough for tool rows, permission
+ * cards, and (9 W6) the rich per-tool rendering: registry key (`toolName`,
+ * from the update itself or `_meta.claudeCode.toolName`), raw arguments,
+ * structured content, and the raw output text.
+ */
 export const acpToolCallViewSchema = z.object({
   toolCallId: z.string().min(1).max(128),
   title: z.string().max(512).optional(),
+  toolName: z.string().min(1).max(128).optional(),
   kind: acpToolKindSchema.optional(),
   status: acpToolStatusSchema.optional(),
   locations: z.array(acpLocationSchema).max(16).optional(),
+  /** Raw tool arguments (the daemon drops oversized Write-style payloads). */
+  rawInput: z.record(z.string().max(128), z.unknown()).optional(),
+  content: z.array(acpToolContentItemSchema).max(16).optional(),
+  /** `rawOutput` text, capped. */
+  output: z.string().max(100000).optional(),
 });
 
 /** ACP permission option — `optionId` is passed through VERBATIM in both directions. */
@@ -375,6 +402,12 @@ export const chatStreamEventEnvelopeSchema = z.object({
 export const chatSessionOpenRequestSchema = z.object({
   agentInstanceId: z.string().min(1).max(64),
   sessionId: z.string().min(1).max(64).optional(),
+  /**
+   * Phase 9 W6 — the project working directory for the new session: a
+   * subdirectory of the machine's baseWorkspace (validated server-side;
+   * absent = the legacy default, the agent's install directory).
+   */
+  directory: z.string().min(1).max(1024).optional(),
 });
 
 /** server → daemon: spawn the agent subprocess for this channel. `cwd` defaults to the agent home. */
@@ -445,6 +478,10 @@ export const acSessionViewSchema = z.object({
   openedAt: z.string().datetime(),
   closedAt: z.string().datetime().nullable(),
   closeReason: z.string().nullable(),
+  /** Phase 9 W6 — the session's working directory (project grouping). */
+  cwd: z.string().nullable(),
+  /** Phase 9 W6 — derived once from the first prompt; null until then. */
+  title: z.string().nullable(),
 });
 
 /** server → browser lifecycle pushes (typed for the web client; server-constructed). */
@@ -486,6 +523,7 @@ export type InventoryUpdatedEvent = z.infer<typeof inventoryUpdatedEventSchema>;
 export type AcpToolKind = z.infer<typeof acpToolKindSchema>;
 export type AcpToolStatus = z.infer<typeof acpToolStatusSchema>;
 export type AcpToolCallView = z.infer<typeof acpToolCallViewSchema>;
+export type AcpToolContentItem = z.infer<typeof acpToolContentItemSchema>;
 export type AcpPermissionOption = z.infer<typeof acpPermissionOptionSchema>;
 export type PromptBlock = z.infer<typeof promptBlockSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;

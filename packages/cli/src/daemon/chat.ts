@@ -238,6 +238,7 @@ function wireSession(
     if (mapped !== null) emitEvent(session.sessionId, mapped);
   });
 
+
   conn.setPermissionHandler((jsonrpcId, params) => {
     const requestId = randomUUID();
     const timer = setTimeout(() => {
@@ -312,8 +313,19 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
     case 'agent_thought_chunk':
       return { kind: 'thought_delta', delta: textOf(update.contentBlock) };
     case 'tool_call':
-    case 'tool_call_update':
-      return { kind: 'tool_call', call: toolCallView(update.toolCallUpdate) };
+    case 'tool_call_update': {
+      // Claude adapters ride the registry key on the envelope's `_meta`.
+      const meta = (params._meta ?? null) as UnknownRecord | null;
+      const cc =
+        meta !== null && meta.claudeCode !== null && typeof meta.claudeCode === 'object'
+          ? (meta.claudeCode as UnknownRecord)
+          : null;
+      const metaToolName =
+        cc !== null && typeof cc.toolName === 'string' && cc.toolName !== ''
+          ? cc.toolName
+          : undefined;
+      return { kind: 'tool_call', call: toolCallView(update.toolCallUpdate, metaToolName) };
+    }
     case 'usage_update': {
       const usage = (update.usage ?? {}) as UnknownRecord;
       return {
@@ -354,12 +366,127 @@ export function textOf(contentBlock: unknown): string {
  * Defensive view of an ACP ToolCallUpdate: shared-schema-validated, falling
  * back to the bare id when an adapter sends something malformed (the server
  * re-validates everything crossing the wire).
+ *
+ * 9 W6 enrichment: carries `toolName` (the card registry key — from the
+ * update itself or the Claude `_meta.claudeCode.toolName` on the envelope),
+ * `rawInput` (dropped when oversized — Write-style file bodies), structured
+ * `content` (diff/text/terminal items), and the `rawOutput` text — the rich
+ * tool cards' rendering inputs.
  */
-export function toolCallView(toolCallUpdate: unknown): AcpToolCallView {
-  const parsed = acpToolCallViewSchema.safeParse(toolCallUpdate);
-  if (parsed.success) return parsed.data;
+export function toolCallView(toolCallUpdate: unknown, metaToolName?: string): AcpToolCallView {
   const t = (toolCallUpdate ?? {}) as UnknownRecord;
+  const parsed = acpToolCallViewSchema.safeParse(buildView(t, metaToolName));
+  if (parsed.success) return parsed.data;
   return { toolCallId: String(t.toolCallId ?? 'unknown') };
+}
+
+const TOOL_KINDS = new Set([
+  'read',
+  'edit',
+  'delete',
+  'move',
+  'search',
+  'execute',
+  'think',
+  'fetch',
+  'switch_mode',
+  'other',
+]);
+
+/** Spec form is the short kind; some adapters send `readTool`-style variants. */
+function normalizeKind(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  const k = raw.toLowerCase().replace(/tool$/, '');
+  return TOOL_KINDS.has(k) ? k : undefined;
+}
+
+const TOOL_STATUSES = new Set(['pending', 'in_progress', 'completed', 'failed']);
+
+function boundedString(raw: unknown, max: number): string | undefined {
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  return raw.length <= max ? raw : raw.slice(0, max);
+}
+
+const RAW_INPUT_MAX = 32 * 1024;
+
+/** Field-by-field extraction with every bound enforced before the parse. */
+function buildView(t: UnknownRecord, metaToolName: string | undefined): UnknownRecord {
+  const toolName =
+    typeof t.toolName === 'string' && t.toolName !== ''
+      ? t.toolName
+      : typeof metaToolName === 'string' && metaToolName !== ''
+        ? metaToolName
+        : undefined;
+
+  let rawInput: Record<string, unknown> | undefined;
+  if (
+    t.rawInput !== null &&
+    typeof t.rawInput === 'object' &&
+    !Array.isArray(t.rawInput)
+  ) {
+    const entries = Object.entries(t.rawInput as Record<string, unknown>).filter(
+      ([key]) => key.length <= 128,
+    );
+    try {
+      if (JSON.stringify(Object.fromEntries(entries))!.length <= RAW_INPUT_MAX) {
+        rawInput = Object.fromEntries(entries);
+      }
+    } catch {
+      rawInput = undefined; // unserializable values — drop rather than fail
+    }
+  }
+
+  let content: unknown[] | undefined;
+  if (Array.isArray(t.content)) {
+    content = t.content
+      .filter((c): c is UnknownRecord => c !== null && typeof c === 'object')
+      .slice(0, 16)
+      .map((c) => ({
+        type: c.type,
+        ...(c.content !== null && typeof c.content === 'object' && !Array.isArray(c.content)
+          ? {
+              content: {
+                type: String((c.content as UnknownRecord).type ?? ''),
+                ...('text' in (c.content as UnknownRecord)
+                  ? { text: boundedString((c.content as UnknownRecord).text, 100000) }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(typeof c.path === 'string' ? { path: boundedString(c.path, 1024) } : {}),
+        ...(typeof c.oldText === 'string' ? { oldText: boundedString(c.oldText, 100000) } : {}),
+        ...(typeof c.newText === 'string' ? { newText: boundedString(c.newText, 100000) } : {}),
+        ...(typeof c.terminalId === 'string'
+          ? { terminalId: boundedString(c.terminalId, 128) }
+          : {}),
+      }));
+  }
+
+  const locations = Array.isArray(t.locations)
+    ? t.locations
+        .filter((l): l is UnknownRecord => l !== null && typeof l === 'object')
+        .slice(0, 16)
+        .map((l) => ({
+          path: String(l.path ?? ''),
+          ...(typeof l.line === 'number' ? { line: l.line } : {}),
+          ...(typeof l.lineEnd === 'number' ? { lineEnd: l.lineEnd } : {}),
+        }))
+        .filter((l) => l.path !== '')
+    : undefined;
+
+  return {
+    toolCallId: String(t.toolCallId ?? ''),
+    ...(typeof t.title === 'string' && t.title !== '' ? { title: boundedString(t.title, 512) } : {}),
+    ...(toolName !== undefined ? { toolName: boundedString(toolName, 128) } : {}),
+    ...(normalizeKind(t.kind) !== undefined ? { kind: normalizeKind(t.kind) } : {}),
+    ...(typeof t.status === 'string' && TOOL_STATUSES.has(t.status) ? { status: t.status } : {}),
+    ...(locations !== undefined && locations.length > 0 ? { locations } : {}),
+    ...(rawInput !== undefined ? { rawInput } : {}),
+    ...(content !== undefined ? { content } : {}),
+    ...(typeof t.rawOutput === 'string' && t.rawOutput !== ''
+      ? { output: boundedString(t.rawOutput, 100000) }
+      : {}),
+  };
 }
 
 /** Permission options, shared-schema-validated; malformed entries dropped. */

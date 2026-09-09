@@ -1,3 +1,4 @@
+import { resolve as resolvePath } from 'node:path';
 import type { AcSession, UnitOfWork } from '@harness-nexus/core';
 import type { ChatStreamEvent, PromptBlock } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
@@ -46,7 +47,9 @@ export type ChatOpenResult =
         | 'REMOTE_CHAT_DISABLED'
         | 'MACHINE_OFFLINE'
         | 'DAEMON_NO_CHAT'
-        | 'SESSION_LIMIT_REACHED';
+        | 'SESSION_LIMIT_REACHED'
+        | 'WORKSPACE_NOT_SET'
+        | 'WORKSPACE_INVALID';
     };
 
 export type ChatSimpleResult = { ok: true } | { ok: false; code: string };
@@ -66,6 +69,8 @@ interface LiveSession {
   openerSocketId: string | null;
   readyTimer: NodeJS.Timeout | null;
   permissionTimers: Map<string, NodeJS.Timeout>;
+  /** 9 W6 — title already derived for this channel (write-once). */
+  titleSettled: boolean;
 }
 
 export class ChatService {
@@ -102,12 +107,17 @@ export class ChatService {
    * `chat:session.open`. Without `sessionId`: create a channel (gating order is
    * normative — see the design doc). With an open `sessionId`: idempotent
    * re-join (page refresh) — returns the same id, spawns nothing.
+   *
+   * `directory` (9 W6) picks the session's project working directory: it must
+   * be the machine's baseWorkspace or a subdirectory of it (resolved path
+   * prefix check). Absent = the legacy default (the agent's install dir).
    */
   async open(
     ownerId: string,
     agentInstanceId: string,
     rejoinSessionId: string | undefined,
     openerSocketId: string,
+    directory: string | undefined,
   ): Promise<ChatOpenResult> {
     if (rejoinSessionId !== undefined) {
       const existing = this.live.get(rejoinSessionId);
@@ -133,6 +143,16 @@ export class ChatService {
     if (!agent || agent.ownerId !== ownerId) return { ok: false, code: 'AGENT_INSTANCE_NOT_FOUND' };
     const machine = await this.deps.uow.machines.findById(agent.machineId);
     if (!machine) return { ok: false, code: 'AGENT_INSTANCE_NOT_FOUND' };
+    let cwd = agent.directory;
+    if (directory !== undefined) {
+      if (machine.baseWorkspace === null) return { ok: false, code: 'WORKSPACE_NOT_SET' };
+      const root = resolvePath(machine.baseWorkspace);
+      const wanted = resolvePath(directory);
+      if (wanted !== root && !wanted.startsWith(root + '/')) {
+        return { ok: false, code: 'WORKSPACE_INVALID' };
+      }
+      cwd = wanted;
+    }
     if (!machine.remoteChatEnabled) return { ok: false, code: 'REMOTE_CHAT_DISABLED' };
     if (!this.deps.isOnline(machine.id)) return { ok: false, code: 'MACHINE_OFFLINE' };
     if (!machine.capabilities.includes('chat')) return { ok: false, code: 'DAEMON_NO_CHAT' };
@@ -151,6 +171,8 @@ export class ChatService {
       openedAt: now,
       closedAt: null,
       closeReason: null,
+      cwd,
+      title: null,
     });
     // Join the opener NOW: spawn-failed / spawn-timeout notifications must
     // reach the browser even though the agent never came up.
@@ -165,6 +187,7 @@ export class ChatService {
       openerSocketId,
       readyTimer: null,
       permissionTimers: new Map(),
+      titleSettled: false,
     };
     session.readyTimer = setTimeout(() => {
       void this.closeInternal(session, 'spawn-timeout', { notifyDaemon: true, failed: true });
@@ -175,7 +198,7 @@ export class ChatService {
       sessionId,
       agentInstanceId: agent.id,
       target: agent.target,
-      cwd: agent.directory,
+      cwd,
     });
     return { ok: true, sessionId, joined: false, phase: 'starting' };
   }
@@ -263,7 +286,28 @@ export class ChatService {
     if (session.busy) return { ok: false, code: 'SESSION_BUSY' };
     const prompt = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     this.deps.io.toCtl(session.machineId, 'chat:message.send', { sessionId, prompt });
+    // 9 W6 — the session list's display title comes from the first prompt
+    // (write-once, best-effort: never blocks the prompt path).
+    if (!session.titleSettled) {
+      session.titleSettled = true;
+      const firstText = prompt.find((b): b is { type: 'text'; text: string } => b.type === 'text');
+      if (firstText !== undefined) void this.deriveTitle(sessionId, firstText.text);
+    }
     return { ok: true };
+  }
+
+  /** Persist the derived display title (first line, collapsed, ≤80 chars). */
+  private async deriveTitle(sessionId: string, text: string): Promise<void> {
+    const firstLine = text.split('\n')[0] ?? '';
+    const collapsed = firstLine.trim().replace(/\s+/g, ' ').slice(0, 80);
+    if (collapsed === '') return;
+    try {
+      const row = await this.deps.uow.acSessions.findById(sessionId);
+      if (!row || row.title !== null) return;
+      await this.deps.uow.acSessions.save({ ...row, title: collapsed });
+    } catch {
+      // Best-effort display field — a failed write leaves the row untitled.
+    }
   }
 
   /** Browser's `chat:turn.cancel` — idempotent; the daemon resolves the turn as cancelled. */

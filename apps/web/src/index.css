@@ -228,3 +228,96 @@
     scroll-margin-top: 5rem;
   }
 }
+
+/* ---- chat markdown + code highlight (Phase 9 W6) ----
+ * A hand-rolled highlight.js palette derived from the semantic tokens (no
+ * stock theme import — light AND dark stay on-system). Code renders in IBM
+ * Plex Mono via --font-mono.
+ */
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body p {
+  margin: 0.5em 0;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+.markdown-body li {
+  margin: 0.15em 0;
+}
+.markdown-body blockquote {
+  border-left: 2px solid var(--border);
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  color: var(--muted-foreground);
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.85em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.6em;
+  text-align: left;
+}
+.markdown-body pre code,
+.markdown-body code.hljs {
+  font-family: var(--font-mono);
+  background: transparent;
+  padding: 0;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-meta {
+  color: hsl(from var(--signal) h s calc(l - 8));
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--ok);
+}
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-symbol {
+  color: var(--warn);
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name {
+  color: var(--chart-3);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-title.class_ {
+  color: var(--chart-2);
+}
+.hljs-deletion {
+  color: var(--danger);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}

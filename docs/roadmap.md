@@ -293,7 +293,7 @@ Cross-cutting (not a numbered phase):
   `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish`.
 - Release procedure: bump the five manifests → push → run the workflow.
 
-## Phase 9 — Harness runtime lifecycle 🚧 W1 shipped (2026-09)
+## Phase 9 — Harness runtime lifecycle 🚧 W1–W6 shipped (2026-09)
 
 Manage the **harness software itself** on machines — presence, version,
 install/upgrade, and the LLM provider/model configuration it runs with — the
@@ -337,5 +337,21 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     round-trip, `runtime-config-view` capability gate); right-side Drawer in
     MachineDetail. "Re-scan after apply" dropped as a no-op (config files
     aren't scanned artifacts — the View button is the fresh read).
+  - **W5 Modal containers — SHIPPED (2026-09)** — the shared `FormDialog`
+    shell; every create flow (Profiles/Credentials/Mcp/Machines/Users,
+    Resources re-shelled) opens in a modal instead of an inline Card. Also
+    fixed the dev-only vite proxy swallowing `/mcp-servers`. Design:
+    `docs/design/phase-9-portal-ui.md` §W5.
+  - **W6 Portal chat — SHIPPED (2026-09)** — chat rebuilt as Agent cards →
+    session page (`/chat/agents/:id`): left session list grouped by
+    `AcSession.cwd`, right the portal-reference row stream (assistant steps,
+    lifecycle tool rows, disclosure cards with Read/Diff/Terminal/Search/Io
+    bodies, markdown + code highlight, turn tails, stick-to-bottom scroll).
+    New sessions pick a subdirectory of the machine's `baseWorkspace`
+    (migration `0013`; daemon-routed `workspace:list` picker; `directory` on
+    `chat:session.open`); `AcSession.title` derives from the first prompt;
+    the `acpToolCallView` wire carries toolName/rawInput/content/output.
+    Research: `docs/research/phase-9-portal-chat-ui.md` · Design:
+    `docs/design/phase-9-portal-ui.md` §W6.
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies.

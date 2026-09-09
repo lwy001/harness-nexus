@@ -16,4 +16,15 @@ export interface AcSession {
   closedAt: string | null;
   /** user | spawn-failed | spawn-timeout | connection-lost | machine-deleted | agent-exited | server-shutdown */
   closeReason: string | null;
+  /**
+   * Phase 9 W6 — the session's working directory (the subdirectory of the
+   * machine's base workspace picked at open). Null only on pre-W6 rows;
+   * drives the session list's project grouping.
+   */
+  cwd: string | null;
+  /**
+   * Phase 9 W6 — derived once from the FIRST prompt (first line, collapsed,
+   * ≤80 chars) for the session list. Null until the first prompt lands.
+   */
+  title: string | null;
 }

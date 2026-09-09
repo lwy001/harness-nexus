@@ -627,6 +627,7 @@ interface MachineRow {
   daemon_version: string | null;
   capabilities: string;
   remote_chat_enabled: number;
+  base_workspace: string | null;
   enrollment_pat_id: string;
   enrolled_at: string;
   last_seen_at: string | null;
@@ -643,6 +644,7 @@ function mapMachine(row: MachineRow): Machine {
     daemonVersion: row.daemon_version,
     capabilities: JSON.parse(row.capabilities) as string[],
     remoteChatEnabled: row.remote_chat_enabled === 1,
+    baseWorkspace: row.base_workspace,
     enrollmentPatId: row.enrollment_pat_id,
     enrolledAt: row.enrolled_at,
     lastSeenAt: row.last_seen_at,
@@ -678,9 +680,9 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
       db.prepare(
         `INSERT INTO machines
            (id, owner_id, name, hostname, os, arch, daemon_version, capabilities,
-            remote_chat_enabled, enrollment_pat_id, enrolled_at, last_seen_at)
+            remote_chat_enabled, base_workspace, enrollment_pat_id, enrolled_at, last_seen_at)
          VALUES (@id, @owner_id, @name, @hostname, @os, @arch, @daemon_version, @capabilities,
-                 @remote_chat_enabled, @enrollment_pat_id, @enrolled_at, @last_seen_at)
+                 @remote_chat_enabled, @base_workspace, @enrollment_pat_id, @enrolled_at, @last_seen_at)
          ON CONFLICT(id) DO UPDATE SET
            name                = excluded.name,
            hostname            = excluded.hostname,
@@ -689,6 +691,7 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
            daemon_version      = excluded.daemon_version,
            capabilities        = excluded.capabilities,
            remote_chat_enabled = excluded.remote_chat_enabled,
+           base_workspace      = excluded.base_workspace,
            last_seen_at        = excluded.last_seen_at`,
       ).run({
         id: machine.id,
@@ -700,6 +703,7 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
         daemon_version: machine.daemonVersion,
         capabilities: JSON.stringify(machine.capabilities),
         remote_chat_enabled: machine.remoteChatEnabled ? 1 : 0,
+        base_workspace: machine.baseWorkspace,
         enrollment_pat_id: machine.enrollmentPatId,
         enrolled_at: machine.enrolledAt,
         last_seen_at: machine.lastSeenAt,
@@ -979,6 +983,8 @@ interface AcSessionRow {
   opened_at: string;
   closed_at: string | null;
   close_reason: string | null;
+  cwd: string | null;
+  title: string | null;
 }
 
 function mapAcSession(row: AcSessionRow): AcSession {
@@ -990,6 +996,8 @@ function mapAcSession(row: AcSessionRow): AcSession {
     openedAt: row.opened_at,
     closedAt: row.closed_at,
     closeReason: row.close_reason,
+    cwd: row.cwd,
+    title: row.title,
   };
 }
 
@@ -1023,11 +1031,13 @@ export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
     async save(session) {
       db.prepare(
         `INSERT INTO ac_sessions
-           (id, agent_instance_id, machine_id, owner_id, opened_at, closed_at, close_reason)
-         VALUES (@id, @agent_instance_id, @machine_id, @owner_id, @opened_at, @closed_at, @close_reason)
+           (id, agent_instance_id, machine_id, owner_id, opened_at, closed_at, close_reason, cwd, title)
+         VALUES (@id, @agent_instance_id, @machine_id, @owner_id, @opened_at, @closed_at, @close_reason, @cwd, @title)
          ON CONFLICT(id) DO UPDATE SET
            closed_at    = excluded.closed_at,
-           close_reason = excluded.close_reason`,
+           close_reason = excluded.close_reason,
+           cwd          = excluded.cwd,
+           title        = excluded.title`,
       ).run({
         id: session.id,
         agent_instance_id: session.agentInstanceId,
@@ -1036,6 +1046,8 @@ export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
         opened_at: session.openedAt,
         closed_at: session.closedAt,
         close_reason: session.closeReason,
+        cwd: session.cwd,
+        title: session.title,
       });
       return session;
     },

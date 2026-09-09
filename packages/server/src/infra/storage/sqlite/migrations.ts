@@ -293,6 +293,19 @@ CREATE TABLE IF NOT EXISTS runtime_configs (
 );
     `,
   },
+  {
+    version: 13,
+    description:
+      'phase 9 W6 — machine base workspace + chat session cwd/title (portal chat)',
+    sql: `
+-- root under which chat sessions may pick their project cwd
+ALTER TABLE machines ADD COLUMN base_workspace TEXT;
+
+-- session working directory (project grouping) + derived display title
+ALTER TABLE ac_sessions ADD COLUMN cwd TEXT;
+ALTER TABLE ac_sessions ADD COLUMN title TEXT;
+    `,
+  },
 ] as const;
 
 /**

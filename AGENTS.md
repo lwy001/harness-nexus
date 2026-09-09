@@ -724,6 +724,69 @@ Extends the section above. Full design in `docs/design/phase-9-harness-runtime.m
   masked-count note. Strings in `strings/machineDetail.ts` (en/zh).
 - Daemon `0.8.0-p9w4` advertises `runtime-config-view` alongside the W3 set.
 
+## Modal containers & portal chat (Phase 9 W5+W6)
+
+Full design in `docs/design/phase-9-portal-ui.md`; portal rendering study in
+`docs/research/phase-9-portal-chat-ui.md` (the `~/acp-ref/portal/` half of the
+C5 reference — the session list IS cwd-grouped there, which this wave ports).
+Summary for daily work:
+
+- **W5 — every create/edit flow opens in a modal, never an inline Card below
+  the list.** One shared shell, `components/ui/form-dialog.tsx` (Dialog
+  wrapper; sizes `sm|md|lg|xl`; scrollable content; optional footer).
+  Converted: Resources (ResourceEditor re-shelled), Profiles, Credentials,
+  McpManagement (incl. `ImportJsonDialog` rebuilt on the shared wrapper —
+  the raw radix import is GONE), Machines (enroll), Users. Create-only flows
+  stay create-only; pages own the `creating`/`editing` open flag and render
+  the form component conditionally (Resources is the reference pattern).
+- **W6 — chat is Agent cards → session page.** `/chat` renders one card per
+  AgentInstance grouped by machine (blocked states ON the card, not hidden);
+  `/chat/agents/:agentId` is the session page (`AppShell variant="full"` —
+  viewport-locked, no max-width/padding): LEFT the session list **grouped by
+  `AcSession.cwd`** (group = basename + full-path tooltip, groups by newest
+  session, rows show `title ?? untitled` + relative time; open rows
+  clickable, closed rows muted — **no transcript replay in v1, never faked**),
+  RIGHT the portal-style row stream + composer.
+- **New sessions pick a directory first.** `Machine.baseWorkspace` (nullable,
+  migration `0013`) is the root; `GET /api/machines/:id/workspace?path=`
+  lists ONE level of subdirectories through the daemon (`workspace:list`
+  over `/ctl`, `WorkspaceCoordinator` waiters, capability `workspace`;
+  server-side resolve+prefix containment, hidden `.*` skipped, symlinks
+  excluded, ≤512). Picker = `components/chat/dir-picker.tsx` (lazy tree;
+  offers the owner an inline set-base-workspace form when unset; first click
+  on a collapsed folder EXPANDS, second SELECTS). `chat:session.open` accepts
+  `directory` → validated (`WORKSPACE_NOT_SET` / `WORKSPACE_INVALID`) before
+  the gates, stored as the row's `cwd`, and passed as `chatSessionStart.cwd`.
+  `AcSession.title` derives ONCE from the first prompt (first line,
+  collapsed, ≤80 chars) in `ChatService.onMessageSend`.
+- **Rich tool cards need the enriched wire**: `acpToolCallView` carries
+  `toolName` (from the update or `_meta.claudeCode.toolName`), `rawInput`
+  (dropped past 32 KiB), structured `content` (diff/content/terminal), and
+  `output` (rawOutput, ≤100k). Daemon-side normalization lives in
+  `cli/src/daemon/chat.ts` (`toolCallView`/`buildView`): `readTool`-style
+  kinds fold to spec short forms, unknown statuses are dropped
+  field-by-field (never a whole-view fallback). Permission cards get the
+  arguments preview for free.
+- **The stream is a row sequence, not bubbles** (`components/chat/fold.ts`,
+  ported from the reference): user rows, assistant STEPS (split by tool
+  calls; streaming caret on the live last block; interrupted marker), tool
+  rows with lifecycle (upsert by callId), system notes, turn tails
+  (duration · tokens · cancelled). Rendering: `chat-stream.tsx`
+  (stick-to-bottom + ResizeObserver + jump button), `markdown-text.tsx`
+  (react-markdown + remark-gfm + rehype-highlight; hljs palette hand-rolled
+  from Signal tokens in `index.css`, light+dark), disclosure tool cards with
+  a three-tier registry (`toolName` → ACP kind → generic IN/OUT card) behind
+  an error boundary, and the Block family (`blocks.tsx`: Read/Diff/Terminal/
+  Search/Io/Todo, 8-line head-tail caps, copy buttons). Permissions stay a
+  separate slice rendered inline from payload options.
+- New web deps: `react-markdown`, `remark-gfm`, `rehype-highlight`
+  (self-hosted, no CDN). Old `pages/Chat.tsx` machine/agent selector UI is
+  REPLACED (the page is now the cards grid); `pages/AgentSession.tsx` is the
+  session page; MachineDetail's Chat link goes straight to
+  `/chat/agents/:id`, and its header carries the base-workspace field.
+- Daemon `0.9.0-p9w6` advertises `workspace` alongside the W4 set. The
+  fixture agent gained a `show-tools` arm for card fixtures.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:

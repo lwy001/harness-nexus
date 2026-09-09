@@ -90,6 +90,93 @@ describe('mapAcpUpdate', () => {
   });
 });
 
+describe('toolCallView enrichment (9 W6)', () => {
+  const map = (update: Record<string, unknown>): ChatStreamEvent | null => mapAcpUpdate({ update });
+
+  it('carries toolName from the Claude _meta envelope', () => {
+    const ev = mapAcpUpdate({
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallUpdate: { toolCallId: 't1', title: 'src/app.ts', status: 'in_progress' },
+      },
+      _meta: { claudeCode: { toolName: 'Edit' } },
+    });
+    expect(ev).toEqual({
+      kind: 'tool_call',
+      call: {
+        toolCallId: 't1',
+        title: 'src/app.ts',
+        toolName: 'Edit',
+        status: 'in_progress',
+      },
+    });
+  });
+
+  it('normalizes readTool-style kinds and filters unknown statuses', () => {
+    const ev = map({
+      sessionUpdate: 'tool_call_update',
+      toolCallUpdate: {
+        toolCallId: 't2',
+        kind: 'executeTool',
+        status: 'weird-status',
+        rawOutput: 'done',
+      },
+    });
+    expect(ev).toEqual({
+      kind: 'tool_call',
+      call: { toolCallId: 't2', kind: 'execute', output: 'done' },
+    });
+  });
+
+  it('passes structured diff content through', () => {
+    const ev = map({
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 't3',
+        content: [{ type: 'diff', path: 'a.ts', oldText: 'x', newText: 'y' }],
+      },
+    });
+    expect(ev).toMatchObject({
+      kind: 'tool_call',
+      call: {
+        toolCallId: 't3',
+        content: [{ type: 'diff', path: 'a.ts', oldText: 'x', newText: 'y' }],
+      },
+    });
+  });
+
+  it('drops oversized rawInput (Write-style payloads) but keeps the rest', () => {
+    const ev = map({
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 't4',
+        toolName: 'Write',
+        rawInput: { content: 'x'.repeat(40 * 1024) },
+      },
+    });
+    expect(ev).toEqual({ kind: 'tool_call', call: { toolCallId: 't4', toolName: 'Write' } });
+  });
+
+  it('keeps bounded rawInput and truncates oversized output', () => {
+    const ok = map({
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 't5',
+        rawInput: { file_path: '/tmp/a.ts' },
+        rawOutput: 'y'.repeat(100010),
+      },
+    });
+    expect(ok).toMatchObject({
+      kind: 'tool_call',
+      call: {
+        toolCallId: 't5',
+        rawInput: { file_path: '/tmp/a.ts' },
+        output: 'y'.repeat(100000),
+      },
+    });
+  });
+});
+
 describe('resolveAcpCommand', () => {
   it('defaults per target and honors env overrides', () => {
     expect(resolveAcpCommand('hermes', {})).toEqual({

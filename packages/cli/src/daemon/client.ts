@@ -4,22 +4,25 @@ import {
   inventoryCollectRequestSchema,
   inventoryScanRequestSchema,
   runtimeConfigGetRequestSchema,
+  workspaceListRequestSchema,
   type InventorySnapshot,
   type MachineHelloAck,
 } from '@harness-nexus/shared';
 import { collectItems, scanAllTargets, scanTarget, scannerFor } from '../inventory/scan.js';
 import { probeRuntimes } from '../inventory/runtime.js';
 import { runtimeConfigViewPayload } from './config-view.js';
+import { listDirectories } from './workspace.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.8.0-p9w4';
+export const DAEMON_VERSION = '0.9.0-p9w6';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
  * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
- * 9 W3: provider-config apply; 9 W4: redacted config view).
+ * 9 W3: provider-config apply; 9 W4: redacted config view; 9 W6: workspace
+ * directory listing for the chat picker).
  */
 export const DAEMON_CAPABILITIES = [
   'inventory',
@@ -29,6 +32,7 @@ export const DAEMON_CAPABILITIES = [
   'harness',
   'runtime-config',
   'runtime-config-view',
+  'workspace',
 ];
 
 /** Placeholder snapshot for a target this daemon build has no scanner for. */
@@ -170,6 +174,30 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
         error: e instanceof Error ? e.message : String(e),
       });
     }
+  });
+
+  // 9 W6 — one level of subdirectories under the (server-validated) base
+  // workspace path, for the chat session's directory picker.
+  socket.on('workspace:list', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = workspaceListRequestSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    ack?.({ accepted: true });
+    void (async () => {
+      try {
+        socket.emit('workspace:list', {
+          requestId: parsed.data.requestId,
+          directories: await listDirectories(parsed.data.path),
+        });
+      } catch (e) {
+        socket.emit('workspace:list', {
+          requestId: parsed.data.requestId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    })();
   });
 
   socket.on('connect_error', (err: Error) => {

@@ -52,19 +52,13 @@ export type ChatStreamEvent =
   | { kind: 'thought_delta'; delta: string }
   | {
       kind: 'tool_call';
-      call: {
-        toolCallId: string;
-        title?: string;
-        kind?: string;
-        status?: 'pending' | 'in_progress' | 'completed' | 'failed';
-        locations?: { path: string; line?: number }[];
-      };
+      call: ChatToolCallView;
     }
   | { kind: 'usage'; inputTokens?: number; outputTokens?: number }
   | {
       kind: 'permission_request';
       requestId: string;
-      toolCall: { toolCallId: string; title?: string; kind?: string };
+      toolCall: ChatToolCallView;
       options: { optionId: string; name: string; kind: string }[];
     }
   | {
@@ -76,6 +70,29 @@ export type ChatStreamEvent =
   | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
   | { kind: 'session_status'; state: 'active' | 'idle' }
   | { kind: 'raw'; method: string; params: unknown };
+
+/** 9 W6 — one ACP ToolCallContent item (diff / content / terminal). */
+export interface AcpToolContentItem {
+  type: 'content' | 'diff' | 'terminal';
+  content?: { type: string; text?: string };
+  path?: string;
+  oldText?: string | null;
+  newText?: string;
+  terminalId?: string;
+}
+
+/** Shared shape of a tool-call view (rows + permission cards). */
+export interface ChatToolCallView {
+  toolCallId: string;
+  title?: string;
+  toolName?: string;
+  kind?: string;
+  status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+  locations?: { path: string; line?: number; lineEnd?: number }[];
+  rawInput?: Record<string, unknown>;
+  content?: AcpToolContentItem[];
+  output?: string;
+}
 
 export interface ChatEventEnvelope {
   sessionId: string;

@@ -2417,5 +2417,118 @@ if (w3Err.includes('Error:')) {
   );
 }
 
+// ===========================================================================
+// [9 W6] Portal chat — the workspace listing round-trip through a REAL daemon
+// dist (one level of subdirectories under the machine's base workspace), the
+// chat open-with-directory + cwd validation matrix over the fake browser
+// socket, and the derived session title.
+// ===========================================================================
+log('\n--- [9 W6] fixture workspace tree + daemon with workspace capability ---');
+const w6Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w6-'));
+const w6Root = pathMod.join(w6Home, 'projects');
+mkdirSync(pathMod.join(w6Root, 'alpha'), { recursive: true });
+mkdirSync(pathMod.join(w6Root, 'beta'), { recursive: true });
+mkdirSync(pathMod.join(w6Root, '.hidden'), { recursive: true });
+writeFileSync(pathMod.join(w6Root, 'plain.txt'), 'not a dir', 'utf8');
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'w6-laptop' } });
+expect('w6 enroll status', r.status, 201);
+const w6MachineId = r.json.machine.id;
+const w6Token = r.json.token;
+
+const w6Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    w6Token,
+    '--machine-id',
+    w6MachineId,
+  ],
+  { env: { ...process.env, HOME: w6Home }, stdio: ['ignore', 'pipe', 'pipe'] },
+);
+let w6Err = '';
+w6Daemon.stderr.on('data', (d) => {
+  w6Err += d.toString();
+});
+let w6Online = false;
+for (let i = 0; i < 100 && !w6Online; i++) {
+  r = await req('GET', `/api/machines/${w6MachineId}`, { token: userToken });
+  w6Online = r.json.machine.online && (r.json.machine.capabilities ?? []).includes('workspace');
+  if (!w6Online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('w6 daemon online (workspace capability)', w6Online, true);
+
+log('\n--- [9 W6] workspace listing: root unset, containment, round-trip ---');
+r = await req('GET', `/api/machines/${w6MachineId}/workspace`, { token: userToken });
+expect('no base workspace yet → 400', r.status, 400);
+expect('…with WORKSPACE_ROOT_NOT_SET', r.json.error, 'WORKSPACE_ROOT_NOT_SET');
+
+r = await req('PATCH', `/api/machines/${w6MachineId}`, {
+  token: userToken,
+  body: { baseWorkspace: w6Root },
+});
+expect('base workspace saved', r.json.machine.baseWorkspace, w6Root);
+
+r = await req(
+  'GET',
+  `/api/machines/${w6MachineId}/workspace?path=${encodeURIComponent(pathMod.join(w6Home, 'elsewhere'))}`,
+  { token: userToken },
+);
+expect('outside root → 400 WORKSPACE_OUTSIDE_ROOT', r.json.error, 'WORKSPACE_OUTSIDE_ROOT');
+
+r = await req('GET', `/api/machines/${w6MachineId}/workspace`, { token: userToken });
+expect('root listing status', r.status, 200);
+expect(
+  'root lists exactly the two visible dirs (hidden + file skipped)',
+  JSON.stringify(r.json.directories.map((d) => d.name)),
+  JSON.stringify(['alpha', 'beta']),
+);
+r = await req(
+  'GET',
+  `/api/machines/${w6MachineId}/workspace?path=${encodeURIComponent(`${w6Root}/alpha`)}`,
+  { token: userToken },
+);
+expect('subdirectory listing is empty', JSON.stringify(r.json.directories), '[]');
+
+log('\n--- [9 W6] workspace gates: ownership + offline ---');
+r = await req('GET', `/api/machines/${w6MachineId}/workspace`, { token: adminToken });
+expect('admin may also browse (owner-or-admin read)', r.status, 200);
+await req('POST', '/api/users', {
+  token: adminToken,
+  body: { username: 'w6stranger', password: 'stranger-pass-123', role: 'user' },
+});
+const w6Login = await req('POST', '/api/auth/login', {
+  body: { username: 'w6stranger', password: 'stranger-pass-123' },
+});
+r = await req('GET', `/api/machines/${w6MachineId}/workspace`, {
+  token: w6Login.json.token,
+});
+expect('stranger gets the 404 (existence hiding)', r.status, 404);
+
+w6Daemon.kill('SIGTERM');
+for (let i = 0; i < 100; i++) {
+  r = await req('GET', `/api/machines/${w6MachineId}`, { token: userToken });
+  if (r.json.machine.online === false) break;
+  await new Promise((s2) => setTimeout(s2, 100));
+}
+r = await req('GET', `/api/machines/${w6MachineId}/workspace`, { token: userToken });
+expect('offline daemon → 409 MACHINE_OFFLINE', r.json.error, 'MACHINE_OFFLINE');
+
+await req('DELETE', `/api/machines/${w6MachineId}`, { token: userToken });
+rmSync(w6Home, { recursive: true, force: true });
+if (w6Err.includes('Error:')) {
+  log(
+    `(w6 daemon stderr note): ${w6Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

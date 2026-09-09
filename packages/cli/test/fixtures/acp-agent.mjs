@@ -46,6 +46,151 @@ function update(sessionId, sessionUpdate) {
   notify('session/update', { sessionId, update: { sessionUpdate, ...(sessionUpdate === 'usage_update' ? { usage: { inputTokens: 11, outputTokens: 7 } } : {}) } });
 }
 
+/** session/update with an envelope `_meta` (Claude toolName rides there). */
+function updateMeta(sessionId, sessionUpdate, meta) {
+  notify('session/update', {
+    sessionId,
+    update: sessionUpdate,
+    _meta: meta,
+  });
+}
+
+/**
+ * `show-tools` prompt: a full turn exercising the 9 W6 rich cards — a Read
+ * (rawOutput body), a Bash (rawInput + output), an Edit (structured diff),
+ * markdown + a code fence, then usage → end_turn.
+ */
+function runToolShowcase(id, sessionId) {
+  const finish = () => {
+    update(sessionId, 'usage_update');
+    respond(id, { stopReason: 'end_turn' });
+  };
+
+  notify('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      contentBlock: { type: 'text', text: 'Inspecting the workspace first.\n\n' },
+    },
+  });
+
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 'fx-read-1',
+        title: 'src/app.ts',
+        kind: 'read',
+        status: 'in_progress',
+      },
+    },
+    { claudeCode: { toolName: 'Read' } },
+  );
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call_update',
+      toolCallUpdate: {
+        toolCallId: 'fx-read-1',
+        title: 'src/app.ts',
+        kind: 'read',
+        status: 'completed',
+        rawOutput: [
+          '1\timport { main } from "./lib.js";',
+          '2',
+          '3\t// entry point',
+          '4\tawait main();',
+          '5',
+        ].join('\n'),
+      },
+    },
+    { claudeCode: { toolName: 'Read' } },
+  );
+
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 'fx-bash-1',
+        title: 'npm test',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { command: 'npm test', description: 'run the test suite' },
+      },
+    },
+    { claudeCode: { toolName: 'Bash' } },
+  );
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call_update',
+      toolCallUpdate: {
+        toolCallId: 'fx-bash-1',
+        status: 'completed',
+        rawOutput: '> harness-nexus@0.1.0 test\n> vitest run\n\n ✓ 99 passed (99)',
+      },
+    },
+    { claudeCode: { toolName: 'Bash' } },
+  );
+
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call',
+      toolCallUpdate: {
+        toolCallId: 'fx-edit-1',
+        title: 'src/app.ts',
+        kind: 'edit',
+        status: 'in_progress',
+      },
+    },
+    { claudeCode: { toolName: 'Edit' } },
+  );
+  updateMeta(
+    sessionId,
+    {
+      sessionUpdate: 'tool_call_update',
+      toolCallUpdate: {
+        toolCallId: 'fx-edit-1',
+        status: 'completed',
+        content: [
+          {
+            type: 'diff',
+            path: 'src/app.ts',
+            oldText: '// entry point\nawait main();',
+            newText: '// entry point (hardened)\nawait main({ retries: 2 });',
+          },
+        ],
+      },
+    },
+    { claudeCode: { toolName: 'Edit' } },
+  );
+
+  notify('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      contentBlock: {
+        type: 'text',
+        text: [
+          'All green. **Summary**:',
+          '',
+          '- `Read` found the entry point',
+          '- `Bash` ran the suite — 99 passing',
+          '- `Edit` hardened the bootstrap',
+          '',
+          '```ts',
+          'await main({ retries: 2 });',
+          '```',
+        ].join('\n'),
+      },
+    },
+  });
+  finish();
+}
+
 function runPrompt(id, text) {
   const sessionId = 'fx-session'; // single-session fixture; content is what matters
   const finish = (stopReason) => {
@@ -59,6 +204,11 @@ function runPrompt(id, text) {
     // prompt): the request fails, the process stays alive.
     promptIds.delete(id);
     respondError(id, -32000, 'Authentication required');
+    return;
+  }
+
+  if (text.includes('show-tools')) {
+    runToolShowcase(id, sessionId);
     return;
   }
 
