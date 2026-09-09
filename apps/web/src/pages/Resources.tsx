@@ -41,14 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { FormDialog } from '@/components/ui/form-dialog';
 import {
   HarnessNexusError,
   HOOK_EVENTS,
@@ -392,20 +385,37 @@ function ResourceEditor({
   }
 
   return (
-    <Dialog open onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            {isCreate
-              ? t('resources.newResource')
-              : t('resources.editTitle', { name: existing!.name })}
-          </DialogTitle>
-          <DialogDescription>
-            {t('resources.editorDesc', { body: t(kindMeta.bodyLabelKey).toLowerCase() })}{' '}
-            <code className="font-mono">{`${kind}:${key || '…'}`}</code>
-            {t('resources.editorDescAfter')}
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open
+      onClose={onClose}
+      size={kind === 'skill' ? 'xl' : 'lg'}
+      title={
+        isCreate
+          ? t('resources.newResource')
+          : t('resources.editTitle', { name: existing!.name })
+      }
+      description={
+        <>
+          {t('resources.editorDesc', { body: t(kindMeta.bodyLabelKey).toLowerCase() })}{' '}
+          <code className="font-mono">{`${kind}:${key || '…'}`}</code>
+          {t('resources.editorDescAfter')}
+        </>
+      }
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" disabled={busy} onClick={onSubmit}>
+            {busy
+              ? t('common.saving')
+              : isCreate
+                ? t('resources.createResource')
+                : t('resources.saveChanges')}
+          </Button>
+        </>
+      }
+    >
 
         <form onSubmit={onSubmit} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -541,21 +551,7 @@ function ResourceEditor({
             <SkillBundleEditor files={bundleFiles} setFiles={setBundleFiles} />
           ) : null}
         </form>
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="button" disabled={busy} onClick={onSubmit}>
-            {busy
-              ? t('common.saving')
-              : isCreate
-                ? t('resources.createResource')
-                : t('resources.saveChanges')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </FormDialog>
   );
 }
 

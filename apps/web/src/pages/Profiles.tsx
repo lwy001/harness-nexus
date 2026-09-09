@@ -31,6 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { FormDialog } from '@/components/ui/form-dialog';
 import { MoreHorizontalIcon } from 'lucide-react';
 import {
   HarnessNexusError,
@@ -68,6 +69,7 @@ export function ProfilesPage() {
   const { logout, user } = useAuth();
   const { t } = useI18n();
   const [items, setItems] = useState<Profile[] | null>(null);
+  const [creating, setCreating] = useState(false);
   const isAdmin = user?.role === 'admin';
 
   async function refresh() {
@@ -95,9 +97,15 @@ export function ProfilesPage() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('profiles.title')}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">{t('profiles.subtitle')}</p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('profiles.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('profiles.subtitle')}</p>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <PlusIcon className="size-4" />
+          {t('common.create')}
+        </Button>
       </div>
 
       {user && (
@@ -219,12 +227,20 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
         </CardContent>
       </Card>
 
-      <CreateProfile onCreated={refresh} />
+      {creating ? (
+        <CreateProfile
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            void refresh();
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }
 
-function CreateProfile({ onCreated }: { onCreated: () => void }) {
+function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { logout, user } = useAuth();
   const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
@@ -286,11 +302,6 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
         logout,
       );
       toast.success(t('profiles.created'));
-      setName('');
-      setDescription('');
-      setTarget('generic');
-      setSelectedServers(new Set());
-      setSelectedResources(new Set());
       onCreated();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
@@ -300,16 +311,14 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <PlusIcon className="size-4" />
-          {t('profiles.addTitle')}
-        </CardTitle>
-        <CardDescription>{t('profiles.addDesc')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <FormDialog
+      open
+      onClose={onClose}
+      title={t('profiles.addTitle')}
+      description={t('profiles.addDesc')}
+      size="xl"
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="prof-name">{t('common.name')}</Label>
@@ -431,7 +440,10 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             );
           })}
 
-          <div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
             <Button
               type="submit"
               disabled={busy || (selectedServers.size === 0 && selectedResources.size === 0)}
@@ -440,7 +452,6 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+    </FormDialog>
   );
 }

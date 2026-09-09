@@ -5,7 +5,8 @@ import { useI18n, dateLocale } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
 import { toast } from 'sonner';
 import { HarnessNexusError, type PublicUser, type Role } from '@harness-nexus/sdk';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { FormDialog } from '@/components/ui/form-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,7 @@ export function UsersPage() {
   const { logout } = useAuth();
   const { t, lang } = useI18n();
   const [users, setUsers] = useState<PublicUser[]>([]);
+  const [creating, setCreating] = useState(false);
 
   async function refresh() {
     try {
@@ -79,15 +81,21 @@ export function UsersPage() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('users.title')}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {t('users.subtitle')}{' '}
-          {users.length === 1
-            ? t('users.countOne', { count: users.length })
-            : t('users.countMany', { count: users.length })}
-          .
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('users.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {t('users.subtitle')}{' '}
+            {users.length === 1
+              ? t('users.countOne', { count: users.length })
+              : t('users.countMany', { count: users.length })}
+            .
+          </p>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <PlusIcon className="size-4" />
+          {t('users.addUser')}
+        </Button>
       </div>
 
       <Card>
@@ -165,12 +173,20 @@ export function UsersPage() {
         </CardContent>
       </Card>
 
-      <CreateUser onCreated={refresh} />
+      {creating ? (
+        <CreateUser
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            void refresh();
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }
 
-function CreateUser({ onCreated }: { onCreated: () => void }) {
+function CreateUser({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { logout } = useAuth();
   const { t } = useI18n();
   const [username, setUsername] = useState('');
@@ -182,9 +198,6 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
     try {
       await withAuthGuard(() => api.createUser({ username, password, role }), logout);
       toast.success(t('users.createdOk', { username }));
-      setUsername('');
-      setPassword('');
-      setRole('user');
       onCreated();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
@@ -192,17 +205,15 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <Card className="mt-6 max-w-xl">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <PlusIcon className="size-4" />
-          {t('users.addUser')}
-        </CardTitle>
-        <CardDescription>{t('users.addUserDesc')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={submit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="grid flex-1 gap-2">
+    <FormDialog
+      open
+      onClose={onClose}
+      title={t('users.addUser')}
+      description={t('users.addUserDesc')}
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
             <Label htmlFor="new-username">{t('users.username')}</Label>
             <Input
               id="new-username"
@@ -213,7 +224,7 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
               required
             />
           </div>
-          <div className="grid flex-1 gap-2">
+          <div className="grid gap-2">
             <Label htmlFor="new-password">{t('users.password')}</Label>
             <Input
               id="new-password"
@@ -223,21 +234,26 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
               required
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="new-role">{t('users.role')}</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-              <SelectTrigger id="new-role" className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">{t('common.roleUser')}</SelectItem>
-                <SelectItem value="admin">{t('common.roleAdmin')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="new-role">{t('users.role')}</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+            <SelectTrigger id="new-role" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="user">{t('common.roleUser')}</SelectItem>
+              <SelectItem value="admin">{t('common.roleAdmin')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
           <Button type="submit">{t('common.create')}</Button>
-        </form>
-      </CardContent>
-    </Card>
+        </div>
+      </form>
+    </FormDialog>
   );
 }
