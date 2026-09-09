@@ -25,15 +25,32 @@ import { Brand } from '@/components/brand-mark';
 import { MobileNav } from '@/components/mobile-nav';
 import { cn } from '@/lib/utils';
 
-/** Dashboard chrome: left sidebar nav + top header. The mobile drawer mirrors the same nav. */
-export function AppShell({ children }: { children: ReactNode }) {
+/**
+ * Dashboard chrome: left sidebar nav + top header. The mobile drawer mirrors
+ * the same nav. `variant="full"` (chat session page): the main column drops
+ * its width cap + padding and the shell locks to the viewport height, so the
+ * page can lay out full-height panes.
+ */
+export function AppShell({
+  children,
+  variant = 'default',
+}: {
+  children: ReactNode;
+  variant?: 'default' | 'full';
+}) {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
   const items = navItems(isAdmin, t);
+  const full = variant === 'full';
 
   return (
-    <div className="bg-background text-foreground flex min-h-svh">
+    <div
+      className={cn(
+        'bg-background text-foreground flex',
+        full ? 'h-svh overflow-hidden' : 'min-h-svh',
+      )}
+    >
       {/* Skip link — first focusable element, jumps to main content. */}
       <a
         href="#main"
@@ -96,7 +113,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main id="main" className="mx-auto w-full max-w-6xl flex-1 p-4 md:p-8">
+        <main
+          id="main"
+          className={cn(
+            'mx-auto w-full flex-1',
+            full ? 'max-w-none overflow-hidden p-0' : 'max-w-6xl p-4 md:p-8',
+          )}
+        >
           {children}
         </main>
       </div>

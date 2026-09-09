@@ -119,6 +119,8 @@ const en = {
   chatEnabled: 'Remote chat enabled',
   chatDisabled: 'Remote chat disabled',
   chatLabel: 'Remote chat',
+  baseWorkspace: 'Base workspace',
+  baseWorkspaceSaved: 'Base workspace saved',
 };
 
 const zh: typeof en = {
@@ -237,6 +239,8 @@ const zh: typeof en = {
   chatEnabled: '远程聊天已启用',
   chatDisabled: '远程聊天已禁用',
   chatLabel: '远程聊天',
+  baseWorkspace: '基础工作区',
+  baseWorkspaceSaved: '基础工作区已保存',
 };
 
 export const machineDetailStrings = { en, zh };

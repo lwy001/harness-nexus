@@ -62,6 +62,7 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
       daemonVersion: null,
       capabilities: [],
       remoteChatEnabled: false,
+      baseWorkspace: null,
       enrollmentPatId: pat.id,
       enrolledAt: now,
       lastSeenAt: null,
@@ -90,7 +91,7 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
     return { machine: machineView(machine, app.realtime.presence.isOnline(machine.id)) };
   });
 
-  // ---- PATCH /api/machines/:id (rename / remote-chat toggle) ----
+  // ---- PATCH /api/machines/:id (rename / remote-chat toggle / base workspace) ----
   app.patch<{ Params: { id: string } }>('/api/machines/:id', guard, async (req) => {
     const machine = await visible(req.params.id, req.user!);
     if (!machine) throw notFound();
@@ -101,6 +102,7 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
       ...(input.remoteChatEnabled !== undefined
         ? { remoteChatEnabled: input.remoteChatEnabled }
         : {}),
+      ...(input.baseWorkspace !== undefined ? { baseWorkspace: input.baseWorkspace } : {}),
     });
     return { machine: machineView(updated, app.realtime.presence.isOnline(updated.id)) };
   });

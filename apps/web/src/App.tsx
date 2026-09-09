@@ -18,6 +18,7 @@ import { SkillHubPage } from '@/pages/SkillHub';
 import { MachinesPage } from '@/pages/Machines';
 import { MachineDetailPage } from '@/pages/MachineDetail';
 import { ChatPage } from '@/pages/Chat';
+import { AgentSessionPage } from '@/pages/AgentSession';
 
 export function App() {
   return (
@@ -57,6 +58,14 @@ export function App() {
                 element={
                   <RequireAuth>
                     <ChatPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/chat/agents/:agentId"
+                element={
+                  <RequireAuth>
+                    <AgentSessionPage />
                   </RequireAuth>
                 }
               />

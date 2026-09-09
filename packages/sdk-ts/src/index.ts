@@ -97,6 +97,20 @@ export interface AcSessionView {
   openedAt: string;
   closedAt: string | null;
   closeReason: string | null;
+  /** 9 W6 — the session's working directory (session-list project grouping). */
+  cwd: string | null;
+  /** 9 W6 — derived once from the first prompt; null until then. */
+  title: string | null;
+}
+
+/** Machine summary riding GET /api/agent-instances/:id (9 W6 session page). */
+export interface AgentInstanceMachineView {
+  id: string;
+  name: string;
+  online: boolean;
+  remoteChatEnabled: boolean;
+  baseWorkspace: string | null;
+  capabilities: string[];
 }
 
 /**
@@ -312,7 +326,7 @@ export class HarnessNexusClient {
 
   async updateMachine(
     id: string,
-    input: { name?: string; remoteChatEnabled?: boolean },
+    input: { name?: string; remoteChatEnabled?: boolean; baseWorkspace?: string | null },
   ): Promise<MachineView> {
     const res = await this.request('PATCH', `/api/machines/${id}`, input);
     return res.machine;
@@ -320,6 +334,15 @@ export class HarnessNexusClient {
 
   async deleteMachine(id: string): Promise<void> {
     await this.request('DELETE', `/api/machines/${id}`);
+  }
+
+  /** 9 W6 — one level of subdirectories under the machine's base workspace. */
+  async listMachineWorkspace(
+    machineId: string,
+    path?: string,
+  ): Promise<{ path: string; directories: { name: string; path: string }[] }> {
+    const query = path !== undefined && path !== '' ? `?path=${encodeURIComponent(path)}` : '';
+    return this.request('GET', `/api/machines/${machineId}/workspace${query}`);
   }
 
   // ---- machine inventory (Phase 8 C3; runtime arm Phase 9 W1) ----
@@ -415,6 +438,13 @@ export class HarnessNexusClient {
   async listMachineAgents(machineId: string): Promise<AgentInstanceView[]> {
     const res = await this.request('GET', `/api/machines/${machineId}/agents`);
     return res.agents;
+  }
+
+  /** 9 W6 — the chat session page's agent + machine gating summary. */
+  async getAgentInstance(
+    agentInstanceId: string,
+  ): Promise<{ agent: AgentInstanceView; machine: AgentInstanceMachineView }> {
+    return this.request('GET', `/api/agent-instances/${agentInstanceId}`);
   }
 
   /** Chat-channel audit rows for one agent instance (C5). */

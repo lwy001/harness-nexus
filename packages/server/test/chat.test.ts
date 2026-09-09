@@ -38,6 +38,17 @@ const openSession = async (
     ...(sessionId !== undefined ? { sessionId } : {}),
   })) as { sessionId?: string; phase?: 'starting' | 'ready'; error?: string };
 
+/** 9 W6 — open with a project `directory`. */
+const openSessionDir = async (
+  sock: Socket,
+  agentInstanceId: string,
+  directory: string,
+): Promise<{ sessionId?: string; phase?: 'starting' | 'ready'; error?: string }> =>
+  (await emitAck(sock, 'chat:session.open', {
+    agentInstanceId,
+    directory,
+  })) as { sessionId?: string; phase?: 'starting' | 'ready'; error?: string };
+
 /** Daemon-side ready reply for a start event. */
 const readyFor = (sock: Socket, start: { sessionId: string }): void => {
   void sock.emit('chat:session.ready', {
@@ -225,6 +236,8 @@ describe('rejoin + boot orphan sweep', () => {
       openedAt: now,
       closedAt: null,
       closeReason: null,
+      cwd: null,
+      title: null,
     });
     expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).toContain('orphan-1');
     await app.realtime.chat.sweepOrphanedSessions();
@@ -233,6 +246,81 @@ describe('rejoin + boot orphan sweep', () => {
     expect(row?.closeReason).toBe('server-restarted');
     expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).not.toContain('orphan-1');
   });
+});
+
+describe('workspace directories (9 W6)', () => {
+  it('validates the picked directory against the base workspace before anything else', async () => {
+    // No base workspace configured yet.
+    let res = await openSessionDir(browser, agentId, '/home/tester/work/proj-a');
+    expect(res.error).toBe('WORKSPACE_NOT_SET');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: { baseWorkspace: '/home/tester/work' },
+    });
+
+    // Outside the root (even after resolution).
+    res = await openSessionDir(browser, agentId, '/home/tester/elsewhere');
+    expect(res.error).toBe('WORKSPACE_INVALID');
+    res = await openSessionDir(browser, agentId, '/home/tester/work/../../etc');
+    expect(res.error).toBe('WORKSPACE_INVALID');
+
+    // A valid subdirectory: start carries it and the audit row records it.
+    const d = await connectDaemon(['chat']);
+    try {
+      const startPromise = once(d, 'chat:session.start');
+      res = await openSessionDir(browser, agentId, '/home/tester/work/proj-a/');
+      expect(res.sessionId).toBeTruthy();
+      const start = (await startPromise) as { sessionId: string; cwd: string };
+      expect(start.cwd).toBe('/home/tester/work/proj-a');
+      const row = await app.uow.acSessions.findById(res.sessionId!);
+      expect(row?.cwd).toBe('/home/tester/work/proj-a');
+      expect(row?.title).toBeNull();
+
+      // The root itself is allowed.
+      const rootStart = once(d, 'chat:session.start');
+      const rootRes = await openSessionDir(browser, agentId, '/home/tester/work');
+      const rootEvt = (await rootStart) as { cwd: string };
+      expect(rootEvt.cwd).toBe('/home/tester/work');
+      expect(rootRes.sessionId).toBeTruthy();
+
+      await emitAck(d, 'chat:session.closed', { sessionId: res.sessionId!, reason: 'user' });
+      await emitAck(d, 'chat:session.closed', { sessionId: rootRes.sessionId!, reason: 'user' });
+    } finally {
+      d.close();
+    }
+  }, 15000);
+
+  it('derives the session title from the FIRST prompt only', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startPromise = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const start = (await startPromise) as { sessionId: string };
+      readyFor(d, start);
+      await once(browser, 'chat:session.ready');
+
+      await emitAck(browser, 'chat:message.send', {
+        sessionId: res.sessionId,
+        content: 'Fix the login bug\nand the signup one too',
+      });
+      // The title write is fire-and-forget — poll for it.
+      const deadline = Date.now() + 5000;
+      let row = await app.uow.acSessions.findById(res.sessionId!);
+      while (row?.title == null && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 25));
+        row = await app.uow.acSessions.findById(res.sessionId!);
+      }
+      // First LINE, whitespace-collapsed — the second line never joins it.
+      expect(row?.title).toBe('Fix the login bug');
+
+      await emitAck(d, 'chat:session.closed', { sessionId: res.sessionId!, reason: 'user' });
+    } finally {
+      d.close();
+    }
+  }, 15000);
 });
 
 describe('session lifecycle', () => {

@@ -23,11 +23,13 @@ import {
   chatSessionReadyEventSchema,
   chatStreamEventEnvelopeSchema,
   chatTurnCancelEventSchema,
+  workspaceListEventSchema,
 } from '@harness-nexus/shared';
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
 import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
 import { ConfigViewerCoordinator } from '../realtime/config-viewer.js';
+import { WorkspaceCoordinator } from '../realtime/workspace.js';
 import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
 import { JobService } from '../jobs/service.js';
@@ -55,6 +57,8 @@ export interface RealtimeService {
   chat: ChatService;
   /** Redacted config-view waiters (Phase 9 W4). */
   configView: ConfigViewerCoordinator;
+  /** Workspace directory-listing waiters (Phase 9 W6 chat picker). */
+  workspace: WorkspaceCoordinator;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -67,6 +71,7 @@ export async function registerRealtime(
     maxHttpBufferSize: number;
     inventoryTimeoutMs: number;
     runtimeConfigViewTimeoutMs: number;
+    workspaceListTimeoutMs: number;
     jobAckTimeoutMs: number;
     jobSweepIntervalMs: number;
     jobMaxAttempts: number;
@@ -86,6 +91,7 @@ export async function registerRealtime(
   const presence = new MachinePresence();
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
   const configView = new ConfigViewerCoordinator(opts.runtimeConfigViewTimeoutMs);
+  const workspace = new WorkspaceCoordinator(opts.workspaceListTimeoutMs);
   const runtimeInstances = new DetectedInstanceSync(app.uow);
   const chat = new ChatService(
     {
@@ -142,6 +148,7 @@ export async function registerRealtime(
     jobs,
     chat,
     configView,
+    workspace,
     broadcastStatus(machine, online) {
       appNs
         .to([`user:${machine.ownerId}`, 'admins'])
@@ -305,6 +312,18 @@ export async function registerRealtime(
       ack?.(known ? { accepted: true } : { error: 'unknown-request' });
     });
 
+    // 9 W6 — daemon reply for `workspace:list` (chat directory picker).
+    socket.on('workspace:list', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = workspaceListEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { requestId, ...evt } = parsed.data;
+      const known = workspace.onList(requestId, evt);
+      ack?.(known ? { accepted: true } : { error: 'unknown-request' });
+    });
+
     // C4 — daemon job reporting. Progress accepts queued/dispatched/running;
     // result settles the job (terminal states ignore stale replay).
     socket.on('job:progress', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -365,6 +384,7 @@ export async function registerRealtime(
       if (wentOffline === null) return;
       inventory.failMachine(wentOffline);
       configView.failMachine(wentOffline);
+      workspace.failMachine(wentOffline);
       void realtime.jobs.recoverMachine(wentOffline);
       // ACP has no resume in v1 — every open channel of the machine dies with
       // its daemon; viewers are notified via chat:session.closed.
@@ -434,6 +454,7 @@ export async function registerRealtime(
           parsed.data.agentInstanceId,
           parsed.data.sessionId,
           socket.id,
+          parsed.data.directory,
         );
         if (!result.ok) {
           ack?.({ error: result.code });

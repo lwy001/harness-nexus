@@ -1,6 +1,7 @@
 # Design: Phase 9 W5+W6 — modal containers & the portal-style chat UI
 
-> Status: **designed 2026-09, W5+W6 to ship in lockstep branches** (`feat/9w5-modal-containers`, `feat/9w6-portal-chat`).
+> Status: **SHIPPED 2026-09** (W5: `feat/9w5-modal-containers`, W6: `feat/9w6-portal-chat`).
+> Post-ship notes in §"What landed".
 > Two user asks, one doc: (W5) a reusable **modal container** so list pages stop
 > inlining create forms; (W6) the chat surface rebuilt as **Agent cards → session
 > page** (left: sessions grouped by workspace; right: portal-style row-sequence
@@ -229,3 +230,31 @@ field (owner). Old `Chat.tsx` is deleted (routes replaced).
   chat open with directory against the fixture ACP agent.
 - **web**: `tsc` + `vite build`; browser walkthrough on the dev rig (cards →
   session page → picker → fixture-agent turn with tool calls rendering).
+
+## What landed (2026-09)
+
+Both waves shipped as designed, with these deviations worth knowing:
+
+- **W5** also fixed a dev-only vite proxy bug the walkthrough surfaced: the
+  `'/mcp'` prefix proxy swallowed the app's own `/mcp-servers` page route —
+  a `bypass` now rewrites it to the SPA shell (`vite.config.ts`).
+- **W6 wire**: `acpToolCallView` normalization happens daemon-side in
+  `toolCallView`/`buildView` (`packages/cli/src/daemon/chat.ts`) — kind
+  variants like `readTool` fold to the spec short form, unknown statuses are
+  dropped (field-by-field extraction, never a whole-view fallback), and
+  `rawInput` is dropped wholesale past 32 KiB (Write-style bodies).
+- **W6 route bug found by its own test**: the daemon `error` arm must be
+  mapped BEFORE the generic `!outcome.ok` → 504 branch, or a fast error
+  reply misreports as a timeout (`modules/workspace.ts`).
+- The session page's left rail is desktop-only (`hidden md:flex`); mobile
+  falls back to the right-pane-only layout (a mobile drawer is future work).
+- The directory picker's first click on a collapsed folder EXPANDS it; a
+  second click (or the root row / manual path input) selects. Expanding an
+  empty folder renders it selectable.
+- The fixture ACP agent gained a `show-tools` prompt arm
+  (`test/fixtures/acp-agent.mjs`) emitting `_meta.claudeCode.toolName`-tagged
+  Read/Bash/Edit calls with rawOutput + structured diff — the reference
+  payload for the rich-card tests and walkthroughs.
+- Tests: server 99 (workspace route suite + chat cwd/title suite), cli 67
+  (enrichment + `listDirectories`), shared 69; smoke **380/380** including a
+  `[9 W6]` section (real-daemon workspace listing + gates).

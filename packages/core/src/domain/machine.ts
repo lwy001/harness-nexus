@@ -22,6 +22,13 @@ export interface Machine {
    */
   remoteChatEnabled: boolean;
   /**
+   * Phase 9 W6 — the machine's base workspace: the directory root under
+   * which chat sessions pick their project cwd (the picker lists only its
+   * subdirectories, routed through the daemon). Null = not configured; the
+   * chat UI prompts the owner to set it before creating a session.
+   */
+  baseWorkspace: string | null;
+  /**
    * The machine PAT issued once at enrollment. Deleting the machine (or this
    * PAT) revokes realtime access immediately.
    */

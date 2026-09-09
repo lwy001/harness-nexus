@@ -150,6 +150,29 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     return { agents };
   });
 
+  // ---- GET /api/agent-instances/:id — the chat session page's header (9 W6) ----
+  // Chat itself is owner-ONLY by design, so the lookup is too: a non-owner
+  // (admin included) gets the 404 rather than a machine reveal.
+  app.get<{ Params: { id: string } }>('/api/agent-instances/:id', guard, async (req) => {
+    const agent = await app.uow.agentInstances.findById(req.params.id);
+    if (!agent || agent.ownerId !== req.user!.id) {
+      throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
+    }
+    const machine = await app.uow.machines.findById(agent.machineId);
+    if (!machine) throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
+    return {
+      agent,
+      machine: {
+        id: machine.id,
+        name: machine.name,
+        online: app.realtime.presence.isOnline(machine.id),
+        remoteChatEnabled: machine.remoteChatEnabled,
+        baseWorkspace: machine.baseWorkspace,
+        capabilities: machine.capabilities,
+      },
+    };
+  });
+
   // ---- GET /api/agent-instances/:id/sessions — AcSession audit rows (C5) ----
   // Listing is owner-or-admin like every machine-scoped read; CHATTING is
   // owner-only (enforced in the chat service, not here).

@@ -273,7 +273,8 @@ export function MachineDetailPage() {
             : t('machineDetail.scanHint')}
         </span>
         {machine !== null ? (
-          <span className="ml-auto">
+          <span className="ml-auto flex flex-wrap items-center gap-3">
+            <BaseWorkspaceField machine={machine} onChanged={() => void refresh()} />
             <RemoteChatToggle machine={machine} onChanged={() => void refresh()} />
           </span>
         ) : null}
@@ -1329,7 +1330,7 @@ function DeploymentsCard({
                     </span>
                   ) : null}
                   <Button asChild variant="ghost" size="sm" className="ml-auto">
-                    <Link to="/chat">
+                    <Link to={`/chat/agents/${a.id}`}>
                       <MessageSquareIcon className="size-4" />
                       {t('machineDetail.chat')}
                     </Link>
@@ -1364,6 +1365,61 @@ function RemoteChatToggle({ machine, onChanged }: { machine: MachineView; onChan
     <label className="text-muted-foreground flex items-center gap-2 text-sm">
       <Switch checked={machine.remoteChatEnabled} onCheckedChange={(v) => void toggle(v)} />
       {t('machineDetail.chatLabel')}
+    </label>
+  );
+}
+
+/**
+ * Base workspace field (Phase 9 W6) — the root under which chat sessions pick
+ * their project directory. Inline edit + save; empty clears it (sessions fall
+ * back to the picker's set-first flow).
+ */
+function BaseWorkspaceField({ machine, onChanged }: { machine: MachineView; onChanged: () => void }) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [value, setValue] = useState(machine.baseWorkspace ?? '');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setValue(machine.baseWorkspace ?? '');
+  }, [machine.baseWorkspace]);
+
+  async function save(): Promise<void> {
+    const next = value.trim();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await withAuthGuard(
+        () =>
+          api.updateMachine(machine.id, {
+            baseWorkspace: next === '' ? null : next,
+          }),
+        logout,
+      );
+      toast.success(t('machineDetail.baseWorkspaceSaved'));
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const dirty = value.trim() !== (machine.baseWorkspace ?? '');
+  return (
+    <label className="text-muted-foreground flex items-center gap-2 text-sm">
+      <span className="hidden lg:inline">{t('machineDetail.baseWorkspace')}</span>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="/home/user/projects"
+        autoComplete="off"
+        spellCheck={false}
+        className="h-8 w-56 font-mono text-xs"
+        aria-label={t('machineDetail.baseWorkspace')}
+      />
+      <Button variant="outline" size="sm" disabled={!dirty || busy} onClick={() => void save()}>
+        {busy ? t('common.saving') : t('common.save')}
+      </Button>
     </label>
   );
 }

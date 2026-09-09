@@ -23,6 +23,7 @@ import { machinesRoutes } from './modules/machines.js';
 import { inventoryRoutes } from './modules/inventory.js';
 import { jobsRoutes } from './modules/jobs.js';
 import { runtimeConfigRoutes } from './modules/runtime-config.js';
+import { workspaceRoutes } from './modules/workspace.js';
 import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
 import { marketplaceRoutes } from './modules/marketplace.js';
@@ -173,6 +174,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     maxHttpBufferSize: config.socketMaxHttpBufferSize,
     inventoryTimeoutMs: config.inventoryRequestTimeoutMs,
     runtimeConfigViewTimeoutMs: config.runtimeConfigViewTimeoutMs,
+    workspaceListTimeoutMs: config.workspaceListTimeoutMs,
     jobAckTimeoutMs: config.jobAckTimeoutMs,
     jobSweepIntervalMs: config.jobSweepIntervalMs,
     jobMaxAttempts: config.jobMaxAttempts,
@@ -220,6 +222,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await inventoryRoutes(api);
     await jobsRoutes(api);
     await runtimeConfigRoutes(api);
+    await workspaceRoutes(api);
     await clientConfigRoutes(api);
     await marketplaceRoutes(api);
   });
