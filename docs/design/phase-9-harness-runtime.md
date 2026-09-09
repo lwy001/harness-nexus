@@ -358,6 +358,18 @@ full-width punctuation rules for zh).
     rig (codex + deepseek apply jobs succeeded; files verified in the
     container; `dsh --version` still boots with the patch rows; UI form
     prefilled per Agent card).
+  - **Follow-up fix (2026-09-09): the dsh half was rewritten.** The insert
+    rows above DOUBLE-REGISTER plugins the composition already mounts and
+    crash `dsh --profile acp` (chat!). The writer now manages the SETTINGS
+    layer instead — a marked region in `~/.dsh/settings.yaml` with the
+    `llm-pi-ai` (provider route) and `agent-default-model` (selection)
+    namespaces; a hand-managed namespace section is refused (duplicate keys
+    brick boot); the legacy patch region is retired by the same apply (an
+    emptied patch normalizes to `[]`). Separately discovered: **dsh's plugin
+    tree needs Node ≥22.15** (zlib zstd + `Promise.withResolvers`) — deepseek
+    jobs on older daemons now carry a result `warning`. Rig verified
+    end-to-end: Node upgraded, config re-applied, `--profile acp` boots,
+    chat session ready.
 - **W4 Config viewer — SHIPPED (2026-09).** Implementation notes (deviations
   settled during the build):
   - Protocol: the design's `runtime:config.get` pair, shaped exactly like C3's
@@ -384,8 +396,9 @@ passwd|credential|authorization|bearer`), UNANCHORED line masking for
     daemon's home never leaks. `~/.dsh/.credentials.yaml` is deliberately
     NOT read (pure secret store, not config).
   - Files per target: claude-code `~/.claude/settings.json`; codex
-    `~/.codex/config.toml` + `~/.codex/auth.json`; deepseek home
-    `cordis.patch.yml` + `~/.dsh/.env`.
+    `~/.codex/config.toml` + `~/.codex/auth.json`; deepseek
+    `~/.dsh/settings.yaml` + `~/.dsh/.env` (swapped from the patch file in
+    the 2026-09-09 fix — the settings layer is the effective config now).
   - "Re-scan after apply" from the wave plan was DROPPED as a no-op:
     apply-config doesn't touch anything a C3 scan enumerates, so a rescan
     would return identical rows — the View button (live read) is the

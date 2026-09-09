@@ -194,18 +194,21 @@ describe('applyRuntimeConfig — codex', () => {
 });
 
 describe('applyRuntimeConfig — deepseek', () => {
-  it('writes the managed provider region + default-model row + ~/.dsh/.env', () => {
-    const patch = writeRel(
+  it('writes the settings layer (llm-pi-ai route + default-model) + ~/.dsh/.env', () => {
+    // A pre-existing patch carrying the W3-era provider region (it crashed
+    // the ACP profile by double-registering plugins) plus a user region.
+    writeRel(
       '.dsh/cordis.patch.yml',
       [
-        '# BEGIN harness-nexus:other-profile (managed) — rewritten by hnx; keep edits outside the markers',
-        '- insert:',
-        '    - id: hnx-mcp-other',
-        "      name: '@deepseek-ai/dsh-mcp-client'",
-        '# END harness-nexus:other-profile (managed)',
+        '# user rows',
         '- insert:',
         '    - id: user-row',
         "      name: '@deepseek-ai/dsh-something'",
+        '# BEGIN harness-nexus:provider (managed) — rewritten by hnx; keep edits outside the markers',
+        '- insert:',
+        '    - id: hnx-llm',
+        "      name: '@deepseek-ai/dsh-llm-pi-ai'",
+        '# END harness-nexus:provider (managed)',
       ].join('\n') + '\n',
     );
     writeRel('.dsh/.env', 'DEEPSEEK_API_KEY=user-key\n');
@@ -216,43 +219,79 @@ describe('applyRuntimeConfig — deepseek', () => {
       'sk-dsh',
       home,
     );
-    expect(files).toEqual(['~/.dsh/cordis.patch.yml', '~/.dsh/.env']);
+    // settings + .env always; the patch only appears because we retired the legacy region.
+    expect(files).toEqual(['~/.dsh/cordis.patch.yml', '~/.dsh/settings.yaml', '~/.dsh/.env']);
 
-    const yml = readFileSync(patch, 'utf8');
-    // other managed regions and user rows survive byte-for-byte
-    expect(yml).toContain('harness-nexus:other-profile');
-    expect(yml).toContain('hnx-mcp-other');
-    expect(yml).toContain('user-row');
-    // our region
-    expect(yml).toContain('harness-nexus:provider');
-    expect(yml).toContain("'@deepseek-ai/dsh-llm-pi-ai'");
-    expect(yml).toContain('api: anthropic-messages');
-    expect(yml).toContain('apiKeyEnv: HARNESS_NEXUS_API_KEY');
-    expect(yml).toContain('baseURL: "https://gw.example.com/v1"');
-    expect(yml).toContain('models:');
-    expect(yml).toContain('- id: "gw-large"');
-    // fresh agents actually USE the route
-    expect(yml).toContain("'@deepseek-ai/dsh-agent-default-model'");
-    expect(yml).toContain('provider: harness-nexus');
+    const settings = readFileSync(path.join(home, '.dsh/settings.yaml'), 'utf8');
+    expect(settings).toContain('# BEGIN harness-nexus (managed)');
+    expect(settings).toContain('llm-pi-ai:');
+    expect(settings).toContain('providers:');
+    expect(settings).toContain('harness-nexus:');
+    expect(settings).toContain('displayName: "team gateway"');
+    expect(settings).toContain('api: anthropic-messages');
+    expect(settings).toContain('baseURL: "https://gw.example.com/v1"');
+    expect(settings).toContain('apiKeyEnv: HARNESS_NEXUS_API_KEY');
+    expect(settings).toContain('- id: "gw-large"');
+    expect(settings).toContain('agent-default-model:');
+    expect(settings).toContain('provider: harness-nexus');
+
+    const patch = readFileSync(path.join(home, '.dsh/cordis.patch.yml'), 'utf8');
+    expect(patch).toContain('# user rows');
+    expect(patch).toContain('user-row');
+    expect(patch).not.toContain('hnx-llm');
+    expect(patch).not.toContain('harness-nexus:provider');
 
     const envDoc = readFileSync(path.join(home, '.dsh/.env'), 'utf8');
     expect(envDoc).toContain('DEEPSEEK_API_KEY=user-key');
     expect(envDoc).toContain('HARNESS_NEXUS_API_KEY=sk-dsh');
     expect(mode(path.join(home, '.dsh/.env'))).toBe(0o600);
 
-    // idempotent re-apply (both api flavors map)
+    // Idempotent re-apply (both api flavors map); user settings outside markers survive.
     applyRuntimeConfig('deepseek', spec({ api: 'openai' }), 'sk-dsh', home);
-    const yml2 = readFileSync(patch, 'utf8');
-    expect(yml2).toContain('api: openai-completions');
-    expect(yml2.match(/BEGIN harness-nexus:provider/g)).toHaveLength(1);
+    const settings2 = readFileSync(path.join(home, '.dsh/settings.yaml'), 'utf8');
+    expect(settings2).toContain('api: openai-completions');
+    expect((settings2.match(/BEGIN harness-nexus \(managed\)/g) ?? []).length).toBe(1);
+    expect((settings2.match(/^llm-pi-ai:$/gm) ?? []).length).toBe(1);
+  });
+
+  it('refuses a hand-managed namespace section (duplicate keys would brick boot)', () => {
+    const bad = mkdtempSync(path.join(tmpdir(), 'hnx-rc-dup-'));
+    mkdirSync(path.join(bad, '.dsh'), { recursive: true });
+    writeFileSync(
+      path.join(bad, '.dsh/settings.yaml'),
+      'llm-pi-ai:\n  providers:\n    mine: {}\n',
+      'utf8',
+    );
+    expect(() => applyRuntimeConfig('deepseek', spec(), 'k', bad)).toThrow(/hand-managed/);
+    expect(readFileSync(path.join(bad, '.dsh/settings.yaml'), 'utf8')).toBe(
+      'llm-pi-ai:\n  providers:\n    mine: {}\n',
+    );
+    rmSync(bad, { recursive: true, force: true });
+  });
+
+  it('an emptied legacy patch normalizes to [] (an empty doc is a boot error)', () => {
+    const only = mkdtempSync(path.join(tmpdir(), 'hnx-rc-only-'));
+    mkdirSync(path.join(only, '.dsh'), { recursive: true });
+    writeFileSync(
+      path.join(only, '.dsh/cordis.patch.yml'),
+      [
+        '# BEGIN harness-nexus:provider (managed) — rewritten by hnx; keep edits outside the markers',
+        '- insert:',
+        '# END harness-nexus:provider (managed)',
+      ].join('\n') + '\n',
+      'utf8',
+    );
+    applyRuntimeConfig('deepseek', spec(), 'k', only);
+    expect(readFileSync(path.join(only, '.dsh/cordis.patch.yml'), 'utf8')).toBe('[]\n');
+    rmSync(only, { recursive: true, force: true });
   });
 
   it('refuses a baseUrl-less deepseek spec (no catalog default for our route)', () => {
-    const before = readFileSync(path.join(home, '.dsh/cordis.patch.yml'), 'utf8');
+    const before = readFileSync(path.join(home, '.dsh/settings.yaml'), 'utf8');
     expect(() => applyRuntimeConfig('deepseek', spec({ baseUrl: undefined }), 'k', home)).toThrow(
       /baseUrl/,
     );
-    expect(readFileSync(path.join(home, '.dsh/cordis.patch.yml'), 'utf8')).toBe(before);
+    expect(readFileSync(path.join(home, '.dsh/settings.yaml'), 'utf8')).toBe(before);
   });
 });
 

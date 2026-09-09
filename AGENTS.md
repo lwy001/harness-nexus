@@ -673,13 +673,18 @@ credentialName, extra?}` — never a secret; it names a credential that MUST
     `requires_openai_auth = true` and NO `wire_api` (current codex REMOVED
     `wire_api="chat"` — Responses-only; gateways must be Responses-compatible);
     `~/.codex/auth.json` merged to apikey mode with `OPENAI_API_KEY`.
-  - deepseek → `harness-nexus:provider` managed region in the home
-    `cordis.patch.yml` with TWO rows (`@deepseek-ai/dsh-llm-pi-ai` provider
-    route + `@deepseek-ai/dsh-agent-default-model` selection — mounting a
-    route alone doesn't select it) + the key into **`~/.dsh/.env`**
-    (`HARNESS_NEXUS_API_KEY`) — dsh's NATIVE user-env credential layer
-    (process env > `.credentials.yaml` > `./.env` > `~/.dsh/.env`), read on
-    every launch so user shells AND ACP spawns get it with no wrapper/snippet.
+  - deepseek → the SETTINGS layer: a marked region in `~/.dsh/settings.yaml`
+    with the `llm-pi-ai` namespace (the provider route) and
+    `agent-default-model` (the selection — mounting a route alone doesn't
+    select it) + the key into **`~/.dsh/.env`** (`HARNESS_NEXUS_API_KEY`) —
+    dsh's NATIVE user-env credential layer (process env >
+    `.credentials.yaml` > `./.env` > `~/.dsh/.env`), read on every launch so
+    user shells AND ACP spawns get it with no wrapper/snippet. Do NOT insert
+    these plugins into `cordis.patch.yml` — the composition already mounts
+    them and a second insert double-registers (crashes `--profile acp`); the
+    writer retires any legacy W3 patch region and refuses a hand-managed
+    namespace section. **dsh's plugin tree needs Node ≥22.15** — deepseek
+    jobs carry a result `warning` on older daemons (chat fails there).
 - **Web** (MachineDetail): a Provider-config sub-form per Agent card
   (prefilled by GET; credential picker lists distributable credentials only;
   api select offers only the target's flavors — single-flavor targets render

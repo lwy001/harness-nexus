@@ -115,31 +115,32 @@ describe('readRuntimeConfigView', () => {
     expect(view.redacted).toEqual(expect.arrayContaining(['~/.codex/auth.json:OPENAI_API_KEY']));
   });
 
-  it('deepseek: patch rows readable except the key channel; .env fully masked', () => {
+  it('deepseek: settings rows readable except the key channel; .env fully masked', () => {
     writeRel(
-      '.dsh/cordis.patch.yml',
+      '.dsh/settings.yaml',
       [
-        '# BEGIN harness-nexus:provider (managed)',
-        '- insert:',
-        '    - id: hnx-llm',
-        "      name: '@deepseek-ai/dsh-llm-pi-ai'",
-        '      config:',
-        '        providers:',
-        '          harness-nexus:',
-        '            api: anthropic-messages',
-        '            baseURL: "https://gw"',
-        '            apiKeyEnv: HARNESS_NEXUS_API_KEY',
-        '            models:',
-        '              - id: "deepseek-chat"',
-        '# END harness-nexus:provider (managed)',
+        '# BEGIN harness-nexus (managed) — rewritten by hnx; keep edits outside the markers',
+        'llm-pi-ai:',
+        '  providers:',
+        '    harness-nexus:',
+        '      api: anthropic-messages',
+        '      baseURL: "https://gw"',
+        '      apiKeyEnv: HARNESS_NEXUS_API_KEY',
+        '      models:',
+        '        - id: "deepseek-chat"',
+        'agent-default-model:',
+        '  provider: harness-nexus',
+        '  model: "deepseek-chat"',
+        '# END harness-nexus (managed)',
       ].join('\n') + '\n',
     );
     writeRel('.dsh/.env', `HARNESS_NEXUS_API_KEY=${secret}\n`);
     const view = readRuntimeConfigView('deepseek', home);
-    const patch = view.files.find((f) => f.path === '~/.dsh/cordis.patch.yml')!;
-    expect(patch.content).toContain('api: anthropic-messages');
-    expect(patch.content).toContain('baseURL: "https://gw"');
-    expect(patch.content).toContain(`apiKeyEnv: ${REDACTED_PLACEHOLDER}`);
+    const settings = view.files.find((f) => f.path === '~/.dsh/settings.yaml')!;
+    expect(settings.content).toContain('api: anthropic-messages');
+    expect(settings.content).toContain('baseURL: "https://gw"');
+    expect(settings.content).toContain(`apiKeyEnv: ${REDACTED_PLACEHOLDER}`);
+    expect(settings.content).toContain('agent-default-model:');
     const env = view.files.find((f) => f.path === '~/.dsh/.env')!;
     expect(env.content).toBe(`HARNESS_NEXUS_API_KEY=${REDACTED_PLACEHOLDER}\n`);
     expect(JSON.stringify(view)).not.toContain(secret);

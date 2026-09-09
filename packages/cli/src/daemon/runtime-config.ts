@@ -9,13 +9,9 @@ import {
   type RuntimeConfigSpec,
 } from '@harness-nexus/shared';
 import { HarnessNexusClient } from '@harness-nexus/sdk';
-import {
-  mergeManagedPatchRegion,
-  beginMarker,
-  endMarker,
-  DSH_PATCH_FILENAME,
-} from '../install/adapters/deepseek.js';
+import { beginMarker, endMarker, DSH_PATCH_FILENAME } from '../install/adapters/deepseek.js';
 import { mergeTomlSection } from '../install/adapters/codex.js';
+import { dshNodeWarning } from './runtime.js';
 
 /**
  * Provider-config apply (Phase 9 W3) — the daemon half of
@@ -36,13 +32,15 @@ import { mergeTomlSection } from '../install/adapters/codex.js';
  *    env var). `~/.codex/auth.json` — apikey mode with the key as
  *    `OPENAI_API_KEY`. `wire_api` is NOT set: current codex removed `chat`, so
  *    every route speaks Responses — gateways must be Responses-compatible.
- *  - deepseek: a managed region in the home `cordis.patch.yml` (sibling of the
- *    T1 MCP regions) mounting `@deepseek-ai/dsh-llm-pi-ai` with the provider
- *    route AND `@deepseek-ai/dsh-agent-default-model` pointing fresh agents at
- *    it (mounting a route alone doesn't select it). The key goes to
- *    `~/.dsh/.env` under `HARNESS_NEXUS_API_KEY` — dsh's own user-env
- *    credential layer, read on EVERY launch (user shells included; no wrapper
- *    or shell snippet needed). `apiKeyEnv` names it in the patch row.
+ *  - deepseek: the SETTINGS layer (`~/.dsh/settings.yaml`, namespace
+ *    `llm-pi-ai` with the provider route + `agent-default-model` selecting
+ *    it). NOT loader-entry inserts in `cordis.patch.yml` — the dsh
+ *    composition already mounts both plugins, and a second insert
+ *    double-registers them ("configurable provider … already declared" /
+ *    "service agentDefaultModel has been registered") and crashes
+ *    `--profile acp`. A legacy W3 patch region is retired by the same apply.
+ *    The key goes to `~/.dsh/.env` under `HARNESS_NEXUS_API_KEY` — dsh's own
+ *    user-env credential layer, read on EVERY launch (user shells included).
  */
 
 /** dsh resolves this name through process env > ~/.dsh/.credentials.yaml > ./.env > ~/.dsh/.env. */
@@ -194,39 +192,107 @@ const DSH_API_MAP: Record<RuntimeConfigSpec['api'], string> = {
   openai: 'openai-completions',
 };
 
+/** Settings namespaces our managed region owns (verified against the plugins). */
+const DSH_LLM_NS = 'llm-pi-ai';
+const DSH_DEFAULT_MODEL_NS = 'agent-default-model';
+
+const SETTINGS_BEGIN =
+  '# BEGIN harness-nexus (managed) — rewritten by hnx; keep edits outside the markers';
+const SETTINGS_END = '# END harness-nexus (managed)';
+
+/**
+ * Strip a marked block (full-line comment markers) from a document. Returns
+ * the remainder with collapsed surrounding blank lines.
+ */
+export function stripMarkedBlock(existing: string, begin: string, end: string): string {
+  const b = existing.indexOf(begin);
+  if (b === -1) return existing;
+  const e = existing.indexOf(end, b);
+  if (e === -1) return existing;
+  const before = existing.slice(0, b);
+  const after = existing.slice(e + end.length).replace(/^\n+/, '');
+  return `${before.replace(/\s+$/, '')}${before.trim().length > 0 ? '\n\n' : ''}${after}`;
+}
+
+/**
+ * Manage the dsh SETTINGS layer (`~/.dsh/settings.yaml`, the
+ * `dsh-settings-file` document — a mapping of namespace → user section).
+ *
+ * The W3 build inserted `dsh-llm-pi-ai` / `dsh-agent-default-model` as loader
+ * entries in the home `cordis.patch.yml`; that DOUBLE-REGISTERS plugins the
+ * dsh composition already mounts ("configurable provider amazon-bedrock is
+ * already declared" / "service agentDefaultModel has been registered") and
+ * crashes `--profile acp`. The sanctioned channel for an already-mounted
+ * plugin is its settings section: llm-pi-ai is dormant without one and
+ * activates routes the moment `llm-pi-ai.providers` appears; the default
+ * model selection layers the same way.
+ *
+ * A namespace key hand-written OUTSIDE our markers is refused (a duplicate
+ * top-level key would fail dsh's loud boot); the legacy W3 patch region is
+ * removed as part of the same apply.
+ */
 function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string): string[] {
   const dir = join(homeDir, '.dsh');
+  const files: string[] = [];
+
+  // 1. Retire the W3-era patch region (it crashes the ACP profile).
   const patchPath = join(dir, DSH_PATCH_FILENAME);
-  let patch = '';
   try {
-    patch = readFileSync(patchPath, 'utf8');
+    const patch = readFileSync(patchPath, 'utf8');
+    const stripped = stripMarkedBlock(
+      patch,
+      beginMarker(PROVIDER_REGION),
+      endMarker(PROVIDER_REGION),
+    );
+    if (stripped !== patch) {
+      // An EMPTY patch document is itself a boot error — normalize to [].
+      const next = stripped.trim().length === 0 ? '[]\n' : `${stripped.replace(/\s+$/, '')}\n`;
+      writeSecretFile(patchPath, next);
+      files.push(display(homeDir, patchPath));
+    }
   } catch {
-    patch = ''; // absent file — fresh document
+    // No patch file — nothing to clean up.
+  }
+
+  // 2. The settings document.
+  const settingsPath = join(dir, 'settings.yaml');
+  let doc = '';
+  try {
+    doc = readFileSync(settingsPath, 'utf8');
+  } catch {
+    doc = ''; // absent document — fresh store
+  }
+  const base = stripMarkedBlock(doc, SETTINGS_BEGIN, SETTINGS_END);
+  for (const ns of [DSH_LLM_NS, DSH_DEFAULT_MODEL_NS]) {
+    if (new RegExp(`^${ns}:`, 'm').test(base)) {
+      throw new Error(
+        `~/.dsh/settings.yaml already has a hand-managed "${ns}" section — hnx will not overwrite it; ` +
+          'remove or rename that section and re-apply',
+      );
+    }
   }
   const yq = JSON.stringify; // JSON quoting is valid YAML 1.2 double-quoting
-  const block = [
-    `${beginMarker(PROVIDER_REGION)} — rewritten by hnx; keep edits outside the markers`,
-    `- insert:`,
-    `    - id: hnx-llm`,
-    `      name: '@deepseek-ai/dsh-llm-pi-ai'`,
-    `      config:`,
-    `        providers:`,
-    `          harness-nexus:`,
-    `            displayName: ${yq(spec.providerLabel)}`,
-    `            api: ${DSH_API_MAP[spec.api]}`,
-    `            baseURL: ${yq(spec.baseUrl!)}`,
-    `            apiKeyEnv: ${DSH_API_KEY_ENV}`,
-    `            models:`,
-    `              - id: ${yq(spec.model)}`,
-    `    - id: hnx-default-model`,
-    `      name: '@deepseek-ai/dsh-agent-default-model'`,
-    `      config:`,
-    `        provider: harness-nexus`,
-    `        model: ${yq(spec.model)}`,
-    endMarker(PROVIDER_REGION),
+  const region = [
+    SETTINGS_BEGIN,
+    `${DSH_LLM_NS}:`,
+    `  providers:`,
+    `    harness-nexus:`,
+    `      displayName: ${yq(spec.providerLabel)}`,
+    `      api: ${DSH_API_MAP[spec.api]}`,
+    `      baseURL: ${yq(spec.baseUrl!)}`,
+    `      apiKeyEnv: ${DSH_API_KEY_ENV}`,
+    `      models:`,
+    `        - id: ${yq(spec.model)}`,
+    `${DSH_DEFAULT_MODEL_NS}:`,
+    `  provider: harness-nexus`,
+    `  model: ${yq(spec.model)}`,
+    SETTINGS_END,
   ].join('\n');
-  writeSecretFile(patchPath, mergeManagedPatchRegion(patch, PROVIDER_REGION, block));
+  const nextDoc = `${base.replace(/\s+$/, '')}${base.trim().length > 0 ? '\n\n' : ''}${region}\n`;
+  writeSecretFile(settingsPath, nextDoc);
+  files.push(display(homeDir, settingsPath));
 
+  // 3. The key itself — dsh's user-env credential layer.
   const envPath = join(dir, '.env');
   let envDoc = '';
   try {
@@ -235,7 +301,8 @@ function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string
     envDoc = '';
   }
   writeSecretFile(envPath, mergeEnvLine(envDoc, DSH_API_KEY_ENV, secret));
-  return [display(homeDir, patchPath), display(homeDir, envPath)];
+  files.push(display(homeDir, envPath));
+  return files;
 }
 
 /** The per-target native writer — pure file surgery, no I/O beyond the harness homes. */
@@ -287,7 +354,13 @@ export async function runApplyConfigJob(
     const bundle = await client.getRuntimeConfigBundle(target);
     progress('apply', `writing ${target} config`);
     const { files } = applyRuntimeConfig(target, bundle.spec, bundle.secret, homeDir);
-    const data = harnessResultDataSchema.parse({ target, action: 'apply-config', files });
+    const nodeWarning = target === 'deepseek' ? dshNodeWarning() : null;
+    const data = harnessResultDataSchema.parse({
+      target,
+      action: 'apply-config',
+      files,
+      ...(nodeWarning !== null ? { warning: nodeWarning } : {}),
+    });
     socket.emit('job:result', { jobId: job.id, ok: true, data });
   } catch (e) {
     socket.emit('job:result', {
