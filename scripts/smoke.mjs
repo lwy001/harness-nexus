@@ -2321,6 +2321,9 @@ expect('dsh: llm namespace carries the route', w3Settings.includes('llm-pi-ai:')
 expect('dsh: anthropic api flavor', w3Settings.includes('api: anthropic-messages'), true);
 expect('dsh: key channel is the env var name', w3Settings.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'), true);
 expect('dsh: default-model namespace selects the route', w3Settings.includes('agent-default-model:'), true);
+const w3Patch = readFileSync(pathMod.join(w3Home, '.dsh', 'cordis.patch.yml'), 'utf8');
+expect('dsh: acp entry overridden onto our route', w3Patch.includes('- id: acp'), true);
+expect('dsh: override selects harness-nexus', w3Patch.includes('provider: harness-nexus'), true);
 const w3Env = readFileSync(pathMod.join(w3Home, '.dsh', '.env'), 'utf8');
 expect('dsh: user env var survives', w3Env.includes('DEEPSEEK_API_KEY=user-key'), true);
 expect('dsh: managed key written', w3Env.includes('HARNESS_NEXUS_API_KEY=sk-w3-secret'), true);

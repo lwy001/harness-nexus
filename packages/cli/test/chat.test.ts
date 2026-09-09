@@ -207,6 +207,50 @@ describe('session round-trip vs the fixture agent', () => {
     expect(lateAck).toHaveBeenCalledWith({ error: 'unknown-session' });
   }, 15000);
 
+  it('a prompt REJECTED with a protocol error ends the turn but keeps the channel', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-err',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-err',
+      prompt: [{ type: 'text', text: 'please error now' }],
+    });
+    const errEvent = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'raw' && e.method === 'hnx/prompt-error'),
+    );
+    expect((errEvent.params as { message: string }).message).toBe('Authentication required');
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'turn_result' && e.stopReason === 'end_turn'),
+    );
+    expect(socket.chatEvents()).toContainEqual({ kind: 'session_status', state: 'idle' });
+    // The channel SURVIVES the errored turn (the old code tore it down).
+    expect(socket.eventsOf('chat:session.closed')).toHaveLength(0);
+
+    // …and the very next prompt still works (echo).
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-err',
+      prompt: [{ type: 'text', text: 'still alive?' }],
+    });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta === 'echo: still alive?'),
+    );
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-err', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
   it('start with an unavailable adapter reports spawn failure', async () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {

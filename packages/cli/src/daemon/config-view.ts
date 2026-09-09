@@ -22,7 +22,7 @@ import type { RuntimeConfigViewEvent, RuntimeTarget } from '@harness-nexus/share
 export const TARGET_CONFIG_FILES: Record<RuntimeTarget, readonly string[]> = {
   'claude-code': ['.claude/settings.json'],
   codex: ['.codex/config.toml', '.codex/auth.json'],
-  deepseek: ['.dsh/settings.yaml', '.dsh/.env'],
+  deepseek: ['.dsh/settings.yaml', '.dsh/cordis.patch.yml', '.dsh/.env'],
 };
 
 /** Cap per file — real harness configs are tiny; anything big is skipped. */

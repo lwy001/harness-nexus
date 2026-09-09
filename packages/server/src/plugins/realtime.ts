@@ -156,6 +156,9 @@ export async function registerRealtime(
     },
   };
   app.decorate('realtime', realtime);
+  // Rows a previous server process left open can never resume (v1) — settle
+  // them now so the UI's session list stops offering dead channels.
+  void realtime.chat.sweepOrphanedSessions();
 
   const touchLastSeen = async (machine: Machine): Promise<Machine> => {
     const updated = { ...machine, lastSeenAt: new Date().toISOString() };
@@ -440,7 +443,9 @@ export async function registerRealtime(
         // channel joins on `chat:session.ready` (the opener would otherwise
         // sit in a room for an agent that may fail to spawn).
         if (result.joined) void socket.join(`chan:${result.sessionId}`);
-        ack?.({ sessionId: result.sessionId });
+        // `phase` lets the browser settle its pane from the ack alone — the
+        // ready push can predate the caller's event listeners.
+        ack?.({ sessionId: result.sessionId, phase: result.phase });
       })();
     });
 

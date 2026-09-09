@@ -59,8 +59,8 @@ interface ToolRow {
 }
 
 interface ConversationState {
-  /** 'user' | 'agent' | 'thought' text blocks, in order. */
-  blocks: { role: 'user' | 'agent' | 'thought'; text: string }[];
+  /** 'user' | 'agent' | 'thought' | 'error' text blocks, in order. */
+  blocks: { role: 'user' | 'agent' | 'thought' | 'error'; text: string }[];
   tools: ToolRow[];
   permissions: {
     requestId: string;
@@ -184,8 +184,19 @@ function conversationReducer(
       };
     case 'session_status':
       return { ...state, turnActive: event.state === 'active' };
+    case 'raw':
+      // The one raw shape the fold cares about: a failed turn (adapter
+      // protocol error — e.g. "Authentication required"). Anything else is
+      // protocol noise the fold intentionally ignores.
+      if (event.method === 'hnx/prompt-error') {
+        const message = (event.params as { message?: string } | undefined)?.message;
+        if (message !== undefined && message !== '') {
+          return { ...state, blocks: [...state.blocks, { role: 'error', text: message }] };
+        }
+      }
+      return state;
     default:
-      return state; // raw — the fold keeps the known kinds only
+      return state;
   }
 }
 
@@ -211,6 +222,13 @@ export function ChatPage() {
   const [draft, setDraft] = useState('');
   const [conversation, dispatch] = useReducer(conversationReducer, EMPTY_CONVERSATION);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  /** Phase carried by an open ack — consumed by the sessionId effect (its
+   *  'connecting' reset would otherwise clobber a same-tick 'ready'). */
+  const pendingPhaseRef = useRef<'ready' | null>(null);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  /** Session the one-shot connect-retry is armed for. */
+  const connectTargetRef = useRef<string | null>(null);
 
   const machine = useMemo(() => machines.find((m) => m.id === machineId), [machines, machineId]);
   const agent = useMemo(() => agents.find((a) => a.id === agentId), [agents, agentId]);
@@ -268,7 +286,12 @@ export function ChatPage() {
   // Reset the pane whenever the channel changes.
   useEffect(() => {
     dispatch({ type: 'reset' });
-    setPhase(sessionId === '' ? 'idle' : 'connecting');
+    if (sessionId === '') {
+      setPhase('idle');
+      return;
+    }
+    setPhase(pendingPhaseRef.current === 'ready' ? 'ready' : 'connecting');
+    pendingPhaseRef.current = null;
   }, [sessionId]);
 
   // Live channel wiring.
@@ -312,7 +335,11 @@ export function ChatPage() {
   async function openChannel(rejoinId?: string): Promise<void> {
     if (agentId === '') return;
     setError(null);
-    const ack = await emitWithAck<{ sessionId?: string; error?: string }>('chat:session.open', {
+    const ack = await emitWithAck<{
+      sessionId?: string;
+      phase?: 'starting' | 'ready';
+      error?: string;
+    }>('chat:session.open', {
       agentInstanceId: agentId,
       ...(rejoinId !== undefined ? { sessionId: rejoinId } : {}),
     });
@@ -327,12 +354,29 @@ export function ChatPage() {
               ? t('chat.errDaemonNoChat')
               : code === 'SESSION_LIMIT_REACHED'
                 ? t('chat.errSessionLimit')
-                : code,
+                : code === 'SESSION_NOT_FOUND'
+                  ? t('chat.errSessionGone')
+                  : code,
       );
       return;
     }
+    // A re-join (or an agent that came ready before this ack returned) can
+    // settle the pane immediately — the ready push may predate our listeners.
+    pendingPhaseRef.current = ack.phase === 'ready' ? 'ready' : null;
     setSessionId(ack.sessionId);
     void refreshSessions();
+    if (ack.phase !== 'ready') {
+      // One-shot recovery for a ready push lost to the ack/listener race:
+      // re-open (idempotent rejoin) settles the phase from its ack.
+      const target = ack.sessionId;
+      connectTargetRef.current = target;
+      window.setTimeout(() => {
+        if (phaseRef.current === 'connecting' && connectTargetRef.current === target) {
+          connectTargetRef.current = null;
+          void openChannel(target);
+        }
+      }, 12000);
+    }
   }
 
   async function send(): Promise<void> {
@@ -571,9 +615,23 @@ function EmptyPane() {
   );
 }
 
-function ConversationBlock({ role, text }: { role: 'user' | 'agent' | 'thought'; text: string }) {
+function ConversationBlock({
+  role,
+  text,
+}: {
+  role: 'user' | 'agent' | 'thought' | 'error';
+  text: string;
+}) {
   const { t } = useI18n();
   if (text === '') return null;
+  if (role === 'error') {
+    return (
+      <div className="text-destructive text-sm">
+        <span className="text-muted-foreground mr-2 text-xs uppercase">{t('chat.roleError')}</span>
+        <span className="whitespace-pre-wrap">{text}</span>
+      </div>
+    );
+  }
   return (
     <div className={role === 'thought' ? 'text-muted-foreground text-sm italic' : 'text-sm'}>
       <span className="text-muted-foreground mr-2 text-xs uppercase">{t(ROLE_KEY[role])}</span>

@@ -279,6 +279,24 @@ platform | local` (install ledger, `harness-nexus*` names, CC marketplace
   but EVERY profile load (`--profile acp` included, i.e. chat) fails. The
   harness jobs now attach a result `warning` on deepseek targets when the
   daemon runs an older Node.
+- **More follow-up facts (2026-09-09, chat verification round):**
+  - The `dsh-acp-app` bundle's composition PINS the ACP plugin's model:
+    `- id: acp … config: {provider: deepseek-official, model:
+deepseek-v4-flash}` — a plugin's explicit config beats the settings-layer
+    default for its sessions, so the settings `agent-default-model` section
+    alone does NOT reroute chat. The patch layer's id-targeted CONFIG
+    OVERRIDE (`- id: acp / config: {provider: harness-nexus, model}`) does —
+    verified end to end (fresh acp sessions select our route).
+  - A `session/new` fired the instant `initialize` resolves races the agent's
+    model-adapter registration: dsh replies `-32603 Internal error` with
+    `data.details: "no adapter registered for provider …"` (the bare message
+    hides the cause — our JSON-RPC client now surfaces `data.details`, and
+    the daemon retries that specific failure with backoff).
+  - Adapters answer turn failures (bad API key → dsh replies an Internal
+    error turn; claude-code replies `-32000 Authentication required`) as
+    JSON-RPC errors WHILE STAYING ALIVE — a client must treat a rejected
+    prompt as a turn error, not a dead channel. (dsh 0.1.2-rc.1's acp app
+    DOES exit after a failed turn — its own bug; the error surfaces first.)
 
 ### 8.2 Codex (verified against codex-rs source, main @ 2026-09-08)
 

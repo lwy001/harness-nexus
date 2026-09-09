@@ -335,6 +335,9 @@ export function createMemoryUnitOfWork(): UnitOfWork {
         .filter((s) => s.agentInstanceId === agentInstanceId)
         .sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
     },
+    async listOpen() {
+      return [...acSessions.values()].filter((x) => x.closedAt === null);
+    },
     async listOpenByMachine(machineId) {
       return [...acSessions.values()].filter(
         (s) => s.machineId === machineId && s.closedAt === null,
