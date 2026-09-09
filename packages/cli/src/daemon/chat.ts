@@ -85,7 +85,11 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           cwd,
           ...(opts.spawnEnv !== undefined ? { env: opts.spawnEnv } : {}),
         });
-        const created = (await conn.request('session/new', { cwd }, 20000)) as {
+        // `mcpServers` is sent explicitly (spec: an array): the CURRENT
+        // @zed-industries/claude-agent-acp zod-validates session/new and
+        // rejects an absent field with `Invalid params` — adapters are pulled
+        // latest by `npx -y`, so the client must be maximally spec-shaped.
+        const created = (await conn.request('session/new', { cwd, mcpServers: [] }, 20000)) as {
           sessionId?: string;
         };
         const session: DaemonSession = {

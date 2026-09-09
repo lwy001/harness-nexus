@@ -114,6 +114,16 @@ export function disableClaudeAutoUpdater(homeDir: string): string | null {
   return null; // ok
 }
 
+/** dsh ≥0.1.2's plugin tree needs Node APIs absent from 20.x (zlib zstd, Promise.withResolvers). */
+export function dshNodeWarning(): string | null {
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major === undefined) return null;
+  const ok = major > 22 || (major === 22 && (minor ?? 0) >= 15);
+  return ok
+    ? null
+    : `deepseek's ACP profile needs Node >=22.15 (this daemon runs ${process.versions.node}) — chat sessions will fail until Node is upgraded`;
+}
+
 export interface HarnessJobOptions {
   /** Per-command timeout (default 10 min — npm on a slow link is slow). */
   timeoutMs?: number;
@@ -219,6 +229,9 @@ export async function runHarnessJob(
   let warning: string | null = null;
   if (payload.target === 'claude-code') {
     warning = disableClaudeAutoUpdater(homeDir);
+  }
+  if (warning === null && payload.target === 'deepseek') {
+    warning = dshNodeWarning();
   }
 
   // Re-probe so the job RESULT reports what actually landed, then auto-report

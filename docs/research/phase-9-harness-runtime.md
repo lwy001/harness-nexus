@@ -257,9 +257,28 @@ platform | local` (install ledger, `harness-nexus*` names, CC marketplace
      names (`DSH_*` prefix, proxy/CA vars, `DEEPSEEK_BASE_URL`, `EDITOR`, …);
      `HARNESS_NEXUS_API_KEY` is clear of the blocklist.
      (The design's `~/.dsh/env` guess was wrong by one dot — it's `.env`.)
-- Patch-row shape mirrors T1's MCP rows: `- insert:` list entries with
-  `id` / `name` (plugin package) / `config`. Two rows in our
-  `harness-nexus:provider` managed region (llm route + default-model).
+- **Correction (2026-09-09, post-ship): do NOT insert these plugins as loader
+  entries.** The dsh composition (e.g. `dsh-base` + `dsh-acp-app` for the acp
+  profile) ALREADY mounts `dsh-llm-pi-ai` and `dsh-agent-default-model`; a
+  home-patch `- insert:` of either double-registers and crashes the plugin
+  tree (`configurable provider "amazon-bedrock" is already declared` /
+  `service "agentDefaultModel" has been registered`). The sanctioned channel
+  for an already-mounted plugin is its SETTINGS section —
+  `dsh-settings-file` keeps one document at `~/.dsh/settings.yaml`
+  (namespace → user section, hot-reloaded, 0600, loud on invalid):
+  - `llm-pi-ai:` → the plugin `Config` (`providers:` dict) — dormant until a
+    section appears, routes activate live;
+  - `agent-default-model:` → `{provider, model, reasoningEffort?}`;
+  - a duplicate top-level namespace key is a boot error — a hand-managed
+    section must be refused, not merged.
+- Also learned: an EMPTY `cordis.patch.yml` is itself a boot error ("must be
+  a top-level YAML array") — normalize stripped docs to `[]`.
+- **Node floor: the dsh plugin tree needs Node ≥22.15** (zlib zstd
+  `createZstdDecompress` in `dsh-session-persistence-jsonl`;
+  `Promise.withResolvers` in `dsh-agent-loop`). Node 20 runs `dsh --version`
+  but EVERY profile load (`--profile acp` included, i.e. chat) fails. The
+  harness jobs now attach a result `warning` on deepseek targets when the
+  daemon runs an older Node.
 
 ### 8.2 Codex (verified against codex-rs source, main @ 2026-09-08)
 

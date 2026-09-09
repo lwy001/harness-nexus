@@ -2315,12 +2315,12 @@ for (let i = 0; i < 150; i++) {
   await new Promise((s2) => setTimeout(s2, 200));
 }
 expect('w3 deepseek apply job succeeded', w3job?.status, 'succeeded');
-const w3Patch = readFileSync(pathMod.join(w3Home, '.dsh', 'cordis.patch.yml'), 'utf8');
-expect('dsh: managed provider region', w3Patch.includes('harness-nexus:provider'), true);
-expect('dsh: llm plugin row', w3Patch.includes("@deepseek-ai/dsh-llm-pi-ai"), true);
-expect('dsh: anthropic api flavor', w3Patch.includes('api: anthropic-messages'), true);
-expect('dsh: key channel is the env var name', w3Patch.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'), true);
-expect('dsh: default-model row selects the route', w3Patch.includes("@deepseek-ai/dsh-agent-default-model"), true);
+const w3Settings = readFileSync(pathMod.join(w3Home, '.dsh', 'settings.yaml'), 'utf8');
+expect('dsh: settings managed region', w3Settings.includes('# BEGIN harness-nexus (managed)'), true);
+expect('dsh: llm namespace carries the route', w3Settings.includes('llm-pi-ai:'), true);
+expect('dsh: anthropic api flavor', w3Settings.includes('api: anthropic-messages'), true);
+expect('dsh: key channel is the env var name', w3Settings.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'), true);
+expect('dsh: default-model namespace selects the route', w3Settings.includes('agent-default-model:'), true);
 const w3Env = readFileSync(pathMod.join(w3Home, '.dsh', '.env'), 'utf8');
 expect('dsh: user env var survives', w3Env.includes('DEEPSEEK_API_KEY=user-key'), true);
 expect('dsh: managed key written', w3Env.includes('HARNESS_NEXUS_API_KEY=sk-w3-secret'), true);
@@ -2387,13 +2387,13 @@ expect(
   w4Env.content,
   'DEEPSEEK_API_KEY=${redacted}\nHARNESS_NEXUS_API_KEY=${redacted}\n',
 );
-const w4Patch = r.json.files.find((f) => f.path === '~/.dsh/cordis.patch.yml');
+const w4Settings = r.json.files.find((f) => f.path === '~/.dsh/settings.yaml');
 expect(
-  'w4 patch rows readable',
-  w4Patch.content.includes("name: '@deepseek-ai/dsh-llm-pi-ai'"),
+  'w4 settings rows readable',
+  w4Settings.content.includes('llm-pi-ai:'),
   true,
 );
-expect('w4 patch key channel masked', w4Patch.content.includes('apiKeyEnv: ${redacted}'), true);
+expect('w4 settings key channel masked', w4Settings.content.includes('apiKeyEnv: ${redacted}'), true);
 
 log('\n--- [9 W4] gates: admin view ok, bad target 400 ---');
 r = await req('GET', `/api/machines/${w3MachineId}/runtimes/codex/config`, { token: adminToken });
