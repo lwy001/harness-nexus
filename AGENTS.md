@@ -840,6 +840,18 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
 - Daemon `0.10.0-p9w7` advertises `sessions`. The fixture agent gained
   `session/list` + `session/load`-with-replay arms (`FIXTURE_ACP_NO_LOAD=1`
   → the dsh-shaped resume-only capability set).
+- **Failed establishment MUST kill the adapter** (leak regression, rig-found):
+  a failed resume (dsh validates the session's PINNED `(provider, model)`
+  against the LIVE catalog at resume — a provider-config change orphans old
+  sessions; cwd mismatch / "already active" / startup-race giveup likewise)
+  emits `ready{error}` and the catch kills the connection — otherwise every
+  failed click leaks a live adapter process parented to the daemon forever.
+  The dsh listing ANNOTATES those sessions up front: the transcript's
+  `request/header` pins the model, our own W3 managed region in
+  `~/.dsh/settings.yaml` is the current catalog, mismatches carry
+  `model` + `staleReason: 'model-missing'` (`nativeSessionView` optional
+  fields) and the rail mutes them with a "pinned model no longer configured"
+  hint instead of offering a guaranteed failure.
 
 ## Authentication & authorization (permission interceptors)
 

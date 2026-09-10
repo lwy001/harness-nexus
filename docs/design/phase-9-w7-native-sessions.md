@@ -5,6 +5,13 @@
 > `session` header entry carries its fields at the TOP level (no `data`
 > wrapper), and Node's zstd APIs (sync AND stream) stop after the first
 > frame of a multi-frame file — both caught by the smoke run.
+> Post-ship fixes (`fix/p9w7-resume-leak-stale-model`, rig-found): a failed
+> establishment now KILLS the adapter in the catch (every failed resume used
+> to leak a live `dsh --profile acp` child of the daemon); the dsh listing
+> flags stale-model sessions (`staleReason: 'model-missing'` — dsh validates
+> the session's pinned route against the live provider catalog at resume, so
+> a provider-config change orphans old sessions; the transcript's
+> `request/header` pins the model, our W3 settings region is the catalog).
 > User directive (verbatim intent): 会话不落到平台 —— 会话列表也不需要，所以也
 > 不存在“关闭”一说；就使用各家自带的 resume 以及会话列表。
 > Supersedes the C5 "no resume" boundary (`docs/design/phase-8-c5.md` §
