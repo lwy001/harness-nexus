@@ -241,6 +241,10 @@ permission_request`; the server's respond (or timeout-cancel) resolves it
   doc's catalog row remains the target.
 - Session resume/replay (`session/load`), session listing from the agent —
   v1 channels die with the daemon connection ("no resume" rule).
+  **SUPERSEDED by Phase 9 W7** (`docs/design/phase-9-w7-native-sessions.md`):
+  sessions are the agent's OWN — the platform persists nothing
+  session-shaped, the rail lists the native store live, resume rides
+  `session/load`/`session/resume`, and history ships as `chat:history`.
 - Follow-up queue while a turn runs (server rejects with `SESSION_BUSY`;
   the UI disables send while active).
 - Image/audio prompt blocks, `resource` blocks (schemas reserved, UI

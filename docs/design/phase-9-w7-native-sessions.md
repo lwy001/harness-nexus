@@ -1,6 +1,10 @@
 # Design: Phase 9 W7 — native agent sessions (list + resume, no platform session store)
 
-> Status: **DESIGNED 2026-09** (branch `feat/p9-w7-native-sessions`).
+> Status: **SHIPPED 2026-09** (branch `feat/p9-w7-native-sessions`).
+> Post-ship ground-truth corrections folded into §Ground truth: dsh's
+> `session` header entry carries its fields at the TOP level (no `data`
+> wrapper), and Node's zstd APIs (sync AND stream) stop after the first
+> frame of a multi-frame file — both caught by the smoke run.
 > User directive (verbatim intent): 会话不落到平台 —— 会话列表也不需要，所以也
 > 不存在“关闭”一说；就使用各家自带的 resume 以及会话列表。
 > Supersedes the C5 "no resume" boundary (`docs/design/phase-8-c5.md` §
@@ -40,12 +44,12 @@ and `session/list → {sessions: SessionInfo[], nextCursor?}` with
 `session/update`s); **`session/resume` = resume without replay**. Both take the
 session's original `cwd`.
 
-| target | adapter (rig-pinned) | caps | list returns | resume |
-| --- | --- | --- | --- | --- |
-| claude-code | `@zed-industries/claude-agent-acp` 0.23.1 | `fork,list,resume,close` + legacy `loadSession:true` | `{sessionId, cwd, title, updatedAt}` (title = SDK summary; reads `~/.claude/projects`) | `session/load` **replays full history** as `session/update` (incl. `user_message_chunk`) |
-| codex | `@zed-industries/codex-acp` 0.16.0 (Rust) | `list,resume,close` + `loadSession:true` (auth-gated until codex auth exists) | SessionInfo (adapter-owned storage) | `session/load` (replay per spec) |
-| deepseek | `dsh-acp` 0.1.2-rc.1 (native `dsh --profile acp`) | `close,list,resume` — **no `load`** | `{sessionId, cwd}` ONLY (sorted newest-first, root sessions only, active excluded) | `session/resume {sessionId, cwd}` — **cwd must match** (physical-directory check), rejects subagent/non-root/active; **restores the log without replaying old updates** |
-| hermes | `acp_adapter` | unverified | — | W7 ships **unsupported** (graceful empty list) |
+| target      | adapter (rig-pinned)                              | caps                                                                          | list returns                                                                           | resume                                                                                                                                                                  |
+| ----------- | ------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| claude-code | `@zed-industries/claude-agent-acp` 0.23.1         | `fork,list,resume,close` + legacy `loadSession:true`                          | `{sessionId, cwd, title, updatedAt}` (title = SDK summary; reads `~/.claude/projects`) | `session/load` **replays full history** as `session/update` (incl. `user_message_chunk`)                                                                                |
+| codex       | `@zed-industries/codex-acp` 0.16.0 (Rust)         | `list,resume,close` + `loadSession:true` (auth-gated until codex auth exists) | SessionInfo (adapter-owned storage)                                                    | `session/load` (replay per spec)                                                                                                                                        |
+| deepseek    | `dsh-acp` 0.1.2-rc.1 (native `dsh --profile acp`) | `close,list,resume` — **no `load`**                                           | `{sessionId, cwd}` ONLY (sorted newest-first, root sessions only, active excluded)     | `session/resume {sessionId, cwd}` — **cwd must match** (physical-directory check), rejects subagent/non-root/active; **restores the log without replaying old updates** |
+| hermes      | `acp_adapter`                                     | unverified                                                                    | —                                                                                      | W7 ships **unsupported** (graceful empty list)                                                                                                                          |
 
 ### dsh transcript format (the no-replay workaround)
 
@@ -84,7 +88,7 @@ dsh persists every session at
   order, permission watchdogs, and channel caps are unchanged. The boot sweep /
   orphaned-row closes / `machine-deleted` row settles all disappear (no rows).
 - **"Close" is re-framed as "disconnect"**: the `chat:session.close` event
-  keeps its name (wire compat) but means *drop this channel + subprocess* —
+  keeps its name (wire compat) but means _drop this channel + subprocess_ —
   never any session finality. UI copy follows (断开, with a hint that the
   conversation stays with the agent). Machine deletion / daemon disconnect
   still tear channels down the same way.
@@ -118,7 +122,7 @@ dsh persists every session at
 ## Resume
 
 - Browser clicks a native session row → `chat:session.open {agentInstanceId,
-  resume: {sessionId, cwd}}` (the values came from the daemon's own listing —
+resume: {sessionId, cwd}}` (the values came from the daemon's own listing —
   ground truth, not client input to validate against the workspace root).
 - Server: the SAME gating order as a new session (owner → remote-chat → online
   → chat capability → channel cap). The baseWorkspace containment check
@@ -145,7 +149,7 @@ row model) means the browser folds it through the EXISTING reducer — one
 rendering path for live and history.
 
 1. **claude-code / codex (`session/load` replay)**: the daemon attaches its
-   notification handler in *capture* mode before calling `session/load`
+   notification handler in _capture_ mode before calling `session/load`
    (claude's adapter replays BEFORE the load response resolves), maps captured
    `session/update`s with the existing `mapAcpUpdate` — except
    `user_message_chunk`, which becomes a `user` item instead of being dropped —

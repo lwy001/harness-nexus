@@ -742,11 +742,12 @@ Summary for daily work:
 - **W6 — chat is Agent cards → session page.** `/chat` renders one card per
   AgentInstance grouped by machine (blocked states ON the card, not hidden);
   `/chat/agents/:agentId` is the session page (`AppShell variant="full"` —
-  viewport-locked, no max-width/padding): LEFT the session list **grouped by
-  `AcSession.cwd`** (group = basename + full-path tooltip, groups by newest
-  session, rows show `title ?? untitled` + relative time; open rows
-  clickable, closed rows muted — **no transcript replay in v1, never faked**),
-  RIGHT the portal-style row stream + composer.
+  viewport-locked, no max-width/padding): LEFT the session list (since W7 the
+  AGENT'S OWN native sessions, grouped by cwd — group = basename + full-path
+  tooltip, groups by newest session, rows show `title ?? untitled` +
+  relative time; row click = RESUME), RIGHT the portal-style row stream +
+  composer. The pre-W7 `AcSession`-row rail (open/closed states, no replay)
+  is GONE — see the W7 section.
 - **New sessions pick a directory first.** `Machine.baseWorkspace` (nullable,
   migration `0013`) is the root; `GET /api/machines/:id/workspace?path=`
   lists ONE level of subdirectories through the daemon (`workspace:list`
@@ -756,9 +757,8 @@ Summary for daily work:
   offers the owner an inline set-base-workspace form when unset; first click
   on a collapsed folder EXPANDS, second SELECTS). `chat:session.open` accepts
   `directory` → validated (`WORKSPACE_NOT_SET` / `WORKSPACE_INVALID`) before
-  the gates, stored as the row's `cwd`, and passed as `chatSessionStart.cwd`.
-  `AcSession.title` derives ONCE from the first prompt (first line,
-  collapsed, ≤80 chars) in `ChatService.onMessageSend`.
+  the gates, and passed as `chatSessionStart.cwd`. Containment applies ONLY
+  to new sessions — a W7 `resume` arm passes the native cwd through verbatim.
 - **Rich tool cards need the enriched wire**: `acpToolCallView` carries
   `toolName` (from the update or `_meta.claudeCode.toolName`), `rawInput`
   (dropped past 32 KiB), structured `content` (diff/content/terminal), and
@@ -786,6 +786,60 @@ Summary for daily work:
   `/chat/agents/:id`, and its header carries the base-workspace field.
 - Daemon `0.9.0-p9w6` advertises `workspace` alongside the W4 set. The
   fixture agent gained a `show-tools` arm for card fixtures.
+
+## Native agent sessions — list + resume, no platform store (Phase 9 W7)
+
+Full design + ground truth in `docs/design/phase-9-w7-native-sessions.md`.
+Supersedes the C5 "no resume" boundary and the W6 AcSession-row session list.
+Summary for daily work:
+
+- **The platform persists NOTHING session-shaped.** The `AcSession` audit
+  table is deleted end-to-end (core type + port + `UnitOfWork.acSessions` +
+  both drivers + migration **0014** `DROP TABLE ac_sessions`). `ChatService`
+  is purely in-memory live-channel state. "Close" is re-framed as
+  **disconnect** — `chat:session.close` keeps its wire name but only kills
+  the channel + subprocess; the agent's own session survives.
+- **The session list is the agent's OWN**, fetched live through the daemon:
+  `GET /api/agent-instances/:id/sessions` → `{agent, supported, sessions:
+NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
+  **`sessions`**, `SessionsCoordinator` waiters, gates mirror the workspace
+  route incl. error-arm-before-timeout; `SESSIONS_TIMEOUT_MS` default 30s).
+  Daemon strategy (`cli/src/daemon/sessions.ts`): claude-code/codex spawn a
+  short-lived adapter + `session/list` (claude-agent-acp 0.23 returns full
+  SessionInfo; codex-acp 0.16 same, auth-gated); deepseek does a pure file
+  scan of `~/.dsh/sessions` (no spawn); hermes/zcode/generic →
+  `supported:false`.
+- **Resume picks the method from the ADVERTISED capability**
+  (`chat:session.open {resume:{sessionId,cwd}}` → `chatSessionStart.resume`):
+  prefer `session/load` (claude/codex REPLAY their history as
+  session/updates), fall back `session/resume` (dsh — restores without
+  replay, demands an exact cwd match, rejects subagent/active sessions).
+  The resume cwd came from the daemon's own listing, so NO baseWorkspace
+  containment applies.
+- **History is ONE wire shape, three producers**: `chat:history
+{sessionId, items}` where `HistoryItem = {type:'user', blocks} |
+{type:'event', event}` — user blocks + ORDINARY stream events, so the
+  browser folds history through the same reducer (`fold` action `history`
+  rebuilds from fresh; idempotent). Producers: (a) the load-replay capture
+  (the daemon buffers notifications DURING `session/load` — `user_message_chunk`
+  becomes a user item there instead of being dropped; a synthetic
+  `turn_result` is appended if none arrived); (b) dsh's transcript file
+  (`cli/src/daemon/dsh-sessions.ts` — MULTI-FRAME zstd: scan magic
+  `28 B5 2F FD`, decode slices — Node's one-shot/stream decoders stop after
+  frame 1; the `session` header entry carries fields at the TOP level, no
+  `data` wrapper, unlike every other entry; real user turns are the
+  `agent/inbox/spliced` inserts, `user/message` echoes + runtime-context
+  entries are noise); (c) the per-channel history ring (forwarded prompts +
+  mapped events, ≤2000) replayed on `chat:session.resync` (server sends it
+  on rejoin AND after every ready — fixes the page-refresh-loses-transcript
+  wart; double-push is safe because history ingestion resets first).
+- `chat:session.ready` gained `nativeSessionId` (server remembers it, the
+  rail highlights the row backing the open channel). zstd needs Node ≥22.15
+  — below it dsh listing/history degrade gracefully (error note / empty
+  history), never crash.
+- Daemon `0.10.0-p9w7` advertises `sessions`. The fixture agent gained
+  `session/list` + `session/load`-with-replay arms (`FIXTURE_ACP_NO_LOAD=1`
+  → the dsh-shaped resume-only capability set).
 
 ## Authentication & authorization (permission interceptors)
 
@@ -921,15 +975,16 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `job:dispatch` handler (`cli/src/daemon/jobs.ts`) reuses the UNCHANGED 3.3
   pipeline with `job:progress`/`job:result` reporting; `/app` `job:update`
   push; MachineDetail Deployments card. C5
-  (`docs/design/phase-8-c5.md`) — ACP chat: `AcSession` audit rows (migration
-  `0010`, NO FKs — rows survive machine deletion), the `chat:*` protocol + ACP
+  (`docs/design/phase-8-c5.md`) — ACP chat: the `chat:*` protocol + ACP
   dialect schemas in `shared/realtime.ts` (semantic `ChatStreamEvent` stream +
   verbatim `optionId`), `ChatService` (`server/src/realtime/chat.ts`,
   `app.realtime.chat`) — gating order AgentInstance→remoteChatEnabled→online→
   capability→cap, opener joined to `chan:<sid>` AT OPEN (failure pushes must
   reach the browser), ready/permission watchdogs (`CHAT_READY_TIMEOUT_MS`,
   `CHAT_PERMISSION_TIMEOUT_MS`), busy gate, teardown on disconnect/delete/
-  shutdown ("no resume"); the daemon's session manager
+  shutdown (the C5 `AcSession` audit rows + "no resume" boundary were
+  REPLACED by Phase 9 W7 — the platform persists nothing session-shaped,
+  list/resume/history are the agent's own); the daemon's session manager
   (`cli/src/daemon/chat.ts` + `daemon/acp/`) — per-target ACP adapter
   subprocess table (`@zed-industries/claude-agent-acp` / `codex-acp` /
   hermes `acp_adapter`; env override `HN_ACP_COMMAND_<TARGET>` — also how
@@ -984,14 +1039,19 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
-  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 + W2 are
-  SHIPPED (2026-09, see the sections above): Agent-first inventory with the
-  runtime probe arm, detected AgentInstances (chatable), capture-as-profile,
-  and `harness`-type install/upgrade/pin jobs.** Remaining waves W3–W4 are
-  designed, not implemented: `RuntimeConfig` provider/model push referencing
-  distributable credentials; redacted config viewing. Read
-  `docs/research/phase-9-harness-runtime.md` + `docs/design/phase-9-harness-runtime.md`
-  first — waves W1–W4 land independently. Local verification-rig notes
+  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through W7
+  are SHIPPED (2026-09, see the sections above): Agent-first inventory with
+  the runtime probe arm, detected AgentInstances (chatable),
+  capture-as-profile, `harness`-type install/upgrade/pin jobs, `RuntimeConfig`
+  provider/model push, redacted config viewing, modal containers + the
+  portal-style chat UI (W5+W6), and native agent sessions — list + resume
+  with NO platform session store (W7).** Remaining in P9: none scoped;
+  C6 (orchestration) and hermes native sessions are the open follow-ups.
+  Read `docs/research/phase-9-harness-runtime.md` +
+  `docs/design/phase-9-harness-runtime.md` (W1–W4) and
+  `docs/design/phase-9-portal-ui.md` (W5+W6) +
+  `docs/design/phase-9-w7-native-sessions.md` (W7) first. Local
+  verification-rig notes
   (machine container lifecycle, JWT minting, the FAKE dsh shim that must be
   removed before W1/W2 runtime probing) live in `docs/dev/test-rig.md` —
   **git-ignored on purpose** (they carry this box's IPs/deployment layout);
