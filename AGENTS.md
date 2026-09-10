@@ -876,13 +876,28 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
   write-behind batch lands AFTER the wire settles; a post-turn_result delta
   would open a new fold bubble). A bounded undecodable frame = corruption:
   the tail stops, suppression lifts, committed-only takes over. No zstd / no
-  file → committed-only (old behavior). Daemon `0.10.1-p9w7`. **Next:
-  W7.1** — the designed-not-implemented in-process dsh event tap
-  (spawn-time `--patch` insert of a zero-dep cordis plugin streaming the
-  `session/event` bus back to the daemon; file tail demoted to fallback) —
-  read `docs/design/phase-9-w7.1-dsh-event-tap.md` first (it carries the
-  rig spike results proving the mount mechanism, the full component plan,
-  and the rollout checklist).
+  file → committed-only (old behavior). Daemon `0.10.1-p9w7`.
+- **W7.1 — the in-process dsh event tap is the PRIMARY streaming source;
+  the file tail is the fallback** (SHIPPED 2026-09-10, daemon
+  `0.11.0-p9w7.1`, branch `feat/p9-w7.1-dsh-tap`; design + rig results in
+  `docs/design/phase-9-w7.1-dsh-event-tap.md` incl. §Post-ship notes):
+  the daemon insert-mounts a ZERO-DEP cordis plugin at spawn
+  (`dsh --patch ~/.hnx/dsh-tap.patch.yml`, rendered per boot by
+  `writeTapPatch` — never written into `~/.dsh`; plugin =
+  `cli/src/daemon/dsh-tap/index.mjs`, build-copied into
+  `dist/daemon/dsh-tap/`), which forwards the in-process `session/event`
+  bus verbatim over a per-channel localhost JSON-line socket
+  (`TapListener`, `cli/src/daemon/dsh-tap-listener.ts`: ephemeral port,
+  one-time token, reject-on-mismatch). The handshake races the spawn via
+  `Promise.all` — hello within 3s ⇒ the tap IS the source (SAME
+  `createDshLiveMapper` instance semantics, wire committed chunks
+  suppressed, `turn_result` settled from the tap's `turn/end`, subagent
+  sessions filtered by id); otherwise (old dsh, plugin failure,
+  `HN_DISABLE_DSH_TAP=1` A/B switch) `ensureTail` streams exactly as in
+  W7. A tap that DIES mid-session leaves that session committed-only
+  (`tapDead` — a fresh tail mapper would double-render streamed steps).
+  Rig A/B: tap = 107 deltas / 1ms median gap on the count-1..25 turn vs
+  tail's 3–4 batches / ~212ms+ gap; leak scan zero.
 
 ## Authentication & authorization (permission interceptors)
 
@@ -1082,18 +1097,21 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
-  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through W7
-  are SHIPPED (2026-09, see the sections above): Agent-first inventory with
-  the runtime probe arm, detected AgentInstances (chatable),
+  C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through
+  W7.1 are SHIPPED (2026-09, see the sections above): Agent-first inventory
+  with the runtime probe arm, detected AgentInstances (chatable),
   capture-as-profile, `harness`-type install/upgrade/pin jobs, `RuntimeConfig`
   provider/model push, redacted config viewing, modal containers + the
-  portal-style chat UI (W5+W6), and native agent sessions — list + resume
-  with NO platform session store (W7).** Remaining in P9: none scoped;
+  portal-style chat UI (W5+W6), native agent sessions — list + resume
+  with NO platform session store (W7) — and the in-process dsh event tap
+  streaming source with the file tail as fallback (W7.1).** Remaining in
+  P9: none scoped;
   C6 (orchestration) and hermes native sessions are the open follow-ups.
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and
   `docs/design/phase-9-portal-ui.md` (W5+W6) +
-  `docs/design/phase-9-w7-native-sessions.md` (W7) first. Local
+  `docs/design/phase-9-w7-native-sessions.md` (W7) +
+  `docs/design/phase-9-w7.1-dsh-event-tap.md` (W7.1) first. Local
   verification-rig notes
   (machine container lifecycle, JWT minting, the FAKE dsh shim that must be
   removed before W1/W2 runtime probing) live in `docs/dev/test-rig.md` —
