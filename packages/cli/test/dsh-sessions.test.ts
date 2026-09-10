@@ -146,9 +146,8 @@ describe('dshListSessions', () => {
     expect(out.map((s) => s.sessionId)).toEqual(['bbb-2', 'aaa-1']);
     expect(out[0]).toMatchObject({ sessionId: 'bbb-2', cwd: '/root/demo', title: null });
     expect(out[1]).toMatchObject({ title: 'first', createdAt: new Date(100).toISOString() });
-
-    const withoutLive = dshListSessions(root, fs, stripMagic, { liveIds: new Set(['bbb-2']) });
-    expect(withoutLive.map((s) => s.sessionId)).toEqual(['aaa-1']);
+    // Post-W8: sessions with a live channel stay LISTED (the server marks them
+    // `open`; the rail offers a rejoin) — no exclusion flag exists anymore.
   });
 
   it('returns an honest empty list when the store does not exist', () => {

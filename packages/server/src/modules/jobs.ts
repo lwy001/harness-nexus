@@ -216,10 +216,18 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       }
       throw new AppError('Daemon did not answer the listing in time', 504, 'SESSIONS_TIMEOUT');
     }
+    // Post-W8 visibility: mark rows whose native session currently holds a
+    // live channel (and carry the channel id so a row click can REJOIN it —
+    // resuming would spawn a second channel for the same agent session).
+    const openChannels = app.realtime.chat.channelsByNativeId(req.params.id);
     return {
       agent,
       supported: outcome.supported ?? true,
-      sessions: outcome.sessions ?? [],
+      sessions: (outcome.sessions ?? []).map((s) =>
+        openChannels.has(s.sessionId)
+          ? { ...s, open: true, openChannelId: openChannels.get(s.sessionId) }
+          : { ...s, open: false },
+      ),
     };
   });
 }

@@ -1092,9 +1092,20 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   (fold-style reducer, permission cards render from payload options,
   `--signal` marks the live turn only) + MachineDetail remote-chat toggle
   (confirm-first). Chat is owner-ONLY (admins excluded by design).
+  **Channel budget (redesigned post-W8, see the C5 design doc's § "Channel
+  budget redesign"):** TWO budgets per machine — `CHAT_MAX_SESSIONS_PER_MACHINE`
+  (total channels, default 12) and `CHAT_MAX_ACTIVE_SESSIONS_PER_MACHINE`
+  (mid-turn sessions, default 5, enforced at PROMPT time → `MACHINE_BUSY`; the
+  web restores the draft on a bounce). A full total budget EVICTS the oldest
+  non-busy channel (`closed {reason:'evicted'}` + a dedicated web note) instead
+  of rejecting; `SESSION_LIMIT_REACHED` only survives for all-busy. Visibility:
+  session-listing rows carry server-computed `open`/`openChannelId`; the rail
+  marks such rows 已打开 and clicking REJOINS the channel (fallback: fresh
+  resume if it died) — which is why the daemon's dsh listing no longer hides
+  sessions with live channels (`liveNativeIds`/`ChatRegistry` deleted).
   **Channel lifecycle (hardened post-W8 — three coupled defects, see the C5
-  design doc's § "Channel lifecycle hardening"):** a channel costs one of
-  `CHAT_MAX_SESSIONS_PER_MACHINE` (3) and dies with its daemon socket. (a) The
+  design doc's § "Channel lifecycle hardening"):** a channel dies with its
+  daemon socket. (a) The
   session page **leaves before entering** — `openChannel` closes the previous
   channel BEFORE issuing the open (skipped when rejoining the same channel) and
   closes on unmount; closing only after a successful open meant a rejected open

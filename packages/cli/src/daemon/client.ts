@@ -72,10 +72,8 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
   });
 
   attachJobHandlers(socket, { server: options.server, token: options.token });
-  // 9 W7 — the session lister needs the chat registry's live native ids
-  // (dsh refuses resuming an active session).
-  const chatRegistry = attachChatHandlers(socket);
-  attachSessionsHandlers(socket, { liveNativeIds: chatRegistry.liveNativeIds });
+  attachChatHandlers(socket);
+  attachSessionsHandlers(socket);
 
   const reportAll = (requestId?: string): void => {
     void (async () => {

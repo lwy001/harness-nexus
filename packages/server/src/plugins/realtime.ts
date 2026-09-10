@@ -81,6 +81,7 @@ export async function registerRealtime(
     jobSweepIntervalMs: number;
     jobMaxAttempts: number;
     chatMaxSessionsPerMachine: number;
+    chatMaxActiveSessionsPerMachine: number;
     chatPermissionTimeoutMs: number;
     chatReadyTimeoutMs: number;
     sessionsListTimeoutMs: number;
@@ -120,6 +121,7 @@ export async function registerRealtime(
     },
     {
       maxSessionsPerMachine: opts.chatMaxSessionsPerMachine,
+      maxActiveSessionsPerMachine: opts.chatMaxActiveSessionsPerMachine,
       permissionTimeoutMs: opts.chatPermissionTimeoutMs,
       readyTimeoutMs: opts.chatReadyTimeoutMs,
     },

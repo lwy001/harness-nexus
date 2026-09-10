@@ -23,8 +23,6 @@ import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-session
 export interface SessionsHandlersOptions {
   /** Env source for `HN_ACP_COMMAND_<TARGET>` overrides. */
   env?: NodeJS.ProcessEnv;
-  /** Native session ids currently LIVE in this daemon (dsh refuses resuming active). */
-  liveNativeIds?: () => ReadonlySet<string>;
   /** Overridable for tests. */
   homeDir?: string;
 }
@@ -76,7 +74,7 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
               stat: (p) => statSync(p),
             },
             zstd,
-            { liveIds: opts.liveNativeIds?.() ?? new Set<string>() },
+            { maxSessions: 200 },
           ).map((s): NativeSessionView => {
             // dsh validates the session's PINNED (provider, model) against
             // the live catalog at resume — a provider-config change orphans
