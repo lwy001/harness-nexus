@@ -35,14 +35,14 @@ One new primitive, `apps/web/src/components/ui/form-dialog.tsx`:
 
 ### Page conversions (behavior-preserving, create-only stays create-only)
 
-| Page                  | Change                                                                                  |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| Resources.tsx         | `ResourceEditor` re-shelled onto `FormDialog` (no logic change; skill editor = `xl`)      |
-| Profiles.tsx          | `CreateProfile` Card → dialog; page header gains a "新建" button (`editing`-style state)  |
-| Credentials.tsx       | `CreateCredential` Card → dialog + header button                                          |
-| McpManagement.tsx     | `CreateMcpServer` Card → dialog + header button; `ImportJsonDialog` rebuilt on FormDialog, raw radix import deleted |
-| Machines.tsx          | `EnrollCard` Card → dialog + header button ("注册机器")                                   |
-| Users.tsx             | inline create form → dialog + header button                                               |
+| Page              | Change                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Resources.tsx     | `ResourceEditor` re-shelled onto `FormDialog` (no logic change; skill editor = `xl`)                                |
+| Profiles.tsx      | `CreateProfile` Card → dialog; page header gains a "新建" button (`editing`-style state)                            |
+| Credentials.tsx   | `CreateCredential` Card → dialog + header button                                                                    |
+| McpManagement.tsx | `CreateMcpServer` Card → dialog + header button; `ImportJsonDialog` rebuilt on FormDialog, raw radix import deleted |
+| Machines.tsx      | `EnrollCard` Card → dialog + header button ("注册机器")                                                             |
+| Users.tsx         | inline create form → dialog + header button                                                                         |
 
 No route, SDK, or API changes in W5. All copy via the page's i18n string file
 (en/zh side by side). MachineDetail is untouched (its forms are contextual
@@ -98,9 +98,9 @@ sub-cards of a detail page, not list-page create flows).
   - present → `machine.baseWorkspace` must be set (`WORKSPACE_NOT_SET`) and
     the resolved directory must be the root or under it (`WORKSPACE_INVALID`);
     validation runs BEFORE the session-limit gate's side effects.
-  The chosen directory is stored as the row's `cwd` and sent as
-  `chat:session.start.cwd` (the daemon already honors `cwd` for the subprocess
-  and `session/new`).
+    The chosen directory is stored as the row's `cwd` and sent as
+    `chat:session.start.cwd` (the daemon already honors `cwd` for the subprocess
+    and `session/new`).
 - SDK: `updateMachine({ baseWorkspace })`, `listMachineWorkspace(machineId, path?)`,
   `getAgentInstance(id)`; `MachineView.baseWorkspace`, `AcSessionView.{cwd,title}`.
 
@@ -126,8 +126,8 @@ sorts by name, caps 512. The daemon performs NO containment check of its own
 - `rawInput` (`record(string → unknown)`) — arguments for summaries/diffs;
   daemon drops it if `JSON.stringify` exceeds 32 KiB (Write-style payloads).
 - `content` (≤16 items) — ACP ToolCallContent: `{ type: 'content' | 'diff' |
-  'terminal', content?: { type, text? }, path?, oldText?, newText?,
-  terminalId? }` — the structured arm Edit/Write cards prefer.
+'terminal', content?: { type, text? }, path?, oldText?, newText?,
+terminalId? }` — the structured arm Edit/Write cards prefer.
 - `output` (≤100 000 chars) — `rawOutput` text (Read/Bash/Grep bodies).
 
 `mapAcpUpdate` fills them; the server's existing re-validation relays them to
@@ -159,7 +159,7 @@ Routes (`App.tsx`):
   via `listMachineWorkspace` on expand, directories only. If `baseWorkspace`
   is unset the dialog offers an inline "set base workspace" field
   (`updateMachine`) first. Confirm ⇒ `chat:session.open { agentInstanceId,
-  directory }`.
+directory }`.
 
 Stream rendering (`components/chat/`, all Signal-styled, i18n'd, module-scope
 sub-components; adapted from the reference per the research note):

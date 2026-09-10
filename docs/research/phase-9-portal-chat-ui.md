@@ -99,15 +99,15 @@ v1 wire does not (see "deferred").
 
 ## What W6 adopts vs adapts
 
-| Reference                                             | W6 decision                                                                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| antd Menu + inline styles + dsh tokens                | **Signal system**: tailwind classes, `bg-background`/`text-muted-foreground` etc., IBM Plex Mono for paths/IDs      |
-| `@ant-design/x-markdown` + react-syntax-highlighter   | `react-markdown` + `remark-gfm` + `rehype-highlight` (highlight.js) — one markdown stack, self-hosted, no CDN        |
-| MermaidBlock, IdePanel, terminal, @-mentions, slash   | **deferred** (out of scope; our adapters don't surface `available_commands`, and IDE/terminal are separate channels) |
+| Reference                                               | W6 decision                                                                                                           |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| antd Menu + inline styles + dsh tokens                  | **Signal system**: tailwind classes, `bg-background`/`text-muted-foreground` etc., IBM Plex Mono for paths/IDs        |
+| `@ant-design/x-markdown` + react-syntax-highlighter     | `react-markdown` + `remark-gfm` + `rehype-highlight` (highlight.js) — one markdown stack, self-hosted, no CDN         |
+| MermaidBlock, IdePanel, terminal, @-mentions, slash     | **deferred** (out of scope; our adapters don't surface `available_commands`, and IDE/terminal are separate channels)  |
 | Session list from agent-side `session/list` (resumable) | Our `AcSession` audit rows (cwd/title/openedAt) — **no resume in v1**: closed rows render greyed; open rows clickable |
-| DirPicker over Portal-local fs                        | DirPicker over **daemon-routed** `workspace:list` (subdirectories of the machine's `baseWorkspace`)                 |
-| fold fed by raw ACP                                   | fold fed by our **semantic** `chat:event` stream (same row model; permissions stay a separate inline slice)         |
-| `toolName` from `_meta.claudeCode.toolName`           | Same extraction, daemon-side, extended into `acpToolCallView` (toolName/rawInput/content/output)                    |
+| DirPicker over Portal-local fs                          | DirPicker over **daemon-routed** `workspace:list` (subdirectories of the machine's `baseWorkspace`)                   |
+| fold fed by raw ACP                                     | fold fed by our **semantic** `chat:event` stream (same row model; permissions stay a separate inline slice)           |
+| `toolName` from `_meta.claudeCode.toolName`             | Same extraction, daemon-side, extended into `acpToolCallView` (toolName/rawInput/content/output)                      |
 
 ## Numbers worth keeping
 

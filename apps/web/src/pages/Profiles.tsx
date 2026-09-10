@@ -319,139 +319,139 @@ function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated:
       size="xl"
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="grid gap-2">
-              <Label htmlFor="prof-name">{t('common.name')}</Label>
-              <Input
-                id="prof-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('profiles.namePlaceholder')}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="prof-target">{t('profiles.target')}</Label>
-              <Select value={target} onValueChange={(v) => setTarget(v as AgentTarget)}>
-                <SelectTrigger id="prof-target">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TARGETS.map((target) => (
-                    <SelectItem key={target} value={target}>
-                      {target}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="prof-desc">{t('common.description')}</Label>
-              <Input
-                id="prof-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={t('profiles.optional')}
-                autoComplete="off"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="prof-scope">{t('common.scope')}</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
-                <SelectTrigger id="prof-scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
-                  <SelectItem value="global" disabled={!isAdmin}>
-                    {t('common.scopeGlobal')}
-                    {!isAdmin && t('profiles.adminSuffix')}
+        <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-2">
+            <Label htmlFor="prof-name">{t('common.name')}</Label>
+            <Input
+              id="prof-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('profiles.namePlaceholder')}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="prof-target">{t('profiles.target')}</Label>
+            <Select value={target} onValueChange={(v) => setTarget(v as AgentTarget)}>
+              <SelectTrigger id="prof-target">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TARGETS.map((target) => (
+                  <SelectItem key={target} value={target}>
+                    {target}
                   </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium">{t('profiles.serversLegend')}</legend>
-            {servers === null ? (
-              <p className="text-muted-foreground text-sm">{t('profiles.loadingServers')}</p>
-            ) : servers.length === 0 ? (
-              <p className="text-muted-foreground text-sm">{t('profiles.noServers')}</p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {servers.map((s) => (
-                  <label
-                    key={s.id}
-                    className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedServers.has(s.id)}
-                      onChange={() => toggle(setSelectedServers, s.id)}
-                      className="size-4"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="text-muted-foreground font-mono text-[10px]">
-                      {s.transport.type}
-                    </span>
-                  </label>
                 ))}
-              </div>
-            )}
-          </fieldset>
-
-          {RESOURCE_KINDS.map((kind) => {
-            const of = (resources ?? []).filter((r) => r.kind === kind);
-            return (
-              <fieldset key={kind} className="grid gap-2">
-                <legend className="text-sm font-medium">
-                  {t(KIND_LEGEND[kind])}
-                  <span className="text-muted-foreground ml-1.5 text-xs font-normal">
-                    {t('profiles.visibleCount', { count: of.length })}
-                  </span>
-                </legend>
-                {resources === null ? (
-                  <p className="text-muted-foreground text-sm">{t('common.loading')}</p>
-                ) : of.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">{t('profiles.noneInResources')}</p>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {of.map((r) => (
-                      <label
-                        key={r.id}
-                        className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedResources.has(r.id)}
-                          onChange={() => toggle(setSelectedResources, r.id)}
-                          className="size-4"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                        <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </fieldset>
-            );
-          })}
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              type="submit"
-              disabled={busy || (selectedServers.size === 0 && selectedResources.size === 0)}
-            >
-              {busy ? t('profiles.creating') : t('profiles.createProfile')}
-            </Button>
+              </SelectContent>
+            </Select>
           </div>
-        </form>
+          <div className="grid gap-2">
+            <Label htmlFor="prof-desc">{t('common.description')}</Label>
+            <Input
+              id="prof-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('profiles.optional')}
+              autoComplete="off"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="prof-scope">{t('common.scope')}</Label>
+            <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
+              <SelectTrigger id="prof-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
+                <SelectItem value="global" disabled={!isAdmin}>
+                  {t('common.scopeGlobal')}
+                  {!isAdmin && t('profiles.adminSuffix')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium">{t('profiles.serversLegend')}</legend>
+          {servers === null ? (
+            <p className="text-muted-foreground text-sm">{t('profiles.loadingServers')}</p>
+          ) : servers.length === 0 ? (
+            <p className="text-muted-foreground text-sm">{t('profiles.noServers')}</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {servers.map((s) => (
+                <label
+                  key={s.id}
+                  className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedServers.has(s.id)}
+                    onChange={() => toggle(setSelectedServers, s.id)}
+                    className="size-4"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  <span className="text-muted-foreground font-mono text-[10px]">
+                    {s.transport.type}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+
+        {RESOURCE_KINDS.map((kind) => {
+          const of = (resources ?? []).filter((r) => r.kind === kind);
+          return (
+            <fieldset key={kind} className="grid gap-2">
+              <legend className="text-sm font-medium">
+                {t(KIND_LEGEND[kind])}
+                <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                  {t('profiles.visibleCount', { count: of.length })}
+                </span>
+              </legend>
+              {resources === null ? (
+                <p className="text-muted-foreground text-sm">{t('common.loading')}</p>
+              ) : of.length === 0 ? (
+                <p className="text-muted-foreground text-sm">{t('profiles.noneInResources')}</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {of.map((r) => (
+                    <label
+                      key={r.id}
+                      className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedResources.has(r.id)}
+                        onChange={() => toggle(setSelectedResources, r.id)}
+                        className="size-4"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                      <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </fieldset>
+          );
+        })}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            disabled={busy || (selectedServers.size === 0 && selectedResources.size === 0)}
+          >
+            {busy ? t('profiles.creating') : t('profiles.createProfile')}
+          </Button>
+        </div>
+      </form>
     </FormDialog>
   );
 }

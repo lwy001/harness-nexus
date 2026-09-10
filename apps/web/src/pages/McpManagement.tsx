@@ -819,152 +819,147 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setImportOpen(true)}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => setImportOpen(true)}>
             <FileJsonIcon className="size-4" />
             {t('mcp.importJson')}
           </Button>
         </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="grid gap-2">
-              <Label htmlFor="mcp-name">{t('common.name')}</Label>
-              <Input
-                id="mcp-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('mcp.namePlaceholder')}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="mcp-dial-site">{t('mcp.dialSite')}</Label>
-              <Select value={dialSite} onValueChange={(v) => setDialSite(v as DialSite)}>
-                <SelectTrigger id="mcp-dial-site">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{t('mcp.dialSiteAuto')}</SelectItem>
-                  <SelectItem value="client">{t('mcp.dialSiteClient')}</SelectItem>
-                  <SelectItem value="server">{t('mcp.dialSiteServer')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="mcp-type">{t('mcp.transport')}</Label>
-              <Select value={type} onValueChange={(v) => onTypeChange(v as TransportType)}>
-                <SelectTrigger id="mcp-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="streamable-http">streamable-http</SelectItem>
-                  <SelectItem value="sse">sse</SelectItem>
-                  <SelectItem value="stdio">{t('mcp.transportStdio')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="mcp-scope">{t('common.scope')}</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
-                <SelectTrigger id="mcp-scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
-                  <SelectItem value="global" disabled={!isAdmin}>
-                    {t('common.scopeGlobal')}
-                    {!isAdmin ? t('mcp.adminSuffix') : ''}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2">
+            <Label htmlFor="mcp-name">{t('common.name')}</Label>
+            <Input
+              id="mcp-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('mcp.namePlaceholder')}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="mcp-dial-site">{t('mcp.dialSite')}</Label>
+            <Select value={dialSite} onValueChange={(v) => setDialSite(v as DialSite)}>
+              <SelectTrigger id="mcp-dial-site">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t('mcp.dialSiteAuto')}</SelectItem>
+                <SelectItem value="client">{t('mcp.dialSiteClient')}</SelectItem>
+                <SelectItem value="server">{t('mcp.dialSiteServer')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="mcp-type">{t('mcp.transport')}</Label>
+            <Select value={type} onValueChange={(v) => onTypeChange(v as TransportType)}>
+              <SelectTrigger id="mcp-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="streamable-http">streamable-http</SelectItem>
+                <SelectItem value="sse">sse</SelectItem>
+                <SelectItem value="stdio">{t('mcp.transportStdio')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="mcp-scope">{t('common.scope')}</Label>
+            <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
+              <SelectTrigger id="mcp-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
+                <SelectItem value="global" disabled={!isAdmin}>
+                  {t('common.scopeGlobal')}
+                  {!isAdmin ? t('mcp.adminSuffix') : ''}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-          {isStdio ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="mcp-command">{t('mcp.command')}</Label>
-                  <Input
-                    id="mcp-command"
-                    value={command}
-                    onChange={(e) => setCommand(e.target.value)}
-                    placeholder={t('mcp.commandPlaceholder')}
-                    autoComplete="off"
-                    spellCheck={false}
-                    required
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="mcp-args">{t('mcp.args')}</Label>
-                  <Input
-                    id="mcp-args"
-                    value={args}
-                    onChange={(e) => setArgs(e.target.value)}
-                    placeholder={t('mcp.argsPlaceholder')}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-              </div>
+        {isStdio ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="mcp-env">{t('mcp.env')}</Label>
-                <Textarea
-                  id="mcp-env"
-                  value={envJson}
-                  onChange={(e) => setEnvJson(e.target.value)}
-                  className="font-mono text-xs"
-                  rows={3}
-                  spellCheck={false}
-                  placeholder='{"API_KEY": "${cred:context7-key}"}'
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="grid gap-2">
-                <Label htmlFor="mcp-url">{t('mcp.url')}</Label>
+                <Label htmlFor="mcp-command">{t('mcp.command')}</Label>
                 <Input
-                  id="mcp-url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://mcp.example.com/mcp"
-                  inputMode="url"
+                  id="mcp-command"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder={t('mcp.commandPlaceholder')}
                   autoComplete="off"
                   spellCheck={false}
                   required
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="mcp-headers">{t('mcp.headers')}</Label>
-                <Textarea
-                  id="mcp-headers"
-                  value={headersJson}
-                  onChange={(e) => setHeadersJson(e.target.value)}
-                  className="font-mono text-xs"
-                  rows={3}
+                <Label htmlFor="mcp-args">{t('mcp.args')}</Label>
+                <Input
+                  id="mcp-args"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder={t('mcp.argsPlaceholder')}
+                  autoComplete="off"
                   spellCheck={false}
                 />
               </div>
-            </>
-          )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="mcp-env">{t('mcp.env')}</Label>
+              <Textarea
+                id="mcp-env"
+                value={envJson}
+                onChange={(e) => setEnvJson(e.target.value)}
+                className="font-mono text-xs"
+                rows={3}
+                spellCheck={false}
+                placeholder='{"API_KEY": "${cred:context7-key}"}'
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid gap-2">
+              <Label htmlFor="mcp-url">{t('mcp.url')}</Label>
+              <Input
+                id="mcp-url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://mcp.example.com/mcp"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="mcp-headers">{t('mcp.headers')}</Label>
+              <Textarea
+                id="mcp-headers"
+                value={headersJson}
+                onChange={(e) => setHeadersJson(e.target.value)}
+                className="font-mono text-xs"
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
+          </>
+        )}
 
-          <PlaceholderChips creds={creds} />
+        <PlaceholderChips creds={creds} />
 
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? t('mcp.adding') : t('mcp.addServer')}
-            </Button>
-          </div>
-        </form>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? t('mcp.adding') : t('mcp.addServer')}
+          </Button>
+        </div>
+      </form>
 
       <ImportJsonDialog open={importOpen} onOpenChange={setImportOpen} onImport={applyImport} />
     </FormDialog>

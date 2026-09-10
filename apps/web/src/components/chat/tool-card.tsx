@@ -75,11 +75,7 @@ const ReadCard = memo(function ReadCard({ node, cwd }: ToolCardProps) {
       errorSummary={firstOutputLine(node)}
       body={
         parsed.lines.length > 0 ? (
-          <ReadBlock
-            label={display}
-            lines={parsed.lines}
-            totalLines={parsed.totalLines}
-          />
+          <ReadBlock label={display} lines={parsed.lines} totalLines={parsed.totalLines} />
         ) : undefined
       }
     />
@@ -136,8 +132,7 @@ const WriteCard = memo(function WriteCard({ node, cwd }: ToolCardProps) {
   const fullPath = diff?.path || mainPath(node) || (node.title ?? '');
   const display = relativizeToCwd(fullPath, cwd);
   const raw = (node.rawInput ?? {}) as Record<string, unknown>;
-  const newText =
-    diff?.newText ?? (typeof raw.content === 'string' ? raw.content : undefined);
+  const newText = diff?.newText ?? (typeof raw.content === 'string' ? raw.content : undefined);
   return (
     <ToolCardShell
       node={node}
@@ -255,7 +250,11 @@ const GenericToolCard = memo(function GenericToolCard({ node }: ToolCardProps) {
     node.content?.find((c) => c.type === 'content')?.content?.text ?? node.output ?? null;
   const body =
     prettyInput(node) !== null || bodyText !== null ? (
-      <IoCard body={prettyInput(node)} output={bodyText === '' ? null : bodyText} failed={node.status === 'failed'} />
+      <IoCard
+        body={prettyInput(node)}
+        output={bodyText === '' ? null : bodyText}
+        failed={node.status === 'failed'}
+      />
     ) : undefined;
   return (
     <ToolCardShell
@@ -353,7 +352,10 @@ function ToolCardShell({
     node.status === 'failed' ? (
       <span className="bg-danger inline-block size-1.5 shrink-0 rounded-full" aria-label="failed" />
     ) : node.status === 'running' ? (
-      <span className="bg-warn inline-block size-1.5 shrink-0 animate-pulse rounded-full" aria-label="running" />
+      <span
+        className="bg-warn inline-block size-1.5 shrink-0 animate-pulse rounded-full"
+        aria-label="running"
+      />
     ) : (
       <span className="bg-ok inline-block size-1.5 shrink-0 rounded-full" aria-label="completed" />
     );

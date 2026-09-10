@@ -390,9 +390,7 @@ function ResourceEditor({
       onClose={onClose}
       size={kind === 'skill' ? 'xl' : 'lg'}
       title={
-        isCreate
-          ? t('resources.newResource')
-          : t('resources.editTitle', { name: existing!.name })
+        isCreate ? t('resources.newResource') : t('resources.editTitle', { name: existing!.name })
       }
       description={
         <>
@@ -416,141 +414,140 @@ function ResourceEditor({
         </>
       }
     >
-
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="res-kind">{t('resources.kind')}</Label>
-              <Select
-                value={kind}
-                onValueChange={(v) => setKind(v as ResourceKind)}
-                disabled={!isCreate}
-              >
-                <SelectTrigger id="res-kind">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {KINDS.map((k) => (
-                    <SelectItem key={k.value} value={k.value}>
-                      {t(k.labelKey)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="res-scope">{t('common.scope')}</Label>
-              <Select
-                value={scope}
-                onValueChange={(v) => setScope(v as Scope)}
-                disabled={!isCreate || !isAdmin}
-              >
-                <SelectTrigger id="res-scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
-                  <SelectItem value="global" disabled={!isAdmin}>
-                    {t('common.scopeGlobal')}
-                    {!isAdmin && t('resources.adminSuffix')}
+      <form onSubmit={onSubmit} className="grid gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="res-kind">{t('resources.kind')}</Label>
+            <Select
+              value={kind}
+              onValueChange={(v) => setKind(v as ResourceKind)}
+              disabled={!isCreate}
+            >
+              <SelectTrigger id="res-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {KINDS.map((k) => (
+                  <SelectItem key={k.value} value={k.value}>
+                    {t(k.labelKey)}
                   </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="res-key">{t('resources.key')}</Label>
-              <Input
-                id="res-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder={`${kind}:my-asset`}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="res-name">{t('common.name')}</Label>
-              <Input
-                id="res-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('resources.phName')}
-                autoComplete="off"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="res-version">{t('resources.version')}</Label>
-              <Input
-                id="res-version"
-                value={version}
-                onChange={(e) => setVersion(e.target.value)}
-                placeholder="1.0.0"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="res-desc">{t('common.description')}</Label>
-              <Input
-                id="res-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={t('resources.phDescription')}
-                autoComplete="off"
-              />
-            </div>
-          </div>
-
           <div className="grid gap-2">
-            <Label>{t('resources.targets')}</Label>
-            <div className="flex flex-wrap gap-2">
-              {TARGETS.map((target) => (
-                <label
-                  key={target}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs"
-                >
-                  <input
-                    type="checkbox"
-                    checked={targets.includes(target)}
-                    onChange={() => toggleTarget(target)}
-                    className="size-3.5"
-                  />
-                  <span className="font-mono">{target}</span>
-                </label>
-              ))}
-            </div>
+            <Label htmlFor="res-scope">{t('common.scope')}</Label>
+            <Select
+              value={scope}
+              onValueChange={(v) => setScope(v as Scope)}
+              disabled={!isCreate || !isAdmin}
+            >
+              <SelectTrigger id="res-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
+                <SelectItem value="global" disabled={!isAdmin}>
+                  {t('common.scopeGlobal')}
+                  {!isAdmin && t('resources.adminSuffix')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+        </div>
 
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
-            {kind === 'hook' ? (
-              <HookBodyEditor body={body} setBody={setBody} targets={targets} />
-            ) : (
-              <>
-                <Label htmlFor="res-body">{t(kindMeta.bodyLabelKey)}</Label>
-                <Textarea
-                  id="res-body"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  placeholder={t(kindMeta.bodyPlaceholderKey)}
-                  spellCheck={false}
-                  className="min-h-48 font-mono text-xs"
+            <Label htmlFor="res-key">{t('resources.key')}</Label>
+            <Input
+              id="res-key"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={`${kind}:my-asset`}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="res-name">{t('common.name')}</Label>
+            <Input
+              id="res-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('resources.phName')}
+              autoComplete="off"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="res-version">{t('resources.version')}</Label>
+            <Input
+              id="res-version"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              placeholder="1.0.0"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="res-desc">{t('common.description')}</Label>
+            <Input
+              id="res-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('resources.phDescription')}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <Label>{t('resources.targets')}</Label>
+          <div className="flex flex-wrap gap-2">
+            {TARGETS.map((target) => (
+              <label
+                key={target}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs"
+              >
+                <input
+                  type="checkbox"
+                  checked={targets.includes(target)}
+                  onChange={() => toggleTarget(target)}
+                  className="size-3.5"
                 />
-              </>
-            )}
+                <span className="font-mono">{target}</span>
+              </label>
+            ))}
           </div>
+        </div>
 
-          {kind === 'skill' ? (
-            <SkillBundleEditor files={bundleFiles} setFiles={setBundleFiles} />
-          ) : null}
-        </form>
+        <div className="grid gap-2">
+          {kind === 'hook' ? (
+            <HookBodyEditor body={body} setBody={setBody} targets={targets} />
+          ) : (
+            <>
+              <Label htmlFor="res-body">{t(kindMeta.bodyLabelKey)}</Label>
+              <Textarea
+                id="res-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder={t(kindMeta.bodyPlaceholderKey)}
+                spellCheck={false}
+                className="min-h-48 font-mono text-xs"
+              />
+            </>
+          )}
+        </div>
+
+        {kind === 'skill' ? (
+          <SkillBundleEditor files={bundleFiles} setFiles={setBundleFiles} />
+        ) : null}
+      </form>
     </FormDialog>
   );
 }

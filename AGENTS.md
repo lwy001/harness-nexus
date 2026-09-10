@@ -965,6 +965,13 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   flat→command / patch rows→mcp keyed by `serverName`; C5 ACP row is
   `['dsh', '--profile', 'acp']` (dsh on PATH + configured provider; env
   override `HN_ACP_COMMAND_DEEPSEEK`); C4-deployable (`DEPLOYABLE_TARGETS`).
+  **dsh's ACP adapter speaks a DIFFERENT update dialect than the Zed
+  adapters** (verified 2026-09-10): chunks carry `content` (not
+  `contentBlock`), tool calls spread fields FLAT on the update (no
+  `toolCallUpdate` wrapper), and usage reports context occupancy
+  (`used`/`size` → mapped to `contextUsed`/`contextSize`). The daemon's
+  `mapAcpUpdate` handles BOTH dialects — extend it, never replace one with
+  the other (see the T1 research note § ACP).
   **Registry resilience fix shipped with T1** (surfaced by its smoke): a
   stdio `auto` row referencing a MISSING credential (the C3-import
   `${cred:KEY}` shape) derives server-dial and used to CRASH the

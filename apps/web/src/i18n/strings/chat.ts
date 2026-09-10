@@ -103,7 +103,8 @@ const zh: typeof en = {
   pickDirectoryDesc: '为会话选择项目目录——机器基础工作区的子目录，代理将在其中工作。',
   useDirectory: '使用该目录',
   selectedDirectory: '选中目录（绝对路径）',
-  needsBaseWorkspace: '此机器尚未设置基础工作区。请设置一个机器上的绝对路径；聊天会话将在其子目录中选择项目目录。',
+  needsBaseWorkspace:
+    '此机器尚未设置基础工作区。请设置一个机器上的绝对路径；聊天会话将在其子目录中选择项目目录。',
   baseWorkspaceLabel: '基础工作区',
   baseWorkspaceHint: '机器上的绝对路径，例如 /home/user/projects',
   setBaseWorkspace: '保存基础工作区',

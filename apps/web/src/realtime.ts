@@ -54,7 +54,14 @@ export type ChatStreamEvent =
       kind: 'tool_call';
       call: ChatToolCallView;
     }
-  | { kind: 'usage'; inputTokens?: number; outputTokens?: number }
+  | {
+      kind: 'usage';
+      inputTokens?: number;
+      outputTokens?: number;
+      /** dsh dialect: context occupancy instead of per-turn token counts. */
+      contextUsed?: number;
+      contextSize?: number;
+    }
   | {
       kind: 'permission_request';
       requestId: string;

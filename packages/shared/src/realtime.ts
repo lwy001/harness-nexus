@@ -371,6 +371,13 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
     kind: z.literal('usage'),
     inputTokens: z.number().int().min(0).optional(),
     outputTokens: z.number().int().min(0).optional(),
+    /**
+     * dsh's ACP adapter reports CONTEXT OCCUPANCY instead of per-turn token
+     * counts (`used` / `size` on its usage_update) — surfaced verbatim for
+     * the turn tail's "ctx 8.5k/262k" readout.
+     */
+    contextUsed: z.number().int().min(0).optional(),
+    contextSize: z.number().int().min(0).optional(),
   }),
   z.object({
     kind: z.literal('permission_request'),

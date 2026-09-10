@@ -71,7 +71,10 @@ async function connectDaemon(
     });
   });
   daemon.on('workspace:list', (payload: { requestId: string; path: string }) => {
-    daemon.emit('workspace:list', { requestId: payload.requestId, ...respond(payload.requestId, payload.path) });
+    daemon.emit('workspace:list', {
+      requestId: payload.requestId,
+      ...respond(payload.requestId, payload.path),
+    });
   });
 }
 

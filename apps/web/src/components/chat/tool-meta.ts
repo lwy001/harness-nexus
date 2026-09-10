@@ -29,7 +29,16 @@ export function mainPath(node: ToolCallNode): string | undefined {
 /** A short argument preview for collapsed rows (never the full payload). */
 export function toolArgumentsPreview(node: ToolCallNode): string {
   const raw = (node.rawInput ?? {}) as UnknownRecord;
-  for (const key of ['pattern', 'query', 'url', 'prompt', 'description', 'path', 'file_path', 'command']) {
+  for (const key of [
+    'pattern',
+    'query',
+    'url',
+    'prompt',
+    'description',
+    'path',
+    'file_path',
+    'command',
+  ]) {
     const v = raw[key];
     if (typeof v === 'string' && v !== '') return v.length > 120 ? `${v.slice(0, 117)}…` : v;
   }
@@ -81,7 +90,8 @@ export interface BashParts {
 export function bashCommandParts(node: ToolCallNode): BashParts {
   const raw = (node.rawInput ?? {}) as UnknownRecord;
   const command = typeof raw.command === 'string' ? raw.command : (node.title ?? '');
-  const description = typeof raw.description === 'string' && raw.description !== '' ? raw.description : null;
+  const description =
+    typeof raw.description === 'string' && raw.description !== '' ? raw.description : null;
   return { command, description };
 }
 
