@@ -364,6 +364,20 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     ships as `chat:history` — user blocks + ordinary events, folded through
     the same reducer; a per-channel ring replays on page-refresh rejoin.
     Design + adapter ground truth: `docs/design/phase-9-w7-native-sessions.md`.
+    W7.1 addendum (SHIPPED): the in-process dsh event tap — spawn-time
+    `--patch` insert of a zero-dep cordis plugin streaming the
+    `session/event` bus over localhost JSON-lines — is the PRIMARY dsh
+    streaming source (rig A/B: 107 deltas / 1ms median gap vs the tail's
+    3–4 batches), with the transcript tail as fallback and
+    `HN_DISABLE_DSH_TAP=1` as the A/B switch. Design:
+    `docs/design/phase-9-w7.1-dsh-event-tap.md`.
+  - **W8 Sender (composer) upgrade — PLANNED (2026-09)** — the chat
+    composer becomes a card-style two-row input (autogrow textarea +
+    toolbar with a context-usage meter and a circular send/stop toggle),
+    feature-shaped after the reference composer but styled per Signal;
+    zero wire changes. Attach / permission-mode chip / model and effort
+    selectors are enumerated as deferred stubs (each needs a wire arm
+    first). Design: `docs/design/phase-9-w8-sender.md`.
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

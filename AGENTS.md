@@ -1111,8 +1111,11 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   portal-style chat UI (W5+W6), native agent sessions — list + resume
   with NO platform session store (W7) — and the in-process dsh event tap
   streaming source with the file tail as fallback (W7.1).** Remaining in
-  P9: none scoped;
-  C6 (orchestration) and hermes native sessions are the open follow-ups.
+  P9: **W8 — the chat Sender (composer) upgrade — is DESIGNED, not
+  implemented** (read `docs/design/phase-9-w8-sender.md` first: card-style
+  two-row composer per Signal, wire-ready scope only, deferred controls
+  enumerated); C6 (orchestration) and hermes native sessions are the open
+  follow-ups.
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and
   `docs/design/phase-9-portal-ui.md` (W5+W6) +
