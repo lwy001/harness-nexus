@@ -1,4 +1,9 @@
-import type { AcpToolContentItem, ChatStreamEvent, ChatToolCallView } from '@/realtime';
+import type {
+  AcpToolContentItem,
+  ChatStreamEvent,
+  ChatToolCallView,
+  HistoryItem,
+} from '@/realtime';
 
 /**
  * The conversation fold (Phase 9 W6) — adapted from the portal reference's
@@ -11,6 +16,10 @@ import type { AcpToolContentItem, ChatStreamEvent, ChatToolCallView } from '@/re
  *
  * Permissions stay a SEPARATE slice (rendered from payload options — the C5
  * rule that option sets are never hardcoded holds).
+ *
+ * 9 W7 — `{type:'history'}` ingests a native-session batch (resume or
+ * page-refresh resync) through the SAME event path: user items append user
+ * rows without live-turn side effects, events fold sequentially.
  */
 
 export interface ToolCallNode {
@@ -89,7 +98,8 @@ export type FoldAction =
   | {
       type: 'event';
       event: ChatStreamEvent;
-    };
+    }
+  | { type: 'history'; items: HistoryItem[] };
 
 export function createFoldState(): FoldState {
   return {
@@ -232,6 +242,103 @@ function sweepRows(state: FoldState, interrupted: boolean): ConversationRow[] {
   });
 }
 
+function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
+  switch (event.kind) {
+    case 'message_delta':
+    case 'thought_delta': {
+      const block: ContentBlock =
+        event.kind === 'message_delta'
+          ? { type: 'text', text: event.delta }
+          : { type: 'reasoning', text: event.delta };
+      if (currentStep(state) !== null) return patchStep(state, block);
+      return openStep(state, block);
+    }
+    case 'tool_call':
+      return patchToolRow(state, event.call);
+    case 'usage':
+      return {
+        ...state,
+        usage: {
+          ...(state.usage ?? {}),
+          ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
+          ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}),
+          ...(event.contextUsed !== undefined ? { contextUsed: event.contextUsed } : {}),
+          ...(event.contextSize !== undefined ? { contextSize: event.contextSize } : {}),
+        },
+      };
+    case 'permission_request':
+      return {
+        ...state,
+        permissions: [
+          ...state.permissions.filter((p) => p.requestId !== event.requestId),
+          {
+            requestId: event.requestId,
+            toolCall: event.toolCall,
+            options: event.options,
+            settled: false,
+          },
+        ],
+      };
+    case 'permission_resolved':
+      return {
+        ...state,
+        permissions: state.permissions.map((p) =>
+          p.requestId === event.requestId ? { ...p, settled: true } : p,
+        ),
+      };
+    case 'turn_result': {
+      const interrupted = event.stopReason === 'cancelled';
+      const next: FoldState = state;
+      const rows = sweepRows(next, interrupted);
+      const lastRow = rows[rows.length - 1];
+      const noRunning = rows.every((r) =>
+        r.row === 'assistant'
+          ? r.step.status !== 'running'
+          : r.row !== 'tool' || r.root.status !== 'running',
+      );
+      if (noRunning && lastRow !== undefined && lastRow.row === 'turn-tail') {
+        return { ...next, rows };
+      }
+      const durationMs = next.turnStartedAt !== null ? Date.now() - next.turnStartedAt : undefined;
+      const tail: ConversationRow = {
+        row: 'turn-tail',
+        key: nextKey(next, 'tail'),
+        stats: {
+          stopReason: event.stopReason,
+          ...(durationMs !== undefined && durationMs > 0 ? { durationMs } : {}),
+          ...(next.usage !== undefined && next.usage !== null ? { usage: next.usage } : {}),
+        },
+      };
+      return {
+        ...next,
+        rows: [...rows, tail],
+        currentStepIdx: -1,
+        stepClosed: true,
+        turnActive: false,
+        turnStartedAt: null,
+      };
+    }
+    case 'session_status':
+      return { ...state, turnActive: event.state === 'active' };
+    case 'raw':
+      if (event.method === 'hnx/prompt-error') {
+        const message = (event.params as { message?: string } | undefined)?.message;
+        if (message !== undefined && message !== '') {
+          return {
+            ...state,
+            rows: [
+              ...state.rows,
+              { row: 'system', key: nextKey(state, 'err'), text: message, tone: 'error' },
+            ],
+          };
+        }
+      }
+      return state;
+    default:
+      return state;
+  }
+}
+
 export function fold(state: FoldState, action: FoldAction): FoldState {
   switch (action.type) {
     case 'reset':
@@ -262,106 +369,44 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
       };
     }
 
-    case 'event': {
-      const { event } = action;
-      switch (event.kind) {
-        case 'message_delta':
-        case 'thought_delta': {
-          const block: ContentBlock =
-            event.kind === 'message_delta'
-              ? { type: 'text', text: event.delta }
-              : { type: 'reasoning', text: event.delta };
-          if (currentStep(state) !== null) return patchStep(state, block);
-          return openStep(state, block);
-        }
-        case 'tool_call':
-          return patchToolRow(state, event.call);
-        case 'usage':
-          return {
-            ...state,
-            usage: {
-              ...(state.usage ?? {}),
-              ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
-              ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}),
-              ...(event.contextUsed !== undefined ? { contextUsed: event.contextUsed } : {}),
-              ...(event.contextSize !== undefined ? { contextSize: event.contextSize } : {}),
-            },
-          };
-        case 'permission_request':
-          return {
-            ...state,
-            permissions: [
-              ...state.permissions.filter((p) => p.requestId !== event.requestId),
-              {
-                requestId: event.requestId,
-                toolCall: event.toolCall,
-                options: event.options,
-                settled: false,
-              },
-            ],
-          };
-        case 'permission_resolved':
-          return {
-            ...state,
-            permissions: state.permissions.map((p) =>
-              p.requestId === event.requestId ? { ...p, settled: true } : p,
-            ),
-          };
-        case 'turn_result': {
-          const interrupted = event.stopReason === 'cancelled';
-          const next: FoldState = state;
-          const rows = sweepRows(next, interrupted);
-          const lastRow = rows[rows.length - 1];
-          const noRunning = rows.every((r) =>
-            r.row === 'assistant'
-              ? r.step.status !== 'running'
-              : r.row !== 'tool' || r.root.status !== 'running',
-          );
-          if (noRunning && lastRow !== undefined && lastRow.row === 'turn-tail') {
-            return { ...next, rows };
-          }
-          const durationMs =
-            next.turnStartedAt !== null ? Date.now() - next.turnStartedAt : undefined;
-          const tail: ConversationRow = {
-            row: 'turn-tail',
-            key: nextKey(next, 'tail'),
-            stats: {
-              stopReason: event.stopReason,
-              ...(durationMs !== undefined && durationMs > 0 ? { durationMs } : {}),
-              ...(next.usage !== undefined && next.usage !== null ? { usage: next.usage } : {}),
-            },
-          };
-          return {
+    case 'event':
+      return applyEvent(state, action.event);
+
+    case 'history': {
+      // 9 W7 — (re)build from a transcript batch. Idempotent by construction:
+      // a resync re-ingest starts from a FRESH state, so every viewer ends up
+      // with the same rows regardless of what they saw before.
+      let next = createFoldState();
+      for (const item of action.items) {
+        if (item.type === 'user') {
+          const text = item.blocks
+            .map((b) => (b.type === 'text' ? b.text : `[${b.name}]`))
+            .join('\n');
+          if (text === '') continue;
+          next = {
             ...next,
-            rows: [...rows, tail],
-            currentStepIdx: -1,
-            stepClosed: true,
-            turnActive: false,
-            turnStartedAt: null,
+            rows: [...next.rows, { row: 'user', key: nextKey(next, 'u'), text }],
+            turnStartedAt: Date.now(),
           };
+        } else {
+          next = applyEvent(next, item.event);
         }
-        case 'session_status':
-          return { ...state, turnActive: event.state === 'active' };
-        case 'raw':
-          if (event.method === 'hnx/prompt-error') {
-            const message = (event.params as { message?: string } | undefined)?.message;
-            if (message !== undefined && message !== '') {
-              return {
-                ...state,
-                rows: [
-                  ...state.rows,
-                  { row: 'system', key: nextKey(state, 'err'), text: message, tone: 'error' },
-                ],
-              };
-            }
-          }
-          return state;
-        default:
-          return state;
       }
+      // A batch that never ended with a turn marker (adapter replay quirk):
+      // sweep so no row stays "running".
+      if (next.turnActive || next.rows.some(isRunningRow)) {
+        next = applyEvent(next, { kind: 'turn_result', stopReason: 'end_turn' });
+      }
+      return next;
     }
 
     default:
       return state;
   }
+}
+
+function isRunningRow(r: ConversationRow): boolean {
+  if (r.row === 'assistant') return r.step.status === 'running';
+  if (r.row === 'tool') return r.root.status === 'running';
+  return false;
 }

@@ -21,6 +21,7 @@ const en = {
   description: 'Description',
   status: 'Status',
   loading: 'Loading…',
+  refresh: 'Refresh',
   // Scope vocabulary (rendered from `scope` values on records).
   scope: 'Scope',
   scopeGlobal: 'global',
@@ -53,6 +54,7 @@ const zh: typeof en = {
   description: '描述',
   status: '状态',
   loading: '加载中…',
+  refresh: '刷新',
   scope: '作用域',
   scopeGlobal: '全局',
   scopePersonal: '个人',
