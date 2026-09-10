@@ -409,7 +409,11 @@ export function AgentSessionPage() {
                           active ? 'bg-accent' : stale ? 'cursor-default' : 'hover:bg-accent/60',
                           stale && !active && 'opacity-50',
                         )}
-                        title={stale ? t('chat.staleModel', { model: s.model ?? '?' }) : (s.title ?? s.cwd)}
+                        title={
+                          stale
+                            ? t('chat.staleModel', { model: s.model ?? '?' })
+                            : (s.title ?? s.cwd)
+                        }
                       >
                         <span className="flex w-full items-center justify-between gap-2">
                           <span className="truncate">{s.title ?? t('chat.untitled')}</span>

@@ -61,7 +61,9 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
           }
           const catalog = (() => {
             try {
-              return currentCatalogModels(readFileSync(join(home, '.dsh', 'settings.yaml'), 'utf8'));
+              return currentCatalogModels(
+                readFileSync(join(home, '.dsh', 'settings.yaml'), 'utf8'),
+              );
             } catch {
               return null; // no settings yet — nothing to compare against
             }

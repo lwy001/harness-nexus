@@ -21,10 +21,18 @@
  *   session/cancel → the pending prompt resolves {stopReason: 'cancelled'}
  *   session/close → {}
  *
+ * FIXTURE_TAP_SPEAKER=1 (9 W7.1): emulate the hnx dsh tap PLUGIN — dial the
+ *   daemon's HNX_TAP_PORT/HNX_TAP_TOKEN listener, say hello, and replay
+ *   canned session-event-BUS rows during a plain echo turn (deltas during
+ *   generation, a streamed-step commit, then turn/end AFTER the wire
+ *   settles). Tests must pin FIXTURE_SESSION_ID — the daemon filters tap
+ *   events by the acp session id.
+ *
  * The daemon tests drive it via HN_ACP_COMMAND_<TARGET>="node <this file>".
  */
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
+import { connect as netConnect } from 'node:net';
 import { createInterface } from 'node:readline';
 
 // 9 W7 leak regression: tests point FIXTURE_PID_FILE here to observe that the
@@ -36,6 +44,118 @@ if (process.env.FIXTURE_PID_FILE) {
   } catch {
     /* best effort */
   }
+}
+
+// 9 W7.1: tests point FIXTURE_ARGV_FILE here to observe HOW the daemon
+// composed the command line (the tap appends `--patch <yml>`; the A/B switch
+// must not).
+if (process.env.FIXTURE_ARGV_FILE) {
+  try {
+    appendFileSync(process.env.FIXTURE_ARGV_FILE, `${process.argv.join(' ')}\n`);
+  } catch {
+    /* best effort */
+  }
+}
+
+// ---- 9 W7.1 tap-speaker: the plugin's protocol, canned ----
+
+let tapSock = null;
+let tapReady = false;
+
+if (process.env.FIXTURE_TAP_SPEAKER === '1') {
+  const port = Number(process.env.HNX_TAP_PORT);
+  const token = process.env.HNX_TAP_TOKEN;
+  if (Number.isInteger(port) && port > 0 && token) {
+    const s = netConnect(port, '127.0.0.1');
+    tapSock = s;
+    s.on('connect', () => {
+      tapReady = true;
+      s.write(`${JSON.stringify({ type: 'hello', token, pid: process.pid })}\n`);
+    });
+    s.on('error', () => {});
+  }
+}
+
+/** One bus event for `sessionId` — verbatim SessionEvent envelope. */
+function tapEvent(sessionId, event) {
+  if (!tapReady || tapSock === null) return;
+  try {
+    tapSock.write(`${JSON.stringify({ type: 'event', sessionId, event })}\n`);
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * The tap-speaker echo turn: bus deltas stream DURING generation (incl. one
+ * SUBAGENT session's event the daemon must filter out), the commit for the
+ * already-streamed step carries only usage, the wire settles, and the bus
+ * `turn/end` lands ~150ms AFTER the wire — the daemon must wait for it
+ * before turn_result (the settle-from-tap contract).
+ */
+function runTapSpeakerTurn(id, text, finish) {
+  const sid = process.env.FIXTURE_SESSION_ID || 'fx-session';
+  tapEvent(sid, {
+    type: 'assistant/chunk',
+    seq: 1,
+    time: 1,
+    data: { turn: 1, step: 0, chunk: { type: 'text-delta', text: 'tap-流式-1 ' } },
+  });
+  tapEvent('fx-subagent-session', {
+    type: 'assistant/chunk',
+    seq: 1,
+    time: 1,
+    data: { turn: 1, step: 0, chunk: { type: 'text-delta', text: 'SUBAGENT-NOISE' } },
+  });
+  setTimeout(() => {
+    tapEvent(sid, {
+      type: 'assistant/chunk',
+      seq: 2,
+      time: 2,
+      data: { turn: 1, step: 0, chunk: { type: 'text-delta', text: 'tap-流式-2' } },
+    });
+  }, 150);
+  setTimeout(() => {
+    // Commit of the streamed step: the mapper must NOT re-render its blocks.
+    tapEvent(sid, {
+      type: 'assistant/message',
+      seq: 3,
+      time: 3,
+      data: {
+        turn: 1,
+        step: 0,
+        message: { content: [{ type: 'text', text: 'tap-COMMIT-text' }] },
+        usage: { inputTokens: 5, outputTokens: 9 },
+      },
+    });
+    // The wire's committed chunks arrive NOW (the daemon suppresses the
+    // message/thought ones — the tap already streamed this turn) and the
+    // prompt response settles the wire.
+    notify('session/update', {
+      sessionId: sid,
+      update: {
+        sessionUpdate: 'agent_thought_chunk',
+        contentBlock: { type: 'text', text: 'committed-thought' },
+      },
+    });
+    notify('session/update', {
+      sessionId: sid,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        contentBlock: { type: 'text', text: `echo: ${text}` },
+      },
+    });
+    update(sid, 'usage_update');
+    finish('end_turn');
+  }, 300);
+  setTimeout(() => {
+    tapEvent(sid, {
+      type: 'turn/end',
+      seq: 4,
+      time: 4,
+      data: { turn: 1, reason: { kind: 'completed' } },
+    });
+  }, 450);
 }
 
 /** Pending permission waiters: jsonrpc request id → (outcome) => void */
@@ -285,6 +405,11 @@ function runPrompt(id, text, deferred = false) {
       });
       finish('end_turn');
     });
+    return;
+  }
+
+  if (tapReady) {
+    runTapSpeakerTurn(id, text, finish);
     return;
   }
 
