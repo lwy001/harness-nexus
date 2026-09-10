@@ -29,13 +29,21 @@ import {
 import { AcpAgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import {
+  createDshLiveMapper,
   decodeTranscript,
   dshHistoryItems,
   findTranscript,
   nativeZstd,
   TranscriptTail,
+  type DshLiveMapper,
   type TailFs,
 } from './dsh-sessions.js';
+import {
+  TapListener,
+  tapPluginAvailable,
+  tapPluginPath,
+  writeTapPatch,
+} from './dsh-tap-listener.js';
 
 /**
  * Daemon-side chat session manager (Phase 8 C5, extended 9 W7).
@@ -55,16 +63,21 @@ import {
  * keeps a bounded history ring (forwarded prompts + mapped events) so a
  * `chat:session.resync` (page refresh rejoin) can rebuild the browser's fold.
  *
- * dsh STREAMING: its ACP adapter only commits whole blocks at turn end (rig-
- * verified — zero notifications during generation), so deepseek channels tail
- * the transcript FILE live (`TranscriptTail`: token batches land as frames
- * ~100–300ms apart; shapes verified against dsh 0.1.2-rc.1 source). The
- * tail's mapper streams deltas AND emits complete blocks for steps whose
- * deltas it never saw, so the wire's committed text chunks are suppressed
- * wholesale while the tail is live (letting them through would double-render).
- * No transcript yet → no tail → committed-only; the attach re-runs at each
- * prompt (new sessions materialize their file lazily), and a corrupt tail
- * lifts the suppression so the committed path takes over.
+ * dsh STREAMING (9 W7.1): its ACP adapter only commits whole blocks at turn
+ * end (rig-verified — zero notifications during generation), so deepseek
+ * channels stream from an auxiliary source with a purely-additive priority
+ * chain: (1) the IN-PROCESS EVENT TAP — the daemon insert-mounts a zero-dep
+ * cordis plugin at spawn (`dsh --patch`, assets in `daemon/dsh-tap/`) which
+ * forwards the session event bus over a localhost JSON-line socket
+ * (`dsh-tap-listener.ts`; zero latency, verbatim events); (2) on no
+ * handshake within 3s (old dsh, plugin failure, `HN_DISABLE_DSH_TAP=1` A/B
+ * switch) the W7 TRANSCRIPT-FILE TAIL (`TranscriptTail` — batches land as
+ * zstd frames ~100–300ms behind); (3) neither → committed-only. Whichever
+ * source is live feeds ONE `createDshLiveMapper` per session (deltas AND
+ * complete blocks for unstreamed steps), so the wire's committed text chunks
+ * are suppressed wholesale while it is live (letting them through would
+ * double-render). A tap that dies mid-session leaves that session
+ * committed-only — a fresh mapper cannot know what was already streamed.
  */
 
 interface DaemonSession {
@@ -92,11 +105,31 @@ interface DaemonSession {
    * resumed session's file pre-exists with rendered history: never replay.
    */
   tailReplayEligible: boolean;
-  /** dsh only — the live transcript tail (the streaming source). */
+  /** dsh only — the live transcript tail (the FALLBACK streaming source). */
   tail: TranscriptTail | null;
+  /**
+   * 9 W7.1 — the in-process event tap (the PREFERRED dsh streaming source):
+   * localhost listener fed by the `harness-nexus-tap` plugin that
+   * `dsh --patch` insert-mounts at spawn. Mutually exclusive with `tail`.
+   */
+  tap: TapListener | null;
+  /** The tap's live mapper (verbatim bus events → stream events). */
+  tapMapper: DshLiveMapper | null;
+  /** Wall-clock of the tap's last `turn/end` (the tap-path settle signal). */
+  tapTurnEndAt: number;
+  /**
+   * A live tap DIED mid-session: stay committed-only forever — a fresh tail
+   * mapper cannot know which steps the tap already streamed, so attaching it
+   * (or replaying the file) would double-render (the tail-corruption path
+   * has the same trade-off).
+   */
+  tapDead: boolean;
 }
 
 const HISTORY_MAX = 2000;
+
+/** How long after arming the tap plugin may take to say hello (design: 3s). */
+const TAP_HANDSHAKE_MS = 3000;
 
 /** Node fs surface for TranscriptTail. */
 const nodeTailFs: TailFs = {
@@ -165,6 +198,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     if (sessions.get(session.sessionId) !== session) return;
     sessions.delete(session.sessionId);
     session.tail?.stop();
+    session.tap?.close();
     for (const [, p] of session.permissions) clearTimeout(p.timer);
     session.permissions.clear();
     session.conn.kill();
@@ -175,6 +209,53 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
   const tailAttaches = new Map<string, Promise<void>>();
 
   /**
+   * An armed (not yet handshaken) tap — the per-session event dispatch binds
+   * at activation time (the acpSessionId only exists after establishment);
+   * events before that are dropped (no assistant events can precede the
+   * first prompt).
+   */
+  interface TapArm {
+    listener: TapListener;
+    patchPath: string;
+    hello: Promise<boolean>;
+    bind(sink: (sessionId: string, event: Record<string, unknown>) => void, loss: () => void): void;
+  }
+
+  /**
+   * 9 W7.1 — arm the in-process dsh event tap BEFORE the spawn (the child
+   * needs the listener port/token in its env): render the spawn overlay into
+   * `~/.hnx/dsh-tap.patch.yml` and open the localhost listener the plugin
+   * dials. Null = not applicable (non-deepseek, `HN_DISABLE_DSH_TAP=1` A/B
+   * switch, assets missing, patch write or listen failure) — the transcript
+   * tail then streams exactly as before. The handshake races the spawn (the
+   * plugin loads during dsh's composition, i.e. typically before initialize
+   * resolves); no hello within the window → the caller closes the listener
+   * and falls through to the tail.
+   */
+  const armTap = (target: string): Promise<TapArm | null> => {
+    if (target !== 'deepseek' || env.HN_DISABLE_DSH_TAP === '1') return Promise.resolve(null);
+    if (!tapPluginAvailable()) return Promise.resolve(null);
+    const patchPath = writeTapPatch(home, tapPluginPath());
+    if (patchPath === null) return Promise.resolve(null);
+    let sink: ((sessionId: string, event: Record<string, unknown>) => void) | null = null;
+    let loss: (() => void) | null = null;
+    return TapListener.create({
+      onEvent: (sessionId, event) => sink?.(sessionId, event),
+      onLoss: () => loss?.(),
+    })
+      .then((listener): TapArm => ({
+        listener,
+        patchPath,
+        hello: listener.waitHello(Date.now() + TAP_HANDSHAKE_MS),
+        bind: (fnSink, fnLoss) => {
+          sink = fnSink;
+          loss = fnLoss;
+        },
+      }))
+      .catch(() => null);
+  };
+
+  /**
    * dsh streaming — attach the transcript tail if it isn't live yet. Called
    * at session ready AND at each prompt start: a NEW session's transcript is
    * materialized lazily (the file appears only when the first prompt's user
@@ -183,7 +264,11 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
    * committed fallback then emits the complete blocks, nothing is lost.
    */
   const ensureTail = (session: DaemonSession): void => {
+    // 9 W7.1 — the tap and the tail are mutually exclusive streaming
+    // sources: a live tap owns the session, and a DEAD one leaves it
+    // committed-only (a fresh tail mapper would double-render streamed steps).
     if (session.target !== 'deepseek' || session.tail !== null) return;
+    if (session.tap !== null || session.tapDead) return;
     if (tailAttaches.has(session.acpSessionId)) return;
     const attach = (async () => {
       let tailRef: TranscriptTail | null = null;
@@ -242,12 +327,36 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       // spawned adapter running: the channel dies server-side, so nothing
       // would ever kill it. Track the connection from spawn to outcome.
       let liveConn: AcpAgentConnection | null = null;
+      // 9 W7.1 — arm the tap before the spawn (the child needs the port/token
+      // env); the spawn and the plugin's hello then race in parallel.
+      const tapArmed = await armTap(target);
       try {
-        const { conn, agentInfo, sessionCaps } = await AcpAgentConnection.start(
-          cmd.command,
-          cmd.args,
-          { cwd, ...(opts.spawnEnv !== undefined ? { env: opts.spawnEnv } : {}) },
-        );
+        const spawnOpts = {
+          cwd,
+          ...(tapArmed === null
+            ? opts.spawnEnv !== undefined
+              ? { env: opts.spawnEnv }
+              : {}
+            : {
+                env: {
+                  ...(opts.spawnEnv ?? {}),
+                  HNX_TAP_PORT: String(tapArmed.listener.port),
+                  HNX_TAP_TOKEN: tapArmed.listener.token,
+                },
+              }),
+        };
+        const args = tapArmed === null ? cmd.args : [...cmd.args, '--patch', tapArmed.patchPath];
+        let started: Awaited<ReturnType<typeof AcpAgentConnection.start>>;
+        let tapLive = false;
+        if (tapArmed === null) {
+          started = await AcpAgentConnection.start(cmd.command, args, spawnOpts);
+        } else {
+          [started, tapLive] = await Promise.all([
+            AcpAgentConnection.start(cmd.command, args, spawnOpts),
+            tapArmed.hello,
+          ]);
+        }
+        const { conn, agentInfo, sessionCaps } = started;
         liveConn = conn;
         // `mcpServers` is sent explicitly (spec: an array): the CURRENT
         // @zed-industries/claude-agent-acp zod-validates session establishment
@@ -306,6 +415,10 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           wireTextEmitted: false,
           tailReplayEligible: resume === undefined,
           tail: null,
+          tap: null,
+          tapMapper: null,
+          tapTurnEndAt: 0,
+          tapDead: false,
         };
         sessions.set(sessionId, session);
         liveConn = null; // registered — teardown owns the connection from here
@@ -314,6 +427,36 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           // Crash/quit outside our control — end the channel honestly.
           if (sessions.get(sessionId) === session) teardown(session, 'agent-exited');
         });
+        // 9 W7.1 — the tap won the handshake race: it IS the streaming
+        // source and the transcript tail never attaches. A lost race closes
+        // the listener (a late plugin hello finds a dead port and goes
+        // dormant) and ensureTail streams exactly as in W7.
+        if (tapArmed !== null) {
+          if (tapLive) {
+            session.tap = tapArmed.listener;
+            session.tapMapper = createDshLiveMapper();
+            tapArmed.bind(
+              (sid, busEvent) => {
+                if (sessions.get(sessionId) !== session || sid !== session.acpSessionId) return;
+                if (busEvent['type'] === 'turn/end') session.tapTurnEndAt = Date.now();
+                for (const event of session.tapMapper?.(busEvent) ?? []) {
+                  emitEvent(session, event);
+                }
+              },
+              () => {
+                if (sessions.get(sessionId) !== session) return;
+                session.tap = null;
+                session.tapMapper = null;
+                session.tapDead = true;
+                console.warn(
+                  '[chat] dsh event tap lost — committed-only streaming for this session',
+                );
+              },
+            );
+          } else {
+            tapArmed.listener.close();
+          }
+        }
         // dsh streaming: fire-and-forget the tail attach (a resume's file
         // exists already; a new session's appears at first prompt — ensureTail
         // re-runs then). Suppression is keyed off the live tail, never a
@@ -327,6 +470,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           ...(agentInfo.version !== undefined ? { agentVersion: agentInfo.version } : {}),
         });
       } catch (e) {
+        tapArmed?.listener.close();
         liveConn?.kill();
         socket.emit('chat:session.ready', {
           sessionId,
@@ -540,15 +684,15 @@ function wireSession(
 
   conn.setNotificationHandler((method, params) => {
     if (method !== 'session/update') return;
-    // dsh commits block-level text at turn end — while the transcript tail is
-    // live, its token batches already streamed this content AND its mapper
-    // emits the complete blocks for steps whose deltas it never saw, so the
-    // wire's committed chunk is redundant in every case; letting it through
-    // would double-render the message. Tools/usage still flow (idempotent by
-    // callId / field-merged).
+    // dsh commits block-level text at turn end — while a streaming source is
+    // live (the transcript tail OR the 9 W7.1 event tap), its deltas already
+    // streamed this content AND its mapper emits the complete blocks for
+    // steps whose deltas it never saw, so the wire's committed chunk is
+    // redundant in every case; letting it through would double-render the
+    // message. Tools/usage still flow (idempotent by callId / field-merged).
     const update = (params.update ?? {}) as Record<string, unknown>;
     if (
-      session.tail !== null &&
+      (session.tail !== null || session.tap !== null) &&
       (update.sessionUpdate === 'agent_message_chunk' ||
         update.sessionUpdate === 'agent_thought_chunk')
     ) {
@@ -558,7 +702,8 @@ function wireSession(
     if (mapped !== null) {
       if (
         (mapped.kind === 'message_delta' || mapped.kind === 'thought_delta') &&
-        session.tail === null
+        session.tail === null &&
+        session.tap === null
       ) {
         // Committed text rendered through the wire — a FUTURE tail attach
         // must skip the file's existing bytes (replaying would duplicate).
@@ -612,11 +757,14 @@ async function runPrompt(
     )
       ? (result!.stopReason as 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal')
       : 'end_turn';
-    // dsh: the wire settles when the agent idles, but the transcript's final
-    // write-behind batch (last deltas + the turn's commit + `turn/end`) can
-    // land a beat LATER. Emitting turn_result before those bytes would render
-    // the message tail as a post-turn bubble (the fold opens a new step after
-    // turn_result). So drain, then wait briefly for the turn/end row.
+    // dsh: the wire settles when the agent idles, but the streaming source's
+    // final bytes can land a beat LATER — the transcript's write-behind
+    // batch (tail) or the bus `turn/end` (tap — typically already there,
+    // the adapter derives its updates from committed session events).
+    // Emitting turn_result before them would render the message tail as a
+    // post-turn bubble (the fold opens a new step after turn_result). So
+    // drain, then wait briefly for the turn/end signal of whichever source
+    // is live.
     if (session.tail !== null) {
       session.tail.flush();
       const deadline = Date.now() + 600;
@@ -627,6 +775,15 @@ async function runPrompt(
       ) {
         await new Promise((r) => setTimeout(r, 50));
         session.tail?.flush();
+      }
+    } else if (session.tap !== null) {
+      const deadline = Date.now() + 600;
+      while (
+        session.tap !== null &&
+        session.tapTurnEndAt < promptStartedAt &&
+        Date.now() < deadline
+      ) {
+        await new Promise((r) => setTimeout(r, 25));
       }
     }
     emitEvent(session, { kind: 'turn_result', stopReason });

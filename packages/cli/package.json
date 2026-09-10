@@ -9,7 +9,7 @@
     "hnx": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs=require('node:fs');fs.cpSync('src/daemon/dsh-tap','dist/daemon/dsh-tap',{recursive:true})\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

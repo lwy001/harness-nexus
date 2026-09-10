@@ -657,7 +657,11 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
-      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      env: {
+        HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`,
+        HN_DISABLE_DSH_TAP: '1',
+        PATH: process.env.PATH ?? '',
+      },
       spawnEnv: { ...process.env, FIXTURE_SESSION_ID: sid, FIXTURE_DELAY_PROMPT_MS: '1200' },
       homeDir: home,
     });
@@ -742,7 +746,11 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
-      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      env: {
+        HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`,
+        HN_DISABLE_DSH_TAP: '1',
+        PATH: process.env.PATH ?? '',
+      },
       spawnEnv: { ...process.env, FIXTURE_SESSION_ID: 'fx-notail-1' },
       homeDir: home,
     });
@@ -788,7 +796,11 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
-      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      env: {
+        HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`,
+        HN_DISABLE_DSH_TAP: '1',
+        PATH: process.env.PATH ?? '',
+      },
       spawnEnv: { ...process.env, FIXTURE_SESSION_ID: sid, FIXTURE_DELAY_PROMPT_MS: '2500' },
       homeDir: home,
     });
@@ -854,6 +866,190 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
     const closeAck = vi.fn();
     socket.receive('chat:session.close', { sessionId: 'sess-lazy', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+});
+
+describe('dsh live streaming via the in-process event tap (9 W7.1)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+
+  it('tap handshake wins: bus deltas stream, committed chunks suppressed, turn/end settles turn_result', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-tap-'));
+    const argvFile = join(home, 'argv.txt');
+    writeFileSync(argvFile, '', 'utf8');
+    const sid = 'fx-tap-1';
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: {
+        ...process.env,
+        FIXTURE_SESSION_ID: sid,
+        FIXTURE_TAP_SPEAKER: '1',
+        FIXTURE_ARGV_FILE: argvFile,
+      },
+      homeDir: home,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-tap',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; nativeSessionId?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    expect(ready.nativeSessionId).toBe(sid);
+
+    // The spawn composed the tap: `--patch <yml>` on the adapter argv and the
+    // insert overlay rendered under the daemon's home (never ~/.dsh).
+    await waitFor(() => (readFileSync(argvFile, 'utf8').includes('--patch') ? true : undefined));
+    const patchYml = readFileSync(join(home, '.hnx', 'dsh-tap.patch.yml'), 'utf8');
+    expect(patchYml).toContain('- insert:');
+    expect(patchYml).toContain('id: hnx-tap');
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-tap',
+      prompt: [{ type: 'text', text: 'hello tap' }],
+    });
+    const turnIdx = await waitFor(() => {
+      const i = socket.chatEvents().findIndex((e) => e.kind === 'turn_result');
+      return i === -1 ? undefined : i;
+    });
+
+    // Both bus deltas streamed; the subagent session's event never rendered.
+    const deltas = socket
+      .chatEvents()
+      .filter((e): e is { kind: string; delta: string } => e.kind === 'message_delta')
+      .map((e) => e.delta);
+    expect(deltas).toContain('tap-流式-1 ');
+    expect(deltas).toContain('tap-流式-2');
+    expect(deltas.join('')).not.toContain('SUBAGENT-NOISE');
+    // The wire's committed chunks (suppressed — the tap owns this turn's
+    // text) and the streamed step's commit blocks never rendered.
+    expect(deltas.join('')).not.toContain('echo: hello tap');
+    expect(deltas.join('')).not.toContain('committed-thought');
+    expect(deltas.join('')).not.toContain('tap-COMMIT-text');
+    // Every delta PRECEDES turn_result — the tap's `turn/end` (deliberately
+    // landed 150ms AFTER the wire settled) gated it.
+    const lastDeltaIdx = socket.chatEvents().findLastIndex((e) => e.kind === 'message_delta');
+    expect(lastDeltaIdx).toBeLessThan(turnIdx);
+    // The commit's usage rode the bus; the wire's usage_update flowed too.
+    const usages = socket.chatEvents().filter((e) => e.kind === 'usage');
+    expect(usages).toContainEqual({ kind: 'usage', inputTokens: 5, outputTokens: 9 });
+    expect(usages).toContainEqual({ kind: 'usage', inputTokens: 11, outputTokens: 7 });
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-tap', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
+  it('no tap handshake within the window → falls through to committed streaming (worst case = W7)', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-notap-'));
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      // No FIXTURE_TAP_SPEAKER: the fixture receives HNX_TAP_PORT but stays
+      // silent — and tolerates the appended `--patch` argv.
+      spawnEnv: { ...process.env, FIXTURE_SESSION_ID: 'fx-notap-1' },
+      homeDir: home,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-nt2',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-nt2',
+      prompt: [{ type: 'text', text: 'hi fallback' }],
+    });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta === 'echo: hi fallback'),
+    );
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-nt2', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 20000);
+
+  it('HN_DISABLE_DSH_TAP=1 spawns the adapter with NO tap at all (the A/B switch)', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-ab-'));
+    const argvFile = join(home, 'argv.txt');
+    writeFileSync(argvFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: {
+        HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`,
+        HN_DISABLE_DSH_TAP: '1',
+        PATH: process.env.PATH ?? '',
+      },
+      spawnEnv: {
+        ...process.env,
+        FIXTURE_SESSION_ID: 'fx-ab-1',
+        FIXTURE_TAP_SPEAKER: '1', // even a speaking fixture: no port was passed
+        FIXTURE_ARGV_FILE: argvFile,
+      },
+      homeDir: home,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-ab',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    await waitFor(() => (readFileSync(argvFile, 'utf8').length > 0 ? true : undefined));
+    expect(readFileSync(argvFile, 'utf8')).not.toContain('--patch');
+
+    // A prompt still streams committed-only (no tap, no transcript).
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-ab',
+      prompt: [{ type: 'text', text: 'ab' }],
+    });
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'message_delta' && e.delta === 'echo: ab'),
+    );
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-ab', reason: 'user' }, closeAck);
     expect(closeAck).toHaveBeenCalledWith({ closed: true });
   }, 15000);
 });

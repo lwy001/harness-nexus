@@ -1,7 +1,8 @@
 # Design: Phase 9 W7.1 — dsh in-process event tap (streaming source upgrade)
 
-> Status: **DESIGNED 2026-09-10, not implemented** — pick up with the
-> implementation plan in §Rollout.
+> Status: **SHIPPED 2026-09-10** (daemon `0.11.0-p9w7.1`, branch
+> `feat/p9-w7.1-dsh-tap`) — implementation decisions and rig results in
+> §Post-ship notes.
 > Predecessor: `docs/design/phase-9-w7-native-sessions.md` § "dsh live
 > streaming" (the transcript-file tail, SHIPPED as daemon `0.10.1-p9w7` —
 > becomes the FALLBACK when this lands).
@@ -196,3 +197,50 @@ the repo dev tree, the npm install, AND the container overlay.
 - Removing `TranscriptTail` (it remains the fallback and the resume-history
   parser).
 - Any persistent mutation of the user's `~/.dsh` (spawn-time overlay only).
+
+## Post-ship notes (2026-09-10)
+
+Landed exactly as §Architecture draws it. Where the design left a decision
+open, implementation resolved:
+
+- **No static `patch.yml` asset ships.** The daemon renders
+  `~/.hnx/dsh-tap.patch.yml` itself at every deepseek session start
+  (idempotent overwrite; `dsh-tap-listener.ts` `writeTapPatch`) — one file
+  serves every channel because the per-channel port/token ride the child
+  env, not the patch. Only `index.mjs` rides the package (build-copied into
+  `dist/daemon/dsh-tap/`).
+- **The 3s handshake races the SPAWN, not the ready.** `chat.ts` arms the
+  listener before `AcpAgentConnection.start` and `Promise.all`s the hello
+  against initialize: a healthy plugin loads during dsh's composition, so
+  the race resolves at zero added latency; establishment failure closes the
+  listener in the existing kill-catch (leak-hygiene intact). A SLOW-but-
+  healthy boot (>3s to hello) still degrades to the tail — worst case is
+  W7 by construction.
+- **Tap death mid-session ⇒ committed-only for that session** (`tapDead`):
+  `ensureTail` refuses to attach afterwards. A fresh tail mapper cannot
+  know which `turn:step`s the tap already streamed, so byte-0 replay or
+  commit-dedup would double-render; the tail-corruption path makes the same
+  trade.
+- **The plugin bounds its reconnects** (~6s of exponential backoff, 10
+  attempts) and stops permanently on the listener's `{"type":"reject"}`
+  line (wrong token = the port belongs to someone else — never spam it).
+- Tests: the fixture gained `FIXTURE_TAP_SPEAKER=1` (speaks the plugin
+  protocol with canned bus rows — tests must pin `FIXTURE_SESSION_ID`,
+  since the daemon filters tap events by the acp session id) and
+  `FIXTURE_ARGV_FILE` (asserts the `--patch` composition and that
+  `HN_DISABLE_DSH_TAP=1` omits it entirely).
+
+**Rig results (2026-09-10, daemon `0.11.0-p9w7.1`, standard dist overlay —
+no server/web rebuild):**
+
+- **A (tap, default):** `rig-stream-probe.mjs` PROBE PASS ×2 (24
+  assertions). Turn 1 (count 1..25): **107 deltas, median inter-delta gap
+  1ms, first delta 810ms** — per-LLM-chunk granularity.
+- **B (tail, `docker exec -d -e HN_DISABLE_DSH_TAP=1 … hnx daemon`):**
+  PROBE PASS (24/0 on rerun; the first run hit 23/1 — `turn1: progressive
+  deltas (>=4)` saw 3 batches, the known tail batch-count variance the W7
+  addendum documents; assertions there must stay span/slot-based). Turn 1:
+  3–4 deltas, median gap 212ms–3.5s, first delta ~3s.
+- The write-behind window + 250ms poll interval are gone on the tap path,
+  exactly as §Problem predicted. Leak scan (`/proc/*/cmdline` for
+  `dsh --profile acp`) after 8 channel openings across both runs: **zero**.
