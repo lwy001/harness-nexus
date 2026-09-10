@@ -152,12 +152,73 @@ describe('GET /api/agent-instances/:id/sessions (9 W7)', () => {
           cwd: '/home/w7/projects/alpha',
           title: 'prior turn',
           updatedAt: '2026-09-10T00:00:00.000Z',
+          // Post-W8: every row carries the server-computed channel flag.
+          open: false,
         },
       ],
     });
     daemon.disconnect();
     await new Promise((r) => setTimeout(r, 150));
   });
+
+  it('marks rows whose native session holds a live channel (open/openChannelId)', async () => {
+    await connectDaemon(['sessions', 'chat'], () => ({
+      sessions: [
+        { sessionId: 'native-live', cwd: '/home/w7/projects/alpha', title: 'live one' },
+        { sessionId: 'native-idle', cwd: '/home/w7/projects/alpha', title: 'idle one' },
+      ],
+    }));
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: auth(ownerJwt),
+      payload: { remoteChatEnabled: true },
+    });
+    expect(patch.json().machine.remoteChatEnabled).toBe(true);
+
+    // Open a channel whose native session is one of the listed rows.
+    const browser = io(`${baseUrl}/app`, { auth: { token: ownerJwt }, transports: ['websocket'] });
+    await new Promise<void>((resolve) => browser.on('connect', () => resolve()));
+    const startP = new Promise<{ sessionId: string }>((resolve) => {
+      daemon.on('chat:session.start', (p: { sessionId: string }) => resolve(p));
+    });
+    const openAck = (await new Promise((resolve) => {
+      browser.emit('chat:session.open', { agentInstanceId: agentId }, resolve);
+    })) as { sessionId: string };
+    const start = await startP;
+    const readyP = new Promise<void>((resolve) => {
+      browser.on('chat:session.ready', () => resolve());
+    });
+    daemon.emit('chat:session.ready', {
+      sessionId: start.sessionId,
+      nativeSessionId: 'native-live',
+    });
+    await readyP;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/agent-instances/${agentId}/sessions`,
+      headers: auth(ownerJwt),
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().sessions as {
+      sessionId: string;
+      open: boolean;
+      openChannelId?: string;
+    }[];
+    expect(rows.find((s) => s.sessionId === 'native-live')).toMatchObject({
+      open: true,
+      openChannelId: openAck.sessionId,
+    });
+    expect(rows.find((s) => s.sessionId === 'native-idle')).toMatchObject({ open: false });
+
+    await new Promise((resolve) => {
+      browser.emit('chat:session.close', { sessionId: start.sessionId, reason: 'user' }, resolve);
+    });
+    browser.close();
+    daemon.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+  }, 15000);
 
   it('surfaces an unsupported target and maps the error/timeout arms', async () => {
     await connectDaemon(['sessions'], () => ({ supported: false }));

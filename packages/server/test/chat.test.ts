@@ -526,24 +526,129 @@ describe('session lifecycle', () => {
     },
   );
 
-  it('caps concurrent open sessions per machine', async () => {
-    // Live sessions from earlier tests are closed; open two fresh ones.
-    for (let i = 0; i < 2; i++) {
+  it(
+    'a full TOTAL budget evicts the oldest non-busy channel instead of rejecting',
+    { timeout: 15000 },
+    async () => {
+      // Helpers default the budget to 2 total / 1 active.
+      const ids: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const startP = once(daemon, 'chat:session.start');
+        await openSession(browser, agentId);
+        const start = (await startP) as { sessionId: string };
+        const readyP = once(browser, 'chat:session.ready');
+        readyFor(daemon, start);
+        await readyP;
+        ids.push(start.sessionId);
+      }
+
+      // Third open at cap: the OLDEST (idle) channel gives way — no rejection.
+      const evictedP = once(browser, 'chat:session.closed');
+      const startP = once(daemon, 'chat:session.start');
+      const third = await openSession(browser, agentId);
+      expect(third.error).toBeUndefined();
+      const evicted = (await evictedP) as { sessionId: string; reason: string };
+      expect(evicted.sessionId).toBe(ids[0]);
+      expect(evicted.reason).toBe('evicted');
+      const start3 = (await startP) as { sessionId: string };
+      const ready3P = once(browser, 'chat:session.ready');
+      readyFor(daemon, start3);
+      await ready3P;
+
+      // Leave the table clean for the tests below.
+      await emitAck(browser, 'chat:session.close', { sessionId: ids[1]! });
+      await emitAck(browser, 'chat:session.close', { sessionId: third.sessionId! });
+    },
+  );
+
+  it(
+    'a full budget where EVERY channel is mid-turn still rejects',
+    { timeout: 15000 },
+    async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const startP = once(daemon, 'chat:session.start');
+        await openSession(browser, agentId);
+        const start = (await startP) as { sessionId: string };
+        const readyP = once(browser, 'chat:session.ready');
+        readyFor(daemon, start);
+        await readyP;
+        ids.push(start.sessionId);
+        // Mid-turn sessions are eviction-proof — mark both busy.
+        daemon.emit('chat:event', {
+          sessionId: start.sessionId,
+          event: { kind: 'session_status', state: 'active' },
+        });
+      }
+      const third = await openSession(browser, agentId);
+      expect(third.error).toBe('SESSION_LIMIT_REACHED');
+      for (const id of ids) {
+        daemon.emit('chat:event', {
+          sessionId: id,
+          event: { kind: 'session_status', state: 'idle' },
+        });
+        await emitAck(browser, 'chat:session.close', { sessionId: id });
+      }
+    },
+  );
+
+  it(
+    'an ACTIVE budget bounces a prompt on an otherwise idle channel',
+    { timeout: 15000 },
+    async () => {
+      // Active cap is 1 (helpers): one generating session blocks every other.
+      const startP1 = once(daemon, 'chat:session.start');
+      await openSession(browser, agentId);
+      const s1 = (await startP1) as { sessionId: string };
+      const ready1P = once(browser, 'chat:session.ready');
+      readyFor(daemon, s1);
+      await ready1P;
+      daemon.emit('chat:event', {
+        sessionId: s1.sessionId,
+        event: { kind: 'session_status', state: 'active' },
+      });
+
+      const startP2 = once(daemon, 'chat:session.start');
+      await openSession(browser, agentId);
+      const s2 = (await startP2) as { sessionId: string };
+      const ready2P = once(browser, 'chat:session.ready');
+      readyFor(daemon, s2);
+      await ready2P;
+
+      const bounced = await emitAck(browser, 'chat:message.send', {
+        sessionId: s2.sessionId,
+        content: 'should bounce',
+      });
+      expect(bounced).toEqual({ error: 'MACHINE_BUSY' });
+
+      // The generating turn ends → the same prompt goes through.
+      daemon.emit('chat:event', {
+        sessionId: s1.sessionId,
+        event: { kind: 'session_status', state: 'idle' },
+      });
+      const ok = await emitAck(browser, 'chat:message.send', {
+        sessionId: s2.sessionId,
+        content: 'goes through',
+      });
+      expect(ok).toEqual({ accepted: true });
+
+      await emitAck(browser, 'chat:session.close', { sessionId: s1.sessionId });
+      await emitAck(browser, 'chat:session.close', { sessionId: s2.sessionId });
+    },
+  );
+
+  it(
+    'daemon disconnect closes every open channel (the native sessions survive)',
+    { timeout: 10000 },
+    async () => {
+      // Self-sufficient: the budget tests above leave a clean table.
       const startP = once(daemon, 'chat:session.start');
       await openSession(browser, agentId);
       const start = (await startP) as { sessionId: string };
       const readyP = once(browser, 'chat:session.ready');
       readyFor(daemon, start);
       await readyP;
-    }
-    const third = await openSession(browser, agentId);
-    expect(third.error).toBe('SESSION_LIMIT_REACHED');
-  });
 
-  it(
-    'daemon disconnect closes every open channel (the native sessions survive)',
-    { timeout: 10000 },
-    async () => {
       daemon.close();
       const closed = (await once(browser, 'chat:session.closed', 6000)) as { reason: string };
       expect(closed.reason).toBe('connection-lost');

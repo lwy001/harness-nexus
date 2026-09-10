@@ -205,6 +205,9 @@ export function AgentSessionPage() {
       setPhase('ready');
       setError(null);
       if (push.nativeSessionId !== undefined) setNativeSessionId(push.nativeSessionId);
+      // Re-list so the just-opened row flips to its 已打开 (channel attached)
+      // state instead of still offering a fresh resume.
+      void refreshSessions();
     };
     const onFailed = (push: ChatSessionFailedPush): void => {
       if (push.sessionId !== sessionId) return;
@@ -216,6 +219,9 @@ export function AgentSessionPage() {
       if (push.sessionId !== sessionId) return;
       liveChannelRef.current = '';
       setPhase('closed');
+      // An evicted channel deserves its own explanation — the user did not
+      // close anything; the machine's channel budget did.
+      if (push.reason === 'evicted') setError(t('chat.evicted'));
       void refreshSessions();
     };
     socket.on('chat:event', onEvent);
@@ -263,6 +269,13 @@ export function AgentSessionPage() {
     });
     if (ack.error !== undefined || ack.sessionId === undefined) {
       const code = ack.error ?? 'unknown error';
+      // A rejoin of a rail row whose channel died between listing and click
+      // (evicted, disconnected) falls back to a fresh RESUME of the same
+      // native session — the row's original promise still holds.
+      if (code === 'SESSION_NOT_FOUND' && rejoinId !== undefined && resume !== undefined) {
+        await openChannel(undefined, undefined, resume);
+        return;
+      }
       // Either we abandoned a live channel above, or the rejoin target is gone:
       // both leave nothing live, so say so rather than keeping a composer that
       // looks ready but would fail every send.
@@ -279,13 +292,15 @@ export function AgentSessionPage() {
               ? t('chat.errDaemonNoChat')
               : code === 'SESSION_LIMIT_REACHED'
                 ? t('chat.errSessionLimit')
-                : code === 'SESSION_NOT_FOUND'
-                  ? t('chat.errSessionGone')
-                  : code === 'WORKSPACE_NOT_SET'
-                    ? t('chat.errWorkspaceNotSet')
-                    : code === 'WORKSPACE_INVALID'
-                      ? t('chat.errWorkspaceInvalid')
-                      : code,
+                : code === 'MACHINE_BUSY'
+                  ? t('chat.errMachineBusy')
+                  : code === 'SESSION_NOT_FOUND'
+                    ? t('chat.errSessionGone')
+                    : code === 'WORKSPACE_NOT_SET'
+                      ? t('chat.errWorkspaceNotSet')
+                      : code === 'WORKSPACE_INVALID'
+                        ? t('chat.errWorkspaceInvalid')
+                        : code,
       );
       return;
     }
@@ -315,7 +330,15 @@ export function AgentSessionPage() {
       content: text,
     });
     if (ack.error !== undefined) {
-      toast.error(ack.error === 'SESSION_BUSY' ? t('chat.turnBusy') : ack.error);
+      // The turn never started — put the draft back so nothing is lost.
+      setDraft(text);
+      toast.error(
+        ack.error === 'SESSION_BUSY'
+          ? t('chat.turnBusy')
+          : ack.error === 'MACHINE_BUSY'
+            ? t('chat.errMachineBusy')
+            : ack.error,
+      );
     }
   }
 
@@ -431,6 +454,10 @@ export function AgentSessionPage() {
                   {group.sessions.map((s) => {
                     const active = s.sessionId === nativeSessionId;
                     const stale = s.staleReason !== undefined;
+                    // A live channel is attached: clicking REJOINS it (a fresh
+                    // resume would spawn a second channel for the same agent
+                    // session — dsh refuses that outright).
+                    const open = s.open === true && s.openChannelId !== undefined;
                     return (
                       <button
                         key={s.sessionId}
@@ -439,10 +466,15 @@ export function AgentSessionPage() {
                         onClick={() =>
                           active || stale
                             ? undefined
-                            : void openChannel(undefined, undefined, {
-                                sessionId: s.sessionId,
-                                cwd: s.cwd,
-                              })
+                            : open
+                              ? void openChannel(s.openChannelId, undefined, {
+                                  sessionId: s.sessionId,
+                                  cwd: s.cwd,
+                                })
+                              : void openChannel(undefined, undefined, {
+                                  sessionId: s.sessionId,
+                                  cwd: s.cwd,
+                                })
                         }
                         className={cn(
                           'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
@@ -452,7 +484,9 @@ export function AgentSessionPage() {
                         title={
                           stale
                             ? t('chat.staleModel', { model: s.model ?? '?' })
-                            : (s.title ?? s.cwd)
+                            : open && !active
+                              ? t('chat.channelOpenHint')
+                              : (s.title ?? s.cwd)
                         }
                       >
                         <span className="flex w-full items-center justify-between gap-2">
@@ -469,6 +503,11 @@ export function AgentSessionPage() {
                             </>
                           ) : stale ? (
                             t('chat.staleModel', { model: s.model ?? '?' })
+                          ) : open ? (
+                            <>
+                              <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
+                              {t('chat.channelOpen')}
+                            </>
                           ) : (
                             <>
                               <PlayIcon className="size-2.5" />

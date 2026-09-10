@@ -532,30 +532,6 @@ describe('native sessions (9 W7): resume, history, resync', () => {
     socket.receive('chat:session.close', { sessionId: 'sess-r2', reason: 'user' }, closeAck);
     expect(closeAck).toHaveBeenCalledWith({ closed: true });
   }, 15000);
-
-  it('liveNativeIds exposes the agent session ids for the dsh list exclusion', async () => {
-    const socket = new FakeSocket();
-    const registry = attachChatHandlers(socket as never, {
-      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
-    });
-    expect(registry.liveNativeIds().size).toBe(0);
-
-    socket.receive('chat:session.start', {
-      sessionId: 'sess-r3',
-      agentInstanceId: 'ag-1',
-      target: 'hermes',
-      cwd: '/tmp',
-    });
-    await waitFor(
-      () =>
-        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
-          { error?: string } | undefined,
-    );
-    expect(registry.liveNativeIds().size).toBe(1);
-
-    socket.receive('chat:session.close', { sessionId: 'sess-r3', reason: 'user' });
-    await waitFor(() => registry.liveNativeIds().size === 0);
-  }, 15000);
 });
 
 describe('resume failure hygiene (9 W7 leak regression)', () => {

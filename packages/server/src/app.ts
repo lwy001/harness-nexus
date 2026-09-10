@@ -180,6 +180,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     jobSweepIntervalMs: config.jobSweepIntervalMs,
     jobMaxAttempts: config.jobMaxAttempts,
     chatMaxSessionsPerMachine: config.chatMaxSessionsPerMachine,
+    chatMaxActiveSessionsPerMachine: config.chatMaxActiveSessionsPerMachine,
     chatPermissionTimeoutMs: config.chatPermissionTimeoutMs,
     chatReadyTimeoutMs: config.chatReadyTimeoutMs,
   });

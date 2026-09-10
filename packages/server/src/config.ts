@@ -77,6 +77,7 @@ export interface ServerConfig {
   jobMaxAttempts: number;
   /** C5 — max concurrently OPEN chat sessions per machine (concurrency cap). */
   chatMaxSessionsPerMachine: number;
+  chatMaxActiveSessionsPerMachine: number;
   /** C5 — how long a permission request may wait for the user's answer. */
   chatPermissionTimeoutMs: number;
   /** C5 — spawn+initialize+session/new watchdog for `chat:session.start`. */
@@ -137,7 +138,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     jobAckTimeoutMs: Number(env.JOB_ACK_TIMEOUT_MS ?? '60000'),
     jobSweepIntervalMs: Number(env.JOB_SWEEP_INTERVAL_MS ?? '15000'),
     jobMaxAttempts: Number(env.JOB_MAX_ATTEMPTS ?? '3'),
-    chatMaxSessionsPerMachine: Number(env.CHAT_MAX_SESSIONS_PER_MACHINE ?? '3'),
+    /**
+     * Chat channel budget per machine (the post-W8 redesign): a channel costs
+     * one TOTAL slot; a mid-turn session additionally costs one ACTIVE slot.
+     * Opening at the total cap EVICTS the oldest non-busy channel instead of
+     * rejecting — the cap only bites (SESSION_LIMIT_REACHED) when every
+     * channel is mid-turn. Prompting past the active cap answers MACHINE_BUSY.
+     */
+    chatMaxSessionsPerMachine: Number(env.CHAT_MAX_SESSIONS_PER_MACHINE ?? '12'),
+    chatMaxActiveSessionsPerMachine: Number(env.CHAT_MAX_ACTIVE_SESSIONS_PER_MACHINE ?? '5'),
     chatPermissionTimeoutMs: Number(env.CHAT_PERMISSION_TIMEOUT_MS ?? '60000'),
     chatReadyTimeoutMs: Number(env.CHAT_READY_TIMEOUT_MS ?? '30000'),
     emitterMode: (env.EMITTER_MODE as ServerConfig['emitterMode']) ?? 'client',

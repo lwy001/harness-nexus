@@ -181,7 +181,7 @@ export function dshListSessions(
   sessionsDir: string,
   fs: DshListFs,
   decompress: FrameDecoder,
-  opts: { liveIds?: ReadonlySet<string>; maxSessions?: number } = {},
+  opts: { maxSessions?: number } = {},
 ): DshSessionSummary[] {
   const max = opts.maxSessions ?? 100;
   const out: DshSessionSummary[] = [];
@@ -200,7 +200,10 @@ export function dshListSessions(
     }
     for (const id of ids) {
       if (out.length >= max) break;
-      if (opts.liveIds?.has(id)) continue; // dsh refuses resuming active sessions
+      // Post-W8: sessions with a live channel are LISTED (no longer hidden) —
+      // the server marks them `open` and the rail offers a rejoin. dsh itself
+      // still refuses a fresh resume of an active session; that failure path
+      // is exactly why the row must rejoin the existing channel instead.
       const file = `${sessionsDir}/${slug}/${id}/session.jsonl.zstd`;
       let buf: Buffer;
       try {

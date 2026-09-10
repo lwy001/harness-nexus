@@ -70,6 +70,8 @@ interface LiveSession {
   phase: 'starting' | 'ready';
   /** Last reported turn state — the server-side SESSION_BUSY gate. */
   busy: boolean;
+  /** When the channel was opened — the eviction order (oldest first). */
+  openedAt: number;
   /** Reported agent identity — re-pushed to re-joining viewers. */
   agentName?: string | undefined;
   agentVersion?: string | undefined;
@@ -88,6 +90,7 @@ export class ChatService {
     private readonly deps: ChatServiceDeps,
     private readonly opts: {
       maxSessionsPerMachine: number;
+      maxActiveSessionsPerMachine: number;
       permissionTimeoutMs: number;
       readyTimeoutMs: number;
     },
@@ -169,7 +172,18 @@ export class ChatService {
     if (!machine.capabilities.includes('chat')) return { ok: false, code: 'DAEMON_NO_CHAT' };
     const openForMachine = [...this.live.values()].filter((s) => s.machineId === machine.id);
     if (openForMachine.length >= this.opts.maxSessionsPerMachine) {
-      return { ok: false, code: 'SESSION_LIMIT_REACHED' };
+      // Budget redesign (post-W8): a full TOTAL budget evicts instead of
+      // rejecting — the OLDEST channel that is not mid-turn gives way (its
+      // viewers see `chat:session.closed {reason:'evicted'}`). Only when every
+      // channel is busy does the open actually bounce; with the active budget
+      // (maxActiveSessionsPerMachine) strictly smaller than the total one,
+      // that corner needs at least as many concurrent turns as the active
+      // cap, i.e. real generation load on every slot.
+      const victim = openForMachine
+        .filter((s) => !s.busy)
+        .sort((a, b) => a.openedAt - b.openedAt)[0];
+      if (victim === undefined) return { ok: false, code: 'SESSION_LIMIT_REACHED' };
+      await this.closeInternal(victim, 'evicted', { notifyDaemon: true });
     }
 
     const sessionId = generateId();
@@ -183,6 +197,7 @@ export class ChatService {
       ownerId,
       phase: 'starting',
       busy: false,
+      openedAt: Date.now(),
       openerSocketId,
       readyTimer: null,
       permissionTimers: new Map(),
@@ -301,6 +316,16 @@ export class ChatService {
     if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
     if (session.phase !== 'ready') return { ok: false, code: 'SESSION_NOT_READY' };
     if (session.busy) return { ok: false, code: 'SESSION_BUSY' };
+    // Active budget (post-W8 redesign): mid-turn sessions cost a second,
+    // smaller per-machine budget — starting a turn while the machine already
+    // has `maxActiveSessionsPerMachine` turns generating bounces here (this
+    // session is idle, per the check above, so it is not double-counted).
+    const activeOnMachine = [...this.live.values()].filter(
+      (s) => s.machineId === session.machineId && s.busy,
+    ).length;
+    if (activeOnMachine >= this.opts.maxActiveSessionsPerMachine) {
+      return { ok: false, code: 'MACHINE_BUSY' };
+    }
     const prompt = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     this.deps.io.toCtl(session.machineId, 'chat:message.send', { sessionId, prompt });
     return { ok: true };
@@ -375,6 +400,26 @@ export class ChatService {
         await this.closeInternal(session, 'connection-lost', { notifyDaemon: false });
       }
     }
+  }
+
+  /**
+   * Live channels of an agent instance keyed by NATIVE session id — the
+   * listing surface for "which sessions still hold a channel" (`open` /
+   * `openChannelId` rows; a row click rejoins instead of resuming).
+   */
+  channelsByNativeId(agentInstanceId: string): Map<string, string> {
+    const byNative = new Map<string, string>();
+    for (const s of this.live.values()) {
+      if (
+        s.agentInstanceId === agentInstanceId &&
+        s.phase === 'ready' &&
+        s.nativeSessionId !== undefined &&
+        !byNative.has(s.nativeSessionId)
+      ) {
+        byNative.set(s.nativeSessionId, s.sessionId);
+      }
+    }
+    return byNative;
   }
 
   /** Machine deleted / enrollment revoked — channels end (nothing persisted remains). */

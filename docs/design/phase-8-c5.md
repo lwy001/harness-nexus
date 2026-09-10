@@ -336,3 +336,44 @@ restart needed. Regression tests: `server/test/chat.test.ts` ("a daemon
 RECONNECT reaps …"), `cli/test/chat.test.ts` ("a close arriving DURING
 establishment aborts it and kills the adapter", via the fixture's new
 `FIXTURE_DELAY_NEW_MS` knob + a pid-file liveness assert).
+
+## Channel budget redesign (post-W8, 2026-09)
+
+The hardening above made channel lifecycle *correct* but the budget itself was
+hostile: a flat `CHAT_MAX_SESSIONS_PER_MACHINE = 3` that could only REJECT,
+with no way to see which sessions held slots. User-driven redesign (all three
+complaints addressed — invisibility, blocking without remedy, and a cap too
+small):
+
+1. **Two budgets instead of one flat cap.** Total channels per machine:
+   `CHAT_MAX_SESSIONS_PER_MACHINE` (default **12**, was 3). Of those, at most
+   `CHAT_MAX_ACTIVE_SESSIONS_PER_MACHINE` (default **5**, new) may be
+   mid-turn. A channel costs one total slot; a generating turn additionally
+   costs one active slot.
+2. **A full TOTAL budget evicts instead of rejecting.** Opening past the
+   budget closes the OLDEST channel that is not mid-turn (viewers get
+   `chat:session.closed {reason:'evicted'}`; the web shows a dedicated
+   "made room for a newer session" note). `SESSION_LIMIT_REACHED` survives
+   only for the corner where EVERY channel is mid-turn — unreachable in
+   practice while the active budget (5) is well under the total (12).
+3. **The active budget bites at prompt time**, not open time:
+   `chat:message.send` on an idle channel while the machine already has
+   `maxActive` turns generating answers `MACHINE_BUSY` (the web toasts it and
+   restores the draft — a bounced prompt loses nothing).
+4. **Open channels are VISIBLE.** `GET /api/agent-instances/:id/sessions` rows
+   carry server-computed `open: boolean` + `openChannelId` (the live channel
+   on that native session). The rail renders an `已打开 — 点击重连` marker on
+   such rows and clicking REJOINS the channel (`chat:session.open
+   {sessionId: openChannelId}`, falling back to a fresh resume if the channel
+   died between listing and click). Corollary: the daemon's dsh listing no
+   longer HIDES sessions with live channels (the `liveNativeIds` exclusion and
+   its `ChatRegistry` plumbing are deleted) — hiding was the old answer to
+   "dsh refuses resuming an active session"; rejoin is the better one.
+
+Rig-verified (2026-09-10): with a temporary cap of 3, the 4th open evicted the
+oldest channel (`reason:'evicted'`) and the listing showed exactly the 3
+survivors as open; at the default budget, 4 concurrent channels all held. In
+the UI, an open row shows the marker and clicking it rejoins WITHOUT spawning
+(adapter count 2 → 1, the page's previous channel closed by leave-before-enter).
+Tests: `server/test/chat.test.ts` (eviction, all-busy rejection, MACHINE_BUSY
+gate), `server/test/sessions-route.test.ts` (open/openChannelId rows).

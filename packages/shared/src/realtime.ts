@@ -535,6 +535,18 @@ export const nativeSessionViewSchema = z.object({
    * change orphans old sessions). `'model-missing'` today.
    */
   staleReason: z.string().max(64).optional(),
+  /**
+   * Server-computed at REST-listing time: a live chat channel is currently
+   * attached to this native session. The daemon never sets it — it cannot
+   * know the server's channel table.
+   */
+  open: z.boolean().optional(),
+  /**
+   * With `open`: the CHANNEL id of the live channel on this native session.
+   * `chat:session.open {sessionId: openChannelId}` rejoins it (vs. `resume`,
+   * which would spawn a second channel for the same agent session).
+   */
+  openChannelId: z.string().min(1).max(128).optional(),
 });
 
 /** server → daemon: list the target's native sessions. */

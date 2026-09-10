@@ -163,12 +163,7 @@ export interface ChatHandlersOptions {
   homeDir?: string;
 }
 
-export interface ChatRegistry {
-  /** Native session ids live in this daemon (dsh list exclusion). */
-  liveNativeIds(): ReadonlySet<string>;
-}
-
-export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {}): ChatRegistry {
+export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {}): void {
   const env = opts.env ?? process.env;
   const home = opts.homeDir ?? homedir();
   const sessions = new Map<string, DaemonSession>();
@@ -618,10 +613,6 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     // Channels die with the daemon's connection; the native sessions survive.
     for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
   });
-
-  return {
-    liveNativeIds: () => new Set([...sessions.values()].map((s) => s.acpSessionId)),
-  };
 }
 
 /**

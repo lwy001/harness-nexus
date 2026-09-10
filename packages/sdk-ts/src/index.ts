@@ -101,6 +101,10 @@ export interface NativeSessionView {
   model?: string | null;
   /** 9 W7 — set when the daemon knows this session cannot be resumed. */
   staleReason?: string;
+  /** Post-W8 — server-computed: a live chat channel is attached to this session. */
+  open?: boolean;
+  /** With `open` — the channel id to REJOIN (`chat:session.open {sessionId}`). */
+  openChannelId?: string;
 }
 
 /** Machine summary riding GET /api/agent-instances/:id (9 W6 session page). */

@@ -29,6 +29,7 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     jobSweepIntervalMs: 200,
     jobMaxAttempts: 3,
     chatMaxSessionsPerMachine: 2,
+    chatMaxActiveSessionsPerMachine: 1,
     chatPermissionTimeoutMs: 400,
     chatReadyTimeoutMs: 800,
     ...overrides,
