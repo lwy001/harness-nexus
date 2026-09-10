@@ -6,10 +6,11 @@ import type { ChatStreamEvent } from '@harness-nexus/shared';
 import { emitAck, once, testConfig, waitFor } from './helpers.js';
 
 /**
- * Chat integration (Phase 8 C5) with a fake daemon on /ctl and a fake browser
- * on /app: open → start → ready → message round-trip, permission respond +
- * timeout watchdog, busy gate, re-join, spawn failure, ready-timeout, session
- * cap, disconnect teardown, user close, and the gating matrix.
+ * Chat integration (Phase 8 C5, reworked 9 W7) with a fake daemon on /ctl and
+ * a fake browser on /app: open → start → ready → message round-trip,
+ * permission respond + timeout watchdog, busy gate, re-join (+ history
+ * resync), resume passthrough, spawn failure, ready-timeout, session cap,
+ * disconnect teardown, user disconnect, and the gating matrix.
  *
  * Chat timeouts come from testConfig overrides: permission 400ms (fast
  * watchdog test) and ready 2500ms (the vitest worker startup can starve the
@@ -47,6 +48,17 @@ const openSessionDir = async (
   (await emitAck(sock, 'chat:session.open', {
     agentInstanceId,
     directory,
+  })) as { sessionId?: string; phase?: 'starting' | 'ready'; error?: string };
+
+/** 9 W7 — open resuming the agent's OWN native session. */
+const openSessionResume = async (
+  sock: Socket,
+  agentInstanceId: string,
+  resume: { sessionId: string; cwd: string },
+): Promise<{ sessionId?: string; phase?: 'starting' | 'ready'; error?: string }> =>
+  (await emitAck(sock, 'chat:session.open', {
+    agentInstanceId,
+    resume,
   })) as { sessionId?: string; phase?: 'starting' | 'ready'; error?: string };
 
 /** Daemon-side ready reply for a start event. */
@@ -195,8 +207,8 @@ describe('gating', () => {
   });
 });
 
-describe('rejoin + boot orphan sweep', () => {
-  it('fresh open acks phase starting; a rejoin acks ready AND re-pushes ready', async () => {
+describe('rejoin (9 W7 — resync, no persisted rows)', () => {
+  it('fresh open acks phase starting; a rejoin acks ready, re-pushes ready, and asks the daemon to resync history', async () => {
     // Local socket — the lifecycle suite below reuses the gating suite's
     // shared `daemon`; closing it here would starve them.
     const d = await connectDaemon(['chat']);
@@ -209,14 +221,21 @@ describe('rejoin + boot orphan sweep', () => {
     expect(fresh.phase).toBe('starting');
 
     readyFor(d, start);
-    await once(browser, 'chat:session.ready');
+    const ready = (await once(browser, 'chat:session.ready')) as {
+      nativeSessionId?: string;
+    };
+    // The daemon's ready carries the agent's own session id; the server
+    // re-pushes ready (with it) and asks for a history resync.
+    expect(ready.nativeSessionId).toBeUndefined(); // this fake daemon sends none
 
-    // Rejoin: ack says ready, and the ready push is re-delivered to the room.
+    const resyncP = once(d, 'chat:session.resync');
     const gotPush = once(browser, 'chat:session.ready');
     const rejoin = await openSession(browser, agentId, start.sessionId);
     expect(rejoin.sessionId).toBe(start.sessionId);
     expect(rejoin.phase).toBe('ready');
     await gotPush;
+    const resync = (await resyncP) as { sessionId: string };
+    expect(resync.sessionId).toBe(start.sessionId);
 
     await emitAck(d, 'chat:session.closed', {
       sessionId: start.sessionId,
@@ -226,26 +245,35 @@ describe('rejoin + boot orphan sweep', () => {
     d.close();
   }, 15000);
 
-  it('sweepOrphanedSessions closes rows a previous server process left open', async () => {
-    const now = new Date().toISOString();
-    await app.uow.acSessions.save({
-      id: 'orphan-1',
-      agentInstanceId: agentId,
-      machineId,
-      ownerId: (await app.uow.users.findByUsername('chatter'))!.id,
-      openedAt: now,
-      closedAt: null,
-      closeReason: null,
-      cwd: null,
-      title: null,
-    });
-    expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).toContain('orphan-1');
-    await app.realtime.chat.sweepOrphanedSessions();
-    const row = await app.uow.acSessions.findById('orphan-1');
-    expect(row?.closedAt).not.toBeNull();
-    expect(row?.closeReason).toBe('server-restarted');
-    expect((await app.uow.acSessions.listOpen()).map((r) => r.id)).not.toContain('orphan-1');
-  });
+  it('relays a daemon history batch to the channel room', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startPromise = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const start = (await startPromise) as { sessionId: string };
+      const readyP = once(browser, 'chat:session.ready');
+      d.emit('chat:session.ready', { sessionId: start.sessionId, nativeSessionId: 'native-7' });
+      const ready = (await readyP) as { nativeSessionId?: string };
+      expect(ready.nativeSessionId).toBe('native-7');
+
+      const historyP = once(browser, 'chat:history');
+      d.emit('chat:history', {
+        sessionId: start.sessionId,
+        items: [
+          { type: 'user', blocks: [{ type: 'text', text: 'earlier question' }] },
+          { type: 'event', event: { kind: 'message_delta', delta: 'earlier answer' } },
+        ],
+      });
+      const history = (await historyP) as { sessionId: string; items: unknown[] };
+      expect(history.sessionId).toBe(start.sessionId);
+      expect(history.items).toHaveLength(2);
+
+      await emitAck(d, 'chat:session.closed', { sessionId: start.sessionId, reason: 'user' });
+      await once(browser, 'chat:session.closed');
+    } finally {
+      d.close();
+    }
+  }, 15000);
 });
 
 describe('workspace directories (9 W6)', () => {
@@ -267,7 +295,7 @@ describe('workspace directories (9 W6)', () => {
     res = await openSessionDir(browser, agentId, '/home/tester/work/../../etc');
     expect(res.error).toBe('WORKSPACE_INVALID');
 
-    // A valid subdirectory: start carries it and the audit row records it.
+    // A valid subdirectory: start carries it.
     const d = await connectDaemon(['chat']);
     try {
       const startPromise = once(d, 'chat:session.start');
@@ -275,9 +303,6 @@ describe('workspace directories (9 W6)', () => {
       expect(res.sessionId).toBeTruthy();
       const start = (await startPromise) as { sessionId: string; cwd: string };
       expect(start.cwd).toBe('/home/tester/work/proj-a');
-      const row = await app.uow.acSessions.findById(res.sessionId!);
-      expect(row?.cwd).toBe('/home/tester/work/proj-a');
-      expect(row?.title).toBeNull();
 
       // The root itself is allowed.
       const rootStart = once(d, 'chat:session.start');
@@ -293,28 +318,24 @@ describe('workspace directories (9 W6)', () => {
     }
   }, 15000);
 
-  it('derives the session title from the FIRST prompt only', async () => {
+  it('resume passes the native session + its cwd through VERBATIM (no containment)', async () => {
     const d = await connectDaemon(['chat']);
     try {
       const startPromise = once(d, 'chat:session.start');
-      const res = await openSession(browser, agentId);
-      const start = (await startPromise) as { sessionId: string };
-      readyFor(d, start);
-      await once(browser, 'chat:session.ready');
-
-      await emitAck(browser, 'chat:message.send', {
-        sessionId: res.sessionId,
-        content: 'Fix the login bug\nand the signup one too',
+      // A cwd OUTSIDE the base workspace — legal on resume (it came from the
+      // daemon's own listing; dsh enforces its own match).
+      const res = await openSessionResume(browser, agentId, {
+        sessionId: 'native-s-1',
+        cwd: '/somewhere/else/entirely',
       });
-      // The title write is fire-and-forget — poll for it.
-      const deadline = Date.now() + 5000;
-      let row = await app.uow.acSessions.findById(res.sessionId!);
-      while (row?.title == null && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 25));
-        row = await app.uow.acSessions.findById(res.sessionId!);
-      }
-      // First LINE, whitespace-collapsed — the second line never joins it.
-      expect(row?.title).toBe('Fix the login bug');
+      expect(res.sessionId).toBeTruthy();
+      const start = (await startPromise) as {
+        sessionId: string;
+        cwd: string;
+        resume?: { sessionId: string; cwd: string };
+      };
+      expect(start.cwd).toBe('/somewhere/else/entirely');
+      expect(start.resume).toEqual({ sessionId: 'native-s-1', cwd: '/somewhere/else/entirely' });
 
       await emitAck(d, 'chat:session.closed', { sessionId: res.sessionId!, reason: 'user' });
     } finally {
@@ -488,10 +509,6 @@ describe('session lifecycle', () => {
     };
     expect(failed.error).toContain('npx');
     await failedClosedP;
-    const rows = await app.uow.acSessions.listByAgentInstance(agentId);
-    const row = rows.find((r) => r.id === start.sessionId);
-    expect(row?.closedAt).not.toBeNull();
-    expect(row?.closeReason).toBe('spawn-failed');
   });
 
   it(
@@ -524,18 +541,16 @@ describe('session lifecycle', () => {
   });
 
   it(
-    'daemon disconnect closes every open channel (no resume in v1)',
+    'daemon disconnect closes every open channel (the native sessions survive)',
     { timeout: 10000 },
     async () => {
       daemon.close();
       const closed = (await once(browser, 'chat:session.closed', 6000)) as { reason: string };
       expect(closed.reason).toBe('connection-lost');
-      const open = await app.uow.acSessions.listOpenByMachine(machineId);
-      expect(open).toHaveLength(0);
     },
   );
 
-  it('user close notifies the daemon and settles the row', async () => {
+  it('user disconnect notifies the daemon (channel-only — no session finality)', async () => {
     daemon = await connectDaemon(['chat']);
     const startP = once(daemon, 'chat:session.start');
     await openSession(browser, agentId);
@@ -551,8 +566,6 @@ describe('session lifecycle', () => {
     const toDaemon = (await daemonCloseP) as { sessionId: string; reason?: string };
     expect(toDaemon.sessionId).toBe(start.sessionId);
     await selfClosedP;
-    const rows = await app.uow.acSessions.listByAgentInstance(agentId);
-    expect(rows.find((r) => r.id === start.sessionId)?.closeReason).toBe('user');
   });
 
   it('daemon-initiated close (agent exited) reaches the viewer', async () => {
@@ -571,15 +584,15 @@ describe('session lifecycle', () => {
 });
 
 describe('REST surface', () => {
-  it('lists the audit rows for the agent (owner)', async () => {
+  it('requires the sessions capability on the (online) daemon', async () => {
+    // The full gating matrix lives in sessions-route.test.ts; here just the
+    // shared daemon (online, 'chat' only) against the native listing.
     const res = await app.inject({
       method: 'GET',
       url: `/api/agent-instances/${agentId}/sessions`,
       headers: authed(jwt),
     });
-    expect(res.statusCode).toBe(200);
-    const sessions = res.json().sessions as { id: string; closedAt: string | null }[];
-    expect(sessions.length).toBeGreaterThanOrEqual(4);
-    expect(sessions.every((s) => s.closedAt !== null)).toBe(true); // all closed by now
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('DAEMON_NO_SESSIONS');
   });
 });

@@ -1876,26 +1876,25 @@ expect('close acked', closeAck.closed, true);
 const closedEvt = await closedP;
 expect('closed push reason', closedEvt.reason, 'user');
 
-log('\n--- [8 C5] audit rows + teardown ---');
+log('\n--- [8 C5] native sessions surface (redefined 9 W7) + teardown ---');
 r = await req('GET', `/api/agent-instances/${c5AgentId}/sessions`, { token: userToken });
-expect('audit rows listed', r.status, 200);
-const c5Row = r.json.sessions.find((s) => s.id === c5SessionId);
-expect('audit row closed with reason', c5Row?.closeReason, 'user');
-expect('audit row has machine binding', c5Row?.machineId, c5MachineId);
+expect('native listing answered', r.status, 200);
+expect('hermes has no verified native session surface', r.json.supported, false);
+expect('…so the list is empty', JSON.stringify(r.json.sessions), '[]');
 
 // Daemon death closes any open channel — open one, kill the daemon.
 openAck = await c5EmitAck('chat:session.open', { agentInstanceId: c5AgentId });
 const closedP2 = c5Once('chat:session.closed');
 c5Daemon.kill('SIGTERM');
 const closedEvt2 = await closedP2;
-expect('daemon disconnect closes the channel (no resume)', closedEvt2.reason, 'connection-lost');
+expect('daemon disconnect closes the channel (native sessions survive)', closedEvt2.reason, 'connection-lost');
 
 c5App.close();
 await req('DELETE', `/api/machines/${c5MachineId}`, { token: userToken });
-// Audit rows SURVIVE machine deletion (closed with machine-deleted).
+// Nothing session-shaped persists platform-side (9 W7) — the agent row dies
+// with the machine and the listing 404s.
 r = await req('GET', `/api/agent-instances/${c5AgentId}/sessions`, { token: userToken });
-const surviving = (r.json.sessions ?? []).filter((s) => s.closedAt === null);
-expect('open audit rows closed by machine deletion', surviving.length, 0);
+expect('agent listing 404s after machine deletion', r.status, 404);
 rmSync(c5Home, { recursive: true, force: true });
 if (c5Err.includes('Error:')) {
   log(
@@ -2523,6 +2522,251 @@ rmSync(w6Home, { recursive: true, force: true });
 if (w6Err.includes('Error:')) {
   log(
     `(w6 daemon stderr note): ${w6Err
+      .split('\n')
+      .filter((l) => l.includes('Error:'))
+      .slice(0, 3)
+      .join(' | ')}`,
+  );
+}
+
+// ===========================================================================
+// [9 W7] Native agent sessions — the platform persists NOTHING
+// session-shaped: list + resume ride the agent's OWN surface. Real daemon
+// dist + the fixture ACP adapter as a claude-code stand-in (session/list +
+// session/load-with-replay), plus a crafted dsh transcript store (multi-frame
+// zstd) exercised through the file-scan listing when Node has the zstd
+// binding (>= 22.15).
+// ===========================================================================
+log('\n--- [9 W7] fixture HOME: fake runtime bins + crafted dsh transcript ---');
+const w7Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w7-'));
+const w7Bin = pathMod.join(w7Home, 'bin');
+mkdirSync(w7Bin, { recursive: true });
+const w7BinScript = (name, out) => {
+  const file = pathMod.join(w7Bin, name);
+  writeFileSync(file, `#!/bin/sh\necho "${out}"\n`, 'utf8');
+  chmodSync(file, 0o755);
+};
+w7BinScript('claude', '9.9.7-fake (Claude Code)');
+w7BinScript('dsh', '0.1.2-rc.1');
+
+// A dsh-shaped transcript: header + title + one full turn, multi-frame zstd.
+const w7Proj = pathMod.join(w7Home, 'proj');
+mkdirSync(w7Proj, { recursive: true });
+const w7DshId = '828c9ddc-2fa8-44b4-9cff-00c4c886a77f';
+const w7Zstd = await import('node:zlib');
+const w7HasZstd =
+  typeof w7Zstd.zstdCompressSync === 'function' &&
+  typeof w7Zstd.zstdDecompressSync === 'function';
+if (w7HasZstd) {
+  const dshDir = pathMod.join(w7Home, '.dsh', 'sessions', '--w7-proj--', w7DshId);
+  mkdirSync(dshDir, { recursive: true });
+  const dshEntries = [
+    {
+      type: 'session',
+      version: 0,
+      id: w7DshId,
+      createdAt: Date.now(),
+      cwd: w7Proj,
+      delegationDepth: 0,
+    },
+    { type: 'session/title', data: { title: 'smoke dsh turn' } },
+    {
+      type: 'agent/inbox/spliced',
+      data: {
+        target: 'next-turn',
+        inserted: [
+          {
+            content: [{ type: 'text', text: 'hi dsh' }],
+            source: { kind: 'user' },
+            role: 'user',
+            id: 'u-w7',
+          },
+        ],
+      },
+    },
+    {
+      type: 'assistant/message',
+      data: {
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hello from the store' }] },
+      },
+    },
+    { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ];
+  writeFileSync(
+    pathMod.join(dshDir, 'session.jsonl.zstd'),
+    Buffer.concat(dshEntries.map((e) => w7Zstd.zstdCompressSync(Buffer.from(`${JSON.stringify(e)}\n`)))),
+  );
+} else {
+  log('(w7 note: Node lacks zstd — the dsh file-scan listing is skipped)');
+}
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'w7-laptop' } });
+expect('w7 enroll status', r.status, 201);
+const w7MachineId = r.json.machine.id;
+const w7Token = r.json.token;
+
+const w7Daemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    w7Token,
+    '--machine-id',
+    w7MachineId,
+  ],
+  {
+    env: {
+      ...process.env,
+      HOME: w7Home,
+      PATH: `${w7Bin}:${process.env.PATH ?? ''}`,
+      HN_ACP_COMMAND_CLAUDE_CODE: `node ${pathMod.resolve('packages/cli/test/fixtures/acp-agent.mjs')}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  },
+);
+let w7Err = '';
+w7Daemon.stderr.on('data', (d) => {
+  w7Err += d.toString();
+});
+let w7Online = false;
+for (let i = 0; i < 100 && !w7Online; i++) {
+  r = await req('GET', `/api/machines/${w7MachineId}`, { token: userToken });
+  w7Online = r.json.machine.online && (r.json.machine.capabilities ?? []).includes('sessions');
+  if (!w7Online) await new Promise((s2) => setTimeout(s2, 100));
+}
+expect('w7 daemon online (sessions capability)', w7Online, true);
+
+// The auto-report's runtime probe registers DETECTED instances for the fake
+// bins (claude-code + deepseek) — the chat/list addressable units.
+let w7Agents = [];
+for (let i = 0; i < 100; i++) {
+  r = await req('GET', `/api/machines/${w7MachineId}/agents`, { token: userToken });
+  w7Agents = r.json.agents ?? [];
+  if (
+    w7Agents.some((a) => a.target === 'claude-code') &&
+    w7Agents.some((a) => a.target === 'deepseek')
+  ) {
+    break;
+  }
+  await new Promise((s2) => setTimeout(s2, 100));
+}
+const w7CcAgent = w7Agents.find((a) => a.target === 'claude-code');
+const w7DshAgent = w7Agents.find((a) => a.target === 'deepseek');
+expect('detected claude-code instance', Boolean(w7CcAgent), true);
+expect('detected deepseek instance', Boolean(w7DshAgent), true);
+
+log('\n--- [9 W7] native listing: adapter-routed (claude-code) + file-scan (dsh) ---');
+r = await req('PATCH', `/api/machines/${w7MachineId}`, {
+  token: userToken,
+  body: { remoteChatEnabled: true },
+});
+expect('remote chat enabled', r.json.machine.remoteChatEnabled, true);
+
+r = await req('GET', `/api/agent-instances/${w7CcAgent.id}/sessions`, { token: userToken });
+expect('claude-code listing status', r.status, 200);
+expect('claude-code listing supported', r.json.supported, true);
+expect(
+  'the fixture adapter IS the vendor session list',
+  JSON.stringify(r.json.sessions.map((s) => s.sessionId)),
+  JSON.stringify(['fx-native-1']),
+);
+expect('session carries cwd + title', r.json.sessions[0].cwd, '/tmp');
+
+if (w7HasZstd) {
+  r = await req('GET', `/api/agent-instances/${w7DshAgent.id}/sessions`, { token: userToken });
+  expect('dsh file-scan listing status', r.status, 200);
+  expect('crafted session listed', r.json.sessions[0].sessionId, w7DshId);
+  expect('cwd decoded from the transcript header', r.json.sessions[0].cwd, w7Proj);
+  expect('title from the session/title entry', r.json.sessions[0].title, 'smoke dsh turn');
+}
+
+log('\n--- [9 W7] resume: open with the native session → replayed history → live turn ---');
+const w7App = io(`${B}/app`, { auth: { token: userToken }, transports: ['websocket'] });
+await new Promise((resolve, reject) => {
+  w7App.on('connect', resolve);
+  w7App.on('connect_error', reject);
+  setTimeout(() => reject(new Error('app socket connect timeout')), 5000);
+});
+const w7EmitAck = (event, payload) =>
+  new Promise((resolve, reject) => {
+    w7App.emit(event, payload, resolve);
+    setTimeout(() => reject(new Error(`ack timeout: ${event}`)), 10000);
+  });
+const w7HistoryP = new Promise((resolve, reject) => {
+  w7App.once('chat:history', resolve);
+  setTimeout(() => reject(new Error('timeout waiting for chat:history')), 15000);
+});
+const w7ReadyP = new Promise((resolve, reject) => {
+  w7App.once('chat:session.ready', resolve);
+  setTimeout(() => reject(new Error('timeout waiting for chat:session.ready')), 15000);
+});
+openAck = await w7EmitAck('chat:session.open', {
+  agentInstanceId: w7CcAgent.id,
+  resume: { sessionId: 'fx-native-1', cwd: '/tmp' },
+});
+expect('resume open acked', typeof openAck.sessionId, 'string');
+const w7Ready = await w7ReadyP;
+expect('ready carries the native session id', w7Ready.nativeSessionId, 'fx-native-1');
+const w7History = await w7HistoryP;
+const w7Kinds = w7History.items.map((i) => (i.type === 'user' ? 'user' : i.event.kind));
+expect(
+  'history = replayed user + message + tool + synthetic turn tail',
+  JSON.stringify(w7Kinds),
+  JSON.stringify(['user', 'message_delta', 'tool_call', 'turn_result']),
+);
+
+// The resumed channel keeps working: a live turn on the same native session.
+const w7Events = [];
+w7App.on('chat:event', (e) => w7Events.push(e));
+sendAck = await w7EmitAck('chat:message.send', {
+  sessionId: openAck.sessionId,
+  content: 'continue after resume',
+});
+expect('live turn on the resumed channel accepted', sendAck.accepted, true);
+for (let i = 0; i < 100; i++) {
+  if (w7Events.some((e) => e.event?.kind === 'turn_result')) break;
+  await new Promise((s2) => setTimeout(s2, 100));
+}
+expect(
+  'resumed channel echoes the new turn',
+  w7Events.some(
+    (e) => e.event?.kind === 'message_delta' && e.event.delta === 'echo: continue after resume',
+  ),
+  true,
+);
+
+// Disconnect is channel-only — the listing keeps offering the session.
+const w7ClosedP = new Promise((resolve, reject) => {
+  w7App.once('chat:session.closed', resolve);
+  setTimeout(() => reject(new Error('timeout waiting for chat:session.closed')), 15000);
+});
+const w7CloseAck = await w7EmitAck('chat:session.close', {
+  sessionId: openAck.sessionId,
+  reason: 'user',
+});
+expect('disconnect acked', w7CloseAck.closed, true);
+await w7ClosedP;
+r = await req('GET', `/api/agent-instances/${w7CcAgent.id}/sessions`, { token: userToken });
+expect(
+  'native session still listed after disconnect',
+  JSON.stringify(r.json.sessions.map((s) => s.sessionId)),
+  JSON.stringify(['fx-native-1']),
+);
+
+w7App.close();
+w7Daemon.kill('SIGTERM');
+await new Promise((resolve) => {
+  w7Daemon.once('exit', resolve);
+  setTimeout(resolve, 3000);
+});
+await req('DELETE', `/api/machines/${w7MachineId}`, { token: userToken });
+rmSync(w7Home, { recursive: true, force: true });
+if (w7Err.includes('Error:')) {
+  log(
+    `(w7 daemon stderr note): ${w7Err
       .split('\n')
       .filter((l) => l.includes('Error:'))
       .slice(0, 3)
