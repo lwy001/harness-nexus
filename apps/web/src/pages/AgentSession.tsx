@@ -390,12 +390,14 @@ export function AgentSessionPage() {
                   </div>
                   {group.sessions.map((s) => {
                     const active = s.sessionId === nativeSessionId;
+                    const stale = s.staleReason !== undefined;
                     return (
                       <button
                         key={s.sessionId}
                         type="button"
+                        disabled={stale && !active}
                         onClick={() =>
-                          active
+                          active || stale
                             ? undefined
                             : void openChannel(undefined, undefined, {
                                 sessionId: s.sessionId,
@@ -404,9 +406,10 @@ export function AgentSessionPage() {
                         }
                         className={cn(
                           'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
-                          active ? 'bg-accent' : 'hover:bg-accent/60',
+                          active ? 'bg-accent' : stale ? 'cursor-default' : 'hover:bg-accent/60',
+                          stale && !active && 'opacity-50',
                         )}
-                        title={s.title ?? s.cwd}
+                        title={stale ? t('chat.staleModel', { model: s.model ?? '?' }) : (s.title ?? s.cwd)}
                       >
                         <span className="flex w-full items-center justify-between gap-2">
                           <span className="truncate">{s.title ?? t('chat.untitled')}</span>
@@ -420,6 +423,8 @@ export function AgentSessionPage() {
                               <span className="bg-signal inline-block size-1.5 rounded-full" />
                               {t('chat.working')}
                             </>
+                          ) : stale ? (
+                            t('chat.staleModel', { model: s.model ?? '?' })
                           ) : (
                             <>
                               <PlayIcon className="size-2.5" />

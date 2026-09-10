@@ -24,7 +24,19 @@
  * The daemon tests drive it via HN_ACP_COMMAND_<TARGET>="node <this file>".
  */
 import { randomUUID } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+
+// 9 W7 leak regression: tests point FIXTURE_PID_FILE here to observe that the
+// daemon KILLS this process when establishment fails (stdin-end exit alone is
+// NOT the kill path being asserted).
+if (process.env.FIXTURE_PID_FILE) {
+  try {
+    appendFileSync(process.env.FIXTURE_PID_FILE, `${process.pid}\n`);
+  } catch {
+    /* best effort */
+  }
+}
 
 /** Pending permission waiters: jsonrpc request id → (outcome) => void */
 const permissionWaiters = new Map();
@@ -319,6 +331,12 @@ function handleRequest(msg) {
     case 'session/load': {
       // The claude/codex shape: replay the prior turn BEFORE responding.
       const sid = params?.sessionId ?? 'fx-native-1';
+      if (sid === 'fx-native-fail') {
+        // Establishment failure (the dsh pinned-model class) — the daemon
+        // must surface the error AND kill this adapter process.
+        respondError(id, -32603, 'Internal error: pi-ai provider "harness-nexus" has no configured model "deepseek-chat"');
+        return;
+      }
       notify('session/update', {
         sessionId: sid,
         update: {

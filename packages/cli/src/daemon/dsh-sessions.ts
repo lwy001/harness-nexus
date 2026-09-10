@@ -83,6 +83,8 @@ export interface DshSessionSummary {
   title: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  /** The model route the session pinned (`request/header.config.model`). */
+  model: string | null;
 }
 
 interface DshHeader {
@@ -93,20 +95,21 @@ interface DshHeader {
 }
 
 /**
- * Header + derived title from the FRONT of a transcript (dsh's own
- * `session/list` exposes neither). Stops as soon as both are found; bounded
- * read so a huge transcript costs at most `maxBytes`. NB: the `session`
- * HEADER entry carries its fields at the TOP level (no `data` wrapper),
- * unlike every other entry type.
+ * Header + derived title + pinned model from the FRONT of a transcript
+ * (dsh's own `session/list` exposes none of these). Stops as soon as all are
+ * found; bounded read so a huge transcript costs at most `maxBytes`. NB: the
+ * `session` HEADER entry carries its fields at the TOP level (no `data`
+ * wrapper), unlike every other entry type.
  */
 export function scanSummary(
   buf: Buffer,
   decompress: FrameDecoder,
   maxBytes = 64 * 1024,
-): { header: DshHeader | null; title: string | null } {
+): { header: DshHeader | null; title: string | null; model: string | null } {
   const bounded = buf.length > maxBytes ? buf.subarray(0, maxBytes) : buf;
   let header: DshHeader | null = null;
   let title: string | null = null;
+  let model: string | null = null;
   for (const frame of splitZstdFrames(bounded)) {
     let text: string;
     try {
@@ -123,14 +126,34 @@ export function scanSummary(
         } else if (e['type'] === 'session/title') {
           const t = (e['data'] as Record<string, unknown> | undefined)?.['title'];
           if (typeof t === 'string' && t !== '') title = t;
+        } else if (e['type'] === 'request/header') {
+          const hdr = (e['data'] as Record<string, unknown> | undefined)?.['header'];
+          const config = isRecord(hdr) ? (hdr as UnknownRecord)['config'] : undefined;
+          const m = isRecord(config) ? (config as UnknownRecord)['model'] : undefined;
+          if (typeof m === 'string' && m !== '') model = m;
         }
       } catch {
         // skip
       }
     }
-    if (header !== null && title !== null) break;
+    if (header !== null && title !== null && model !== null) break;
   }
-  return { header, title };
+  return { header, title, model };
+}
+
+/**
+ * The model ids of OUR managed provider region in `~/.dsh/settings.yaml`
+ * (the W3 writer's own format — a `models:` list of `- id:` entries). Null
+ * when the region is absent/unparseable: the caller then annotates nothing.
+ */
+export function currentCatalogModels(settingsYaml: string): Set<string> | null {
+  const region = settingsYaml.match(
+    /# BEGIN harness-nexus \(managed\)([\s\S]*?)# END harness-nexus \(managed\)/,
+  );
+  if (region === null) return null;
+  const ids = new Set<string>();
+  for (const m of region[1]!.matchAll(/- id:\s*"?([^"\s\n]+)"?/g)) ids.add(m[1]!);
+  return ids.size > 0 ? ids : null;
 }
 
 export interface DshListFs {
@@ -174,7 +197,7 @@ export function dshListSessions(
       } catch {
         continue;
       }
-      const { header, title } = scanSummary(buf, decompress);
+      const { header, title, model } = scanSummary(buf, decompress);
       if (header === null) continue;
       if (typeof header.cwd !== 'string' || header.cwd === '' || !header.cwd.startsWith('/')) {
         continue;
@@ -190,6 +213,7 @@ export function dshListSessions(
         sessionId: id,
         cwd: header.cwd,
         title,
+        model,
         createdAt:
           typeof header.createdAt === 'number' && Number.isFinite(header.createdAt)
             ? new Date(header.createdAt).toISOString()
