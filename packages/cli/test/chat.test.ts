@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachChatHandlers, mapAcpUpdate } from '../src/daemon/chat.js';
+import { deriveSessionCaps } from '../src/daemon/acp/agent-connection.js';
 import { resolveAcpCommand } from '../src/daemon/acp/adapters.js';
 import type { ChatStreamEvent } from '@harness-nexus/shared';
 
@@ -146,6 +147,41 @@ describe('mapAcpUpdate', () => {
       contextUsed: 8469,
       contextSize: 262144,
     });
+  });
+});
+
+describe('deriveSessionCaps (resume dialect per adapter family)', () => {
+  it('zed shape: sessionCapabilities caps + the ROOT legacy loadSession flag', () => {
+    expect(
+      deriveSessionCaps({
+        loadSession: true,
+        agentCapabilities: { sessionCapabilities: { load: {}, resume: {}, list: {} } },
+      }),
+    ).toEqual({ load: true, resume: true, list: true });
+  });
+
+  it('official @agentclientprotocol shape: loadSession NESTED in agentCapabilities, caps say resume but NOT load', () => {
+    // Reading only the root flag made this wrapper look resume-only —
+    // claude-code channels then resumed with NO replay (empty history pane).
+    expect(
+      deriveSessionCaps({
+        agentCapabilities: {
+          loadSession: true,
+          sessionCapabilities: { resume: {}, list: {}, close: {} },
+        },
+      }),
+    ).toEqual({ load: true, resume: true, list: true });
+  });
+
+  it('dsh shape: resume only — a native resume without replay', () => {
+    expect(
+      deriveSessionCaps({ agentCapabilities: { sessionCapabilities: { resume: {} } } }),
+    ).toEqual({ load: false, resume: true, list: false });
+  });
+
+  it('no caps at all: nothing offered', () => {
+    expect(deriveSessionCaps({})).toEqual({ load: false, resume: false, list: false });
+    expect(deriveSessionCaps(undefined)).toEqual({ load: false, resume: false, list: false });
   });
 });
 

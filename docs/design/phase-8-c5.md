@@ -377,3 +377,53 @@ the UI, an open row shows the marker and clicking it rejoins WITHOUT spawning
 (adapter count 2 → 1, the page's previous channel closed by leave-before-enter).
 Tests: `server/test/chat.test.ts` (eviction, all-busy rejection, MACHINE_BUSY
 gate), `server/test/sessions-route.test.ts` (open/openChannelId rows).
+
+## Viewer-scoped channels + claude-code resume fixes (post-W8 round 2, 2026-09)
+
+User report after the budget redesign: claude-code history sessions opened
+EMPTY, new claude-code sessions never appeared in the listing, and one new dsh
+session showed TWO unnamed rows. Four root causes, all fixed:
+
+1. **Channels never died with their viewers.** The C5 "teardown on
+   disconnect" covered the daemon socket and explicit closes — but a /app
+   browser socket disconnecting (tab close, full page refresh) left the
+   channel LIVE forever with its adapter tree. Trees piled up on the machine,
+   every later wrapper spawn slowed past the 30s ready watchdog, and the
+   killed channels read as "sessions open empty". Now `onViewerGone` (wired to
+   the /app socket `disconnect`) closes any of the user's channels whose room
+   has no sockets left — a channel MID-TURN is spared and closes when the turn
+   ends (`closeWhenIdle`), so an abandoned generation still finishes and
+   persists. SPA navigation keeps the socket, so ordinary page-hopping still
+   benefits from the rejoin rail.
+2. **The official claude wrapper was misread as resume-only.** Its initialize
+   result carries `loadSession: true` NESTED in `agentCapabilities` (the Zed
+   adapters set it at the result ROOT), while its `sessionCapabilities` has
+   `resume` but no `load`. Our caps derivation read only the root flag →
+   claude channels took dsh's `session/resume` path → resumed with NO replay
+   → the "history session is empty" pane. `deriveSessionCaps` (pure, unit-
+   tested for the three adapter-family shapes) now reads both locations.
+3. **New-but-unprompted sessions were invisible.** claude-code materializes a
+   transcript only on the first message, so a freshly opened channel had no
+   native row. The listing route now SYNTHESIZES a row for every live channel
+   (`openChannelCwds` + cwd), so the rail shows the new session (已打开) the
+   moment it exists — for both targets.
+4. **dsh wrote empty sessions, twice sometimes.** Every dsh spawn writes a
+   config-preamble transcript (session/permission-preset/sandbox-mode/
+   approval-policy) before any turn, and the `-32605` startup-race retry
+   leaves one orphan per lost race — the "two unnamed sessions". The dsh
+   listing now requires a REAL user turn (`agent/inbox/spliced` in
+   `scanSummary` → `hasTurn`); empty-but-live channels stay visible via the
+   synthesized open row, matching claude-code's appear-on-content semantics.
+
+Plus one hygiene fix found on the way: adapter kills now signal the whole
+PROCESS GROUP (`detached: true` spawn + `kill(-pid)`; the SIGKILL timer is
+unref'd and not cleared on leader exit) — signaling only the direct child
+orphaned the vendor binary (a bare `claude`, reparented to init) on every
+teardown.
+
+Rig-verified: claude-code new session → prompt → tab-drop leaves ZERO
+processes (incl. the claude binary) and the session lists with its title;
+resume replays full history (`U, message_delta, turn_result…`); one dsh new
+session + one turn lists exactly ONE row (the orphan dir stays on disk but is
+filtered). Tests: viewer-gone idle + mid-turn (server), synthesized rows
+(sessions-route), `deriveSessionCaps` shapes (cli).

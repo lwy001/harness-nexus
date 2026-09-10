@@ -1117,6 +1117,19 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   the offline transition: a newly connected daemon owns zero channels by
   construction, and a fast daemon restart could skip the offline reap — that is
   what wedged a machine until the server itself restarted.
+  **Viewer-scoped channels (round 2, same doc § "Viewer-scoped channels"):**
+  a /app socket disconnect closes the user's channels whose room is empty
+  (`onViewerGone`; a mid-turn channel defers via `closeWhenIdle` so an
+  abandoned generation still finishes). Listing rows are SYNTHESIZED for live
+  channels with no native row yet (claude-code writes a transcript only on the
+  first message). The claude resume dialect needs BOTH `loadSession` locations
+  (`deriveSessionCaps`: result root = Zed adapters, nested in
+  `agentCapabilities` = the official wrapper — reading only the root made
+  claude resume with NO replay). The dsh listing requires a real user turn
+  (`agent/inbox/spliced`): fresh sprees write config-preamble transcripts and
+  the `-32605` retry race leaves orphans (the "two unnamed sessions").
+  Adapter kills signal the whole process GROUP (`detached` spawn + negative
+  pid; signaling the child alone orphaned the vendor binary).
   **T1 — DeepSeek Harness (dsh) target onboarding — is shipped (2026-09,
   the first of the T-wave; supersedes the 3.8 "other agents" bucket):**
   `deepseek` is a first-class `AgentTarget` (profile enum additive; the

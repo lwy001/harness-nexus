@@ -116,11 +116,16 @@ export function scanSummary(
   buf: Buffer,
   decompress: FrameDecoder,
   maxBytes = 64 * 1024,
-): { header: DshHeader | null; title: string | null; model: string | null } {
+): { header: DshHeader | null; title: string | null; model: string | null; hasTurn: boolean } {
   const bounded = buf.length > maxBytes ? buf.subarray(0, maxBytes) : buf;
   let header: DshHeader | null = null;
   let title: string | null = null;
   let model: string | null = null;
+  // A real user turn (`agent/inbox/spliced`) — the marker that separates a
+  // LIVED-IN session from dsh's config-preamble-only files (every fresh
+  // session writes session/permission-preset/sandbox-mode/approval-policy
+  // rows before any conversation, so header presence is NOT enough).
+  let hasTurn = false;
   for (const frame of splitZstdFrames(bounded)) {
     let text: string;
     try {
@@ -142,14 +147,16 @@ export function scanSummary(
           const config = isRecord(hdr) ? (hdr as UnknownRecord)['config'] : undefined;
           const m = isRecord(config) ? (config as UnknownRecord)['model'] : undefined;
           if (typeof m === 'string' && m !== '') model = m;
+        } else if (e['type'] === 'agent/inbox/spliced') {
+          hasTurn = true;
         }
       } catch {
         // skip
       }
     }
-    if (header !== null && title !== null && model !== null) break;
+    if (header !== null && title !== null && model !== null && hasTurn) break;
   }
-  return { header, title, model };
+  return { header, title, model, hasTurn };
 }
 
 /**
@@ -211,7 +218,14 @@ export function dshListSessions(
       } catch {
         continue;
       }
-      const { header, title, model } = scanSummary(buf, decompress);
+      const { header, title, model, hasTurn } = scanSummary(buf, decompress);
+      // Header-only/config-preamble transcripts are NOT conversations: every
+      // dsh spawn writes them before any turn, and the -32605 startup-race
+      // retry leaves one behind per lost race (the "two unnamed sessions"
+      // double). Listing only lived-in sessions matches claude-code's
+      // transcript-on-first-message semantics; a live-but-still-empty channel
+      // still shows via the server's synthesized open row.
+      if (!hasTurn) continue;
       if (header === null) continue;
       if (typeof header.cwd !== 'string' || header.cwd === '' || !header.cwd.startsWith('/')) {
         continue;

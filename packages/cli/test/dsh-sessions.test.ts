@@ -119,8 +119,9 @@ describe('dshListSessions', () => {
     };
   }
 
-  it('lists ROOT sessions newest-first, skipping subagents and live ids', () => {
+  it('lists ROOT sessions newest-first, skipping subagents and empty (no-turn) sessions', () => {
     // NB: the header entry carries its fields at the TOP level (no `data`).
+    const turn = { type: 'agent/inbox/spliced', data: {} };
     const transcript = (header: Record<string, unknown>, extra: unknown[] = []): Buffer =>
       fakeTranscript([{ type: 'session', ...header }, ...extra]);
     const store = {
@@ -128,15 +129,23 @@ describe('dshListSessions', () => {
         '--root-demo--': {
           'aaa-1': transcript({ cwd: '/root/demo', createdAt: 100, delegationDepth: 0 }, [
             { type: 'session/title', data: { title: 'first' } },
+            turn,
           ]),
-          'bbb-2': transcript({ cwd: '/root/demo', createdAt: 200, delegationDepth: 0 }),
-          'ccc-sub': transcript({ cwd: '/root/demo', createdAt: 300, delegationDepth: 1 }),
-          'ddd-parent': transcript({
-            cwd: '/root/demo',
-            createdAt: 400,
-            delegationDepth: 0,
-            parentSession: 'aaa-1',
-          }),
+          'bbb-2': transcript({ cwd: '/root/demo', createdAt: 200, delegationDepth: 0 }, [turn]),
+          'ccc-sub': transcript({ cwd: '/root/demo', createdAt: 300, delegationDepth: 1 }, [turn]),
+          'ddd-parent': transcript(
+            {
+              cwd: '/root/demo',
+              createdAt: 400,
+              delegationDepth: 0,
+              parentSession: 'aaa-1',
+            },
+            [turn],
+          ),
+          // Config-preamble only (what every fresh dsh spawn writes before the
+          // first turn — and what the -32605 retry race leaves behind): the
+          // "second unnamed session" of the double-row complaint. NOT listed.
+          'fff-empty': transcript({ cwd: '/root/demo', createdAt: 500, delegationDepth: 0 }),
           'eee-broken': fakeTranscript([{ type: 'turn/start', data: {} }]),
         },
       },

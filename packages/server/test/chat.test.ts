@@ -638,6 +638,65 @@ describe('session lifecycle', () => {
   );
 
   it(
+    'the last viewer leaving (socket gone) closes an IDLE channel — the adapter dies',
+    { timeout: 10000 },
+    async () => {
+      // A second viewer socket, so the file's shared `browser` stays alive.
+      const viewer = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(viewer, 'connect');
+      const startP = once(daemon, 'chat:session.start');
+      await openSession(viewer, agentId);
+      const start = (await startP) as { sessionId: string };
+      const readyP = once(viewer, 'chat:session.ready');
+      readyFor(daemon, start);
+      await readyP;
+
+      // Viewer drops (tab close / full refresh) with nobody else in the room:
+      // the channel must close and TELL THE DAEMON (this teardown was missing —
+      // adapters piled up on the machine until every later spawn timed out).
+      const daemonCloseP = once(daemon, 'chat:session.close');
+      viewer.close();
+      const toDaemon = (await daemonCloseP) as { sessionId: string };
+      expect(toDaemon.sessionId).toBe(start.sessionId);
+    },
+  );
+
+  it(
+    'the last viewer leaving MID-TURN closes the channel when the turn ends',
+    { timeout: 15000 },
+    async () => {
+      const viewer = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(viewer, 'connect');
+      const startP = once(daemon, 'chat:session.start');
+      await openSession(viewer, agentId);
+      const start = (await startP) as { sessionId: string };
+      const readyP = once(viewer, 'chat:session.ready');
+      readyFor(daemon, start);
+      await readyP;
+      daemon.emit('chat:event', {
+        sessionId: start.sessionId,
+        event: { kind: 'session_status', state: 'active' },
+      });
+
+      // Viewer drops while generating: NO close yet (the turn must finish and
+      // persist), then the idle transition lands it.
+      const daemonCloseP = once(daemon, 'chat:session.close');
+      viewer.close();
+      await new Promise((r) => setTimeout(r, 400));
+      daemon.emit('chat:event', {
+        sessionId: start.sessionId,
+        event: { kind: 'turn_result', stopReason: 'end_turn' },
+      });
+      daemon.emit('chat:event', {
+        sessionId: start.sessionId,
+        event: { kind: 'session_status', state: 'idle' },
+      });
+      const toDaemon = (await daemonCloseP) as { sessionId: string };
+      expect(toDaemon.sessionId).toBe(start.sessionId);
+    },
+  );
+
+  it(
     'daemon disconnect closes every open channel (the native sessions survive)',
     { timeout: 10000 },
     async () => {

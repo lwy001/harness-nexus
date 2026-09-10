@@ -219,15 +219,31 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     // Post-W8 visibility: mark rows whose native session currently holds a
     // live channel (and carry the channel id so a row click can REJOIN it —
     // resuming would spawn a second channel for the same agent session).
+    // A live channel may also have NO native row yet (claude-code materializes
+    // its transcript file only on the first message — "my new session never
+    // showed up"): synthesize an open row from the channel itself.
     const openChannels = app.realtime.chat.channelsByNativeId(req.params.id);
+    const rows = (outcome.sessions ?? []).map((s) =>
+      openChannels.has(s.sessionId)
+        ? { ...s, open: true, openChannelId: openChannels.get(s.sessionId) }
+        : { ...s, open: false },
+    );
+    const channelCwds = app.realtime.chat.openChannelCwds(req.params.id);
+    for (const [nativeId, cwd] of channelCwds) {
+      if (openChannels.has(nativeId) && !rows.some((r) => r.sessionId === nativeId)) {
+        rows.push({
+          sessionId: nativeId,
+          cwd,
+          title: null,
+          open: true,
+          openChannelId: openChannels.get(nativeId),
+        });
+      }
+    }
     return {
       agent,
       supported: outcome.supported ?? true,
-      sessions: (outcome.sessions ?? []).map((s) =>
-        openChannels.has(s.sessionId)
-          ? { ...s, open: true, openChannelId: openChannels.get(s.sessionId) }
-          : { ...s, open: false },
-      ),
+      sessions: rows,
     };
   });
 }
