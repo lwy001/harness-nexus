@@ -371,13 +371,15 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     3–4 batches), with the transcript tail as fallback and
     `HN_DISABLE_DSH_TAP=1` as the A/B switch. Design:
     `docs/design/phase-9-w7.1-dsh-event-tap.md`.
-  - **W8 Sender (composer) upgrade — PLANNED (2026-09)** — the chat
-    composer becomes a card-style two-row input (autogrow textarea +
+  - **W8 Sender (composer) upgrade — SHIPPED (2026-09)** — the chat
+    composer became a card-style two-row input (autogrow textarea +
     toolbar with a context-usage meter and a circular send/stop toggle),
     feature-shaped after the reference composer but styled per Signal;
-    zero wire changes. Attach / permission-mode chip / model and effort
-    selectors are enumerated as deferred stubs (each needs a wire arm
-    first). Design: `docs/design/phase-9-w8-sender.md`.
+    zero wire changes. The new `@agentclientprotocol` claude wrapper
+    reports context occupancy too, so the meter is live for claude-code
+    as well as dsh. Attach / permission-mode chip / model and effort
+    selectors remain deferred stubs (each needs a wire arm first).
+    Design + post-ship notes: `docs/design/phase-9-w8-sender.md`.
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

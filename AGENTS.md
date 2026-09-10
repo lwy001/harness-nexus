@@ -899,6 +899,37 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
   Rig A/B: tap = 107 deltas / 1ms median gap on the count-1..25 turn vs
   tail's 3–4 batches / ~212ms+ gap; leak scan zero.
 
+## Chat Sender/composer (Phase 9 W8)
+
+Full design + post-ship notes in `docs/design/phase-9-w8-sender.md`.
+Summary for daily work:
+
+- **`<Composer>`** (`apps/web/src/components/chat/composer.tsx`) replaced
+  AgentSession's inline Textarea+Button strip with a card: one
+  `rounded-xl border` card (focus-within ring) holding an autogrow
+  textarea (1 row → 224px clamp, then internal scroll; Enter sends /
+  Shift+Enter newline, `isComposing` guards IME) over a toolbar row
+  (context meter + circular send/stop, right-aligned; left slots stay
+  empty for the deferred controls). It is PRESENTATIONAL — the page owns
+  `draft`/`send()`/`cancelTurn()`.
+- **The send control is the page's PRIMARY action** (`bg-primary`), NOT
+  `--signal` — the live-turn indicator keeps the view's single signal
+  spend. Stop during a turn swaps to an outline round button
+  (destructive on hover, no confirm). Both are icon-only:
+  `title`/`aria-label` from `chat.sendAria`/`chat.stopAria`
+  (`chat.send`/`chat.stop` text keys are RETIRED).
+- **Context meter** reads the fold's `conversation.usage`
+  (`contextUsed`/`contextSize`): mono `nums` text + 64px `h-1` bar,
+  neutral → `--warn` fill past 80% → `--danger` past 95%, renders
+  NOTHING when the adapter reports no occupancy (codex today). dsh AND
+  claude-code feed it live (the `@agentclientprotocol` wrapper reports
+  occupancy — found during the rig E2E, see the design's post-ship note).
+- **Deferred on purpose** (each needs a wire arm first — the design doc
+  enumerates them): "+" attach (needs an image PromptBlock variant),
+  permission-mode chip (needs a `chat:session.open` mode arm), model
+  selector (per-channel override or change-model=new-session UX; interim
+  read-only runtime-config badge possible), effort selector.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -1104,18 +1135,15 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
   C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through
-  W7.1 are SHIPPED (2026-09, see the sections above): Agent-first inventory
+  W8 are SHIPPED (2026-09, see the sections above): Agent-first inventory
   with the runtime probe arm, detected AgentInstances (chatable),
   capture-as-profile, `harness`-type install/upgrade/pin jobs, `RuntimeConfig`
   provider/model push, redacted config viewing, modal containers + the
   portal-style chat UI (W5+W6), native agent sessions — list + resume
-  with NO platform session store (W7) — and the in-process dsh event tap
-  streaming source with the file tail as fallback (W7.1).** Remaining in
-  P9: **W8 — the chat Sender (composer) upgrade — is DESIGNED, not
-  implemented** (read `docs/design/phase-9-w8-sender.md` first: card-style
-  two-row composer per Signal, wire-ready scope only, deferred controls
-  enumerated); C6 (orchestration) and hermes native sessions are the open
-  follow-ups.
+  with NO platform session store (W7) — the in-process dsh event tap
+  streaming source with the file tail as fallback (W7.1), and the card-style
+  chat Sender/composer (W8).** Remaining in P9: none scoped; C6
+  (orchestration) and hermes native sessions are the open follow-ups.
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and
   `docs/design/phase-9-portal-ui.md` (W5+W6) +
