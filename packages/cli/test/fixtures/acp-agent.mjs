@@ -182,7 +182,13 @@ function respondError(id, code, message) {
 }
 
 function update(sessionId, sessionUpdate) {
-  notify('session/update', { sessionId, update: { sessionUpdate, ...(sessionUpdate === 'usage_update' ? { usage: { inputTokens: 11, outputTokens: 7 } } : {}) } });
+  notify('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate,
+      ...(sessionUpdate === 'usage_update' ? { usage: { inputTokens: 11, outputTokens: 7 } } : {}),
+    },
+  });
 }
 
 /** session/update with an envelope `_meta` (Claude toolName rides there). */
@@ -359,7 +365,8 @@ function runPrompt(id, text, deferred = false) {
     return;
   }
 
-  if (text.includes('ask-permission')) {    const permId = nextId++;
+  if (text.includes('ask-permission')) {
+    const permId = nextId++;
     const toolCallId = `tool-${randomUUID().slice(0, 8)}`;
     send({
       jsonrpc: '2.0',
@@ -376,7 +383,8 @@ function runPrompt(id, text, deferred = false) {
     });
     permissionWaiters.set(permId, (outcome) => {
       permissionWaiters.delete(permId);
-      const allowed = outcome?.outcome === 'selected' && String(outcome.optionId).startsWith('allow');
+      const allowed =
+        outcome?.outcome === 'selected' && String(outcome.optionId).startsWith('allow');
       send({
         jsonrpc: '2.0',
         method: 'session/update',
@@ -415,7 +423,10 @@ function runPrompt(id, text, deferred = false) {
 
   notify('session/update', {
     sessionId,
-    update: { sessionUpdate: 'agent_thought_chunk', contentBlock: { type: 'text', text: 'thinking about it' } },
+    update: {
+      sessionUpdate: 'agent_thought_chunk',
+      contentBlock: { type: 'text', text: 'thinking about it' },
+    },
   });
   notify('session/update', {
     sessionId,
@@ -438,20 +449,28 @@ function handleRequest(msg) {
         authMethods: [],
         agentCapabilities: {
           promptCapabilities: { image: false },
-          sessionCapabilities: process.env.FIXTURE_ACP_NO_LOAD === '1'
-            ? { list: {}, resume: {}, close: {} } // the dsh shape — no replay
-            : { list: {}, load: {}, resume: {}, close: {} },
+          sessionCapabilities:
+            process.env.FIXTURE_ACP_NO_LOAD === '1'
+              ? { list: {}, resume: {}, close: {} } // the dsh shape — no replay
+              : { list: {}, load: {}, resume: {}, close: {} },
         },
       });
       return;
-    case 'session/new':
-      respond(id, {
-        // FIXTURE_SESSION_ID pins the id so tests can pre-create the dsh
-        // transcript directory for the live-tail streaming path.
-        sessionId: process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`,
-        cwd: params?.cwd ?? process.cwd(),
-      });
+    case 'session/new': {
+      // FIXTURE_SESSION_ID pins the id so tests can pre-create the dsh
+      // transcript directory for the live-tail streaming path.
+      // FIXTURE_DELAY_NEW_MS widens the establishment window so tests can send
+      // a close WHILE session/new is still in flight (the daemon must abort).
+      const answer = () =>
+        respond(id, {
+          sessionId: process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`,
+          cwd: params?.cwd ?? process.cwd(),
+        });
+      const newDelay = Number(process.env.FIXTURE_DELAY_NEW_MS ?? '0');
+      if (newDelay > 0) setTimeout(answer, newDelay);
+      else answer();
       return;
+    }
     case 'session/list':
       respond(id, {
         sessions: [
@@ -472,7 +491,11 @@ function handleRequest(msg) {
       if (sid === 'fx-native-fail') {
         // Establishment failure (the dsh pinned-model class) — the daemon
         // must surface the error AND kill this adapter process.
-        respondError(id, -32603, 'Internal error: pi-ai provider "harness-nexus" has no configured model "deepseek-chat"');
+        respondError(
+          id,
+          -32603,
+          'Internal error: pi-ai provider "harness-nexus" has no configured model "deepseek-chat"',
+        );
         return;
       }
       notify('session/update', {
@@ -542,7 +565,11 @@ rl.on('line', (line) => {
     return;
   }
 
-  if (msg.id !== undefined && msg.id !== null && (msg.result !== undefined || msg.error !== undefined)) {
+  if (
+    msg.id !== undefined &&
+    msg.id !== null &&
+    (msg.result !== undefined || msg.error !== undefined)
+  ) {
     // A response — to our session/request_permission. The ACP result shape is
     // { outcome: { outcome: 'selected'|'cancelled', optionId? } }.
     const waiter = permissionWaiters.get(msg.id);

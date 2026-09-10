@@ -283,3 +283,56 @@ permission_request`; the server's respond (or timeout-cancel) resolves it
    `HN_ACP_COMMAND_HERMES` — enroll → enable chat → deploy (C4 flow) →
    browser socket round-trip → close; gating assert first (disabled ⇒
    refused). `pnpm -r typecheck`, per-package builds, full smoke suite.
+
+## Channel lifecycle hardening (post-W8 rig findings, 2026-09)
+
+Chat channels are bounded by `CHAT_MAX_SESSIONS_PER_MACHINE` (3) and a channel
+dies with its daemon socket. Three defects around that budget surfaced while
+verifying W8 on the rig — each compounded the next, and together they produced
+the observed symptom ("I click a session and the pane is empty"):
+
+1. **The session page never released the channel it left.** A row hop called
+   `chat:session.open` without closing the previous channel; the SPA socket
+   survives navigation, and server teardown keys on the browser socket, so
+   every hop leaked a slot. Three hops then filled the cap and every further
+   open answered `SESSION_LIMIT_REACHED` — the page rendered an error strip
+   over an empty stream. Fix: `openChannel` now **leaves before entering**
+   (closes the previous channel before issuing the open, skipping the close
+   when the target is a rejoin of the same channel), and the page closes its
+   channel on unmount. Closing first also self-heals a full cap instead of
+   deadlocking behind it — the old "close only after a successful open" shape
+   skipped the close on the error path, so a rejected open left the previous
+   channel live forever.
+
+2. **A close that raced the establishment was dropped by the daemon.** With
+   the page fixed, hops were still leaking adapter processes: `chat:session.close`
+   looked up `sessions.get(id)`, found nothing (the spawn/establish takes
+   seconds; the daemon had not registered the session yet), and did nothing —
+   then the establishment finished and registered an orphan with no channel
+   left to ever close it. Fix: the daemon records ids closed before
+   registration (`closedBeforeReady`, consumed with `Set.delete`) and the start
+   handler checks at two checkpoints (before the spawn, and immediately before
+   registration — no await sits between that check and the `sessions.set`, so
+   nothing can interleave). An aborted establishment kills the connection and
+   emits no `ready`.
+
+3. **A daemon restart wedged chat on its machine until the server restarted.**
+   The server closes a machine's channels when it goes offline, but that reap
+   is keyed on the offline→online *transition*, and a fast daemon restart
+   registers the new socket before the old disconnect is processed — so the
+   machine never "went offline" and the dead connection's channels kept their
+   slots forever. Fix: the `/ctl` connection handler reaps the machine's live
+   channels on **every** connection. The invariant that makes it correct: a
+   newly connected daemon owns zero channels by construction (the daemon tears
+   every session down in its socket `disconnect` handler), so any channel still
+   live for that machine belongs to a connection that is gone.
+
+Rig verification (post-fix): five rapid row hops (1.5s apart, well inside the
+establishment window) hold the adapter count at 1 (a transient 2 during the
+SIGTERM grace) and settle at exactly 1 = the live channel; the wire shows the
+`close, open` alternation; a `kill -9` daemon restart mid-channel leaves the
+page honestly closed with no cap error and a fresh resume succeeds — no server
+restart needed. Regression tests: `server/test/chat.test.ts` ("a daemon
+RECONNECT reaps …"), `cli/test/chat.test.ts` ("a close arriving DURING
+establishment aborts it and kills the adapter", via the fixture's new
+`FIXTURE_DELAY_NEW_MS` knob + a pid-file liveness assert).

@@ -618,6 +618,46 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
       return pids.length > 0 && pids.every((p) => !alive(p)) ? true : undefined;
     });
   }, 15000);
+
+  it('a close arriving DURING establishment aborts it and kills the adapter', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      // Hold `session/new` open so the close below lands mid-establishment.
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile, FIXTURE_DELAY_NEW_MS: '1500' },
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-race',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    // Wait until the adapter is spawned (pid recorded) but session/new is
+    // still pending — the channel is not registered yet.
+    await waitFor(() => (readFileSync(pidFile, 'utf8').trim() !== '' ? true : undefined));
+    socket.receive('chat:session.close', { sessionId: 'sess-race', reason: 'user' });
+
+    // The establishment finishes AFTER the close: it must be abandoned, not
+    // registered. Without the checkpoints the daemon would emit ready here and
+    // keep an orphan adapter with no channel left to ever close it.
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(socket.emitted.filter((e) => e.event === 'chat:session.ready')).toHaveLength(0);
+
+    await waitFor(() => {
+      const pids = readFileSync(pidFile, 'utf8')
+        .split('\n')
+        .map((l) => Number.parseInt(l, 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      return pids.length > 0 && pids.every((p) => !alive(p)) ? true : undefined;
+    });
+  }, 15000);
 });
 
 // Node's zstd binding (needed to write real frames for the tail); absent on

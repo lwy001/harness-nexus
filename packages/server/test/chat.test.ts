@@ -550,6 +550,52 @@ describe('session lifecycle', () => {
     },
   );
 
+  it(
+    'a daemon RECONNECT reaps the previous connection’s channels even when the machine never went offline',
+    { timeout: 10000 },
+    async () => {
+      // The reconnect race: the replacement socket registers BEFORE the old
+      // one's disconnect is processed, so presence never flips and the
+      // offline-transition reap is skipped. The old channels are dead (the
+      // daemon tears sessions down with its socket) yet they kept their slots
+      // — every later open answered SESSION_LIMIT_REACHED until a server
+      // restart. Reaping on connection is what makes a daemon restart
+      // recoverable.
+      // The daemon that came back is tracked locally so the test can close it:
+      // a socket left connected here makes the suite's `app.close()` hang.
+      const reconnected = await connectDaemon(['chat']);
+      daemon = reconnected;
+      const startP = once(reconnected, 'chat:session.start');
+      await openSession(browser, agentId);
+      const start = (await startP) as { sessionId: string };
+      const readyP = once(browser, 'chat:session.ready');
+      readyFor(reconnected, start);
+      await readyP;
+
+      // The old socket stays connected on purpose (no offline transition).
+      // The listener must be attached BEFORE the replacement connects: the reap
+      // fires on connection, i.e. before `connectDaemon` even returns.
+      const closedP = once(browser, 'chat:session.closed', 6000);
+      const replacement = await connectDaemon(['chat']);
+      const closed = (await closedP) as { reason: string };
+      expect(closed.reason).toBe('connection-lost');
+
+      try {
+        // And the cap is free again — a fresh open is accepted.
+        const startP2 = once(replacement, 'chat:session.start');
+        const again = await openSession(browser, agentId);
+        expect(again.error).toBeUndefined();
+        const start2 = (await startP2) as { sessionId: string };
+        const closed2P = once(browser, 'chat:session.closed');
+        await emitAck(browser, 'chat:session.close', { sessionId: start2.sessionId });
+        await closed2P;
+      } finally {
+        replacement.close();
+        reconnected.close();
+      }
+    },
+  );
+
   it('user disconnect notifies the daemon (channel-only — no session finality)', async () => {
     daemon = await connectDaemon(['chat']);
     const startP = once(daemon, 'chat:session.start');
