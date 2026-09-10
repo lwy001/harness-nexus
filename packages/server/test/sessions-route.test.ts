@@ -212,13 +212,54 @@ describe('GET /api/agent-instances/:id/sessions (9 W7)', () => {
     });
     expect(rows.find((s) => s.sessionId === 'native-idle')).toMatchObject({ open: false });
 
+    // A channel whose native session has NO transcript yet (claude-code
+    // materializes one only on the first message) still shows up: the route
+    // synthesizes an open row from the channel itself.
+    const startP2 = new Promise<{ sessionId: string }>((resolve) => {
+      daemon.on('chat:session.start', (p: { sessionId: string }) => resolve(p));
+    });
+    const open2Ack = (await new Promise((resolve) => {
+      browser.emit('chat:session.open', { agentInstanceId: agentId }, resolve);
+    })) as { sessionId: string };
+    const start2 = await startP2;
+    const ready2P = new Promise<void>((resolve) => {
+      browser.on('chat:session.ready', () => resolve());
+    });
+    daemon.emit('chat:session.ready', {
+      sessionId: start2.sessionId,
+      nativeSessionId: 'native-ghost',
+    });
+    await ready2P;
+
+    const res2 = await app.inject({
+      method: 'GET',
+      url: `/api/agent-instances/${agentId}/sessions`,
+      headers: auth(ownerJwt),
+    });
+    const ghost = (
+      res2.json().sessions as {
+        sessionId: string;
+        open: boolean;
+        openChannelId?: string;
+        cwd: string;
+      }[]
+    ).find((s) => s.sessionId === 'native-ghost');
+    expect(ghost).toMatchObject({
+      open: true,
+      openChannelId: open2Ack.sessionId,
+      cwd: '/home/w7/.claude', // the agent's directory — where the channel was opened
+    });
+
     await new Promise((resolve) => {
       browser.emit('chat:session.close', { sessionId: start.sessionId, reason: 'user' }, resolve);
+    });
+    await new Promise((resolve) => {
+      browser.emit('chat:session.close', { sessionId: start2.sessionId, reason: 'user' }, resolve);
     });
     browser.close();
     daemon.disconnect();
     await new Promise((r) => setTimeout(r, 150));
-  }, 15000);
+  }, 20000);
 
   it('surfaces an unsupported target and maps the error/timeout arms', async () => {
     await connectDaemon(['sessions'], () => ({ supported: false }));

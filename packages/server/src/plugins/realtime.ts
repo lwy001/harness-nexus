@@ -117,6 +117,8 @@ export async function registerRealtime(
           if (socket) void socket.join(`chan:${sessionId}`);
         },
         isAppSocketLive: (socketId) => appNs.sockets.has(socketId),
+        channelSockets: async (sessionId) =>
+          (await appNs.in(`chan:${sessionId}`).fetchSockets()).map((s) => s.id),
       },
     },
     {
@@ -396,8 +398,14 @@ export async function registerRealtime(
         ack?.({ error: 'proto:invalid' });
         return;
       }
-      const accepted = realtime.chat.onStream(machineId, parsed.data.sessionId, parsed.data.event);
-      ack?.(accepted.ok ? { accepted: true } : { error: 'unknown-session' });
+      void (async () => {
+        const accepted = await realtime.chat.onStream(
+          machineId,
+          parsed.data.sessionId,
+          parsed.data.event,
+        );
+        ack?.(accepted.ok ? { accepted: true } : { error: 'unknown-session' });
+      })();
     });
 
     // 9 W7 — transcript batch for a (re)joined/resumed channel; relayed to the
@@ -571,6 +579,14 @@ export async function registerRealtime(
         );
         ack?.(result.ok ? { closed: true } : { error: result.code });
       })();
+    });
+
+    // A viewer socket died (tab closed / full page refresh — SPA navigation
+    // keeps the socket alive). Channels whose room is now EMPTY close so their
+    // adapters die instead of piling up on the machine; a mid-turn channel
+    // waits out the turn (ChatService.onViewerGone).
+    socket.on('disconnect', () => {
+      void realtime.chat.onViewerGone(socket.data.userId as string);
     });
   });
 }

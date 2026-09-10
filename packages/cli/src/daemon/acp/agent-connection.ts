@@ -34,6 +34,33 @@ export interface AcpSessionCaps {
   list: boolean;
 }
 
+/**
+ * Advertised caps decide the resume dialect (9 W7): prefer `session/load`
+ * (replay for free), fall back to `session/resume`. `loadSession` is the
+ * pre-capability legacy flag — and WHERE it sits differs by adapter family:
+ * the Zed adapters set it at the initialize RESULT ROOT, the official
+ * `@agentclientprotocol/claude-agent-acp` sets it NESTED inside
+ * `agentCapabilities.loadSession` while its `sessionCapabilities` has `resume`
+ * but NOT `load`. Reading only the root made the official wrapper look like a
+ * resume-only adapter — claude-code channels then resumed with NO replay
+ * ("opening a history session shows an empty pane").
+ */
+export function deriveSessionCaps(result: unknown): AcpSessionCaps {
+  const r = (result ?? {}) as {
+    loadSession?: boolean;
+    agentCapabilities?: { loadSession?: boolean; sessionCapabilities?: Record<string, unknown> };
+  };
+  const caps = r.agentCapabilities?.sessionCapabilities ?? {};
+  return {
+    load:
+      caps['load'] !== undefined ||
+      r.loadSession === true ||
+      r.agentCapabilities?.loadSession === true,
+    resume: caps['resume'] !== undefined,
+    list: caps['list'] !== undefined,
+  };
+}
+
 export class AcpAgentConnection {
   private proc: ChildProcess;
   private nextId = 1;
@@ -85,6 +112,11 @@ export class AcpAgentConnection {
         cwd: opts.cwd,
         env: { ...process.env, ...(opts.env ?? {}) },
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Own process group: adapters spawn their own trees (npm → sh →
+        // wrapper → the vendor binary). Signaling only the direct child
+        // orphaned the grandchildren — a bare `claude` binary survived every
+        // teardown, parented to init. kill() takes the whole group down.
+        detached: true,
       });
     } catch (e) {
       throw new Error(`failed to spawn ACP adapter '${command}': ${errText(e)}`);
@@ -103,18 +135,10 @@ export class AcpAgentConnection {
       agentCapabilities?: { sessionCapabilities?: Record<string, unknown> };
     };
     conn.notify('initialized', {});
-    // Advertised caps decide the resume dialect (9 W7): prefer session/load
-    // (replay for free), fall back to session/resume. `loadSession` is the
-    // pre-capability legacy flag both Zed adapters still set alongside caps.
-    const caps = result?.agentCapabilities?.sessionCapabilities ?? {};
     return {
       conn,
       agentInfo: result?.agentInfo ?? {},
-      sessionCaps: {
-        load: caps['load'] !== undefined || result?.loadSession === true,
-        resume: caps['resume'] !== undefined,
-        list: caps['list'] !== undefined,
-      },
+      sessionCaps: deriveSessionCaps(result),
     };
   }
 
@@ -162,13 +186,30 @@ export class AcpAgentConnection {
     this.proc.on('exit', handler);
   }
 
-  /** SIGTERM, then SIGKILL after `graceMs`. Idempotent. */
+  /**
+   * SIGTERM the whole process GROUP, then SIGKILL it after `graceMs`.
+   * Idempotent. The group signal is the point: the direct child (npm/npx)
+   * dying does NOT take the wrapper and the vendor binary with it — they
+   * reparent to init and keep running. The timer is unref'd and NOT cleared
+   * on leader exit: grandchildren can outlive the leader, and the follow-up
+   * SIGKILL to a dead group is a caught ESRCH.
+   */
   kill(graceMs = 3000): void {
     if (this.exited || this.proc.stdin === null) return;
     this.proc.removeAllListeners('exit');
-    const killTimer = setTimeout(() => this.proc.kill('SIGKILL'), graceMs);
-    this.proc.on('exit', () => clearTimeout(killTimer));
-    this.proc.kill('SIGTERM');
+    const pid = this.proc.pid;
+    const sigGroup = (sig: NodeJS.Signals): void => {
+      if (pid === undefined) return;
+      try {
+        process.kill(-pid, sig); // negative pid = the process group
+      } catch {
+        // group already gone
+      }
+    };
+    const killTimer = setTimeout(() => sigGroup('SIGKILL'), graceMs);
+    killTimer.unref();
+    sigGroup('SIGTERM');
+    this.proc.kill('SIGTERM'); // the leader too (belt and braces)
     this.failAll(new Error('agent process killed'));
     this.exited = true;
   }

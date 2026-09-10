@@ -30,6 +30,8 @@ export interface ChatIO {
   joinChannel(socketId: string, sessionId: string): void;
   /** Is that /app socket still connected? (Opener may vanish before ready.) */
   isAppSocketLive(socketId: string): boolean;
+  /** Ids of the /app sockets currently viewing a channel room. */
+  channelSockets(sessionId: string): Promise<string[]>;
 }
 
 export interface ChatServiceDeps {
@@ -68,8 +70,12 @@ interface LiveSession {
   agentInstanceId: string;
   ownerId: string;
   phase: 'starting' | 'ready';
+  /** Working directory the channel was opened at (synthesized listing rows). */
+  cwd: string;
   /** Last reported turn state — the server-side SESSION_BUSY gate. */
   busy: boolean;
+  /** Viewers all left while a turn ran — close when the turn ends. */
+  closeWhenIdle: boolean;
   /** When the channel was opened — the eviction order (oldest first). */
   openedAt: number;
   /** Reported agent identity — re-pushed to re-joining viewers. */
@@ -196,7 +202,9 @@ export class ChatService {
       agentInstanceId: agent.id,
       ownerId,
       phase: 'starting',
+      cwd,
       busy: false,
+      closeWhenIdle: false,
       openedAt: Date.now(),
       openerSocketId,
       readyTimer: null,
@@ -270,7 +278,11 @@ export class ChatService {
   }
 
   /** Daemon's `chat:event` — validate, arm permission watchdogs, relay to the room. */
-  onStream(machineId: string, sessionId: string, event: ChatStreamEvent): { ok: boolean } {
+  async onStream(
+    machineId: string,
+    sessionId: string,
+    event: ChatStreamEvent,
+  ): Promise<{ ok: boolean }> {
     const session = this.live.get(sessionId);
     if (!session || session.machineId !== machineId) return { ok: false };
 
@@ -292,7 +304,15 @@ export class ChatService {
         }, this.opts.permissionTimeoutMs),
       );
     } else if (event.kind === 'session_status') {
+      const wasBusy = session.busy;
       session.busy = event.state === 'active';
+      // Viewers left while this turn ran — once it ends, the channel closes
+      // (relay the idle event first; the room may still have a rejoiner).
+      if (wasBusy && !session.busy && session.closeWhenIdle) {
+        this.deps.io.toChannel(sessionId, 'chat:event', { sessionId, event });
+        await this.closeInternal(session, 'connection-lost', { notifyDaemon: true });
+        return { ok: true };
+      }
     }
     this.deps.io.toChannel(sessionId, 'chat:event', { sessionId, event });
     return { ok: true };
@@ -420,6 +440,44 @@ export class ChatService {
       }
     }
     return byNative;
+  }
+
+  /** The same channels keyed to their cwd — synthesized listing rows. */
+  openChannelCwds(agentInstanceId: string): Map<string, string> {
+    const cwds = new Map<string, string>();
+    for (const s of this.live.values()) {
+      if (
+        s.agentInstanceId === agentInstanceId &&
+        s.phase === 'ready' &&
+        s.nativeSessionId !== undefined &&
+        !cwds.has(s.nativeSessionId)
+      ) {
+        cwds.set(s.nativeSessionId, s.cwd);
+      }
+    }
+    return cwds;
+  }
+
+  /**
+   * A /app socket disconnected. Channels are view-scoped: when the LAST viewer
+   * of a channel leaves (tab closed or a full page refresh — the SPA socket
+   * survives ordinary navigation), the channel closes so its adapter dies
+   * instead of piling up on the machine and slowing every later spawn (the
+   * pile-up was what pushed claude-code opens past the ready watchdog —
+   * "sessions open empty"). A channel MID-TURN is not killed: it flips
+   * `closeWhenIdle` and closes when the turn ends, so an abandoned generation
+   * still finishes and persists into the agent's native store.
+   */
+  async onViewerGone(userId: string): Promise<void> {
+    for (const session of [...this.live.values()]) {
+      if (session.ownerId !== userId) continue;
+      if ((await this.deps.io.channelSockets(session.sessionId)).length > 0) continue;
+      if (session.busy) {
+        session.closeWhenIdle = true;
+        continue;
+      }
+      await this.closeInternal(session, 'connection-lost', { notifyDaemon: true });
+    }
   }
 
   /** Machine deleted / enrollment revoked — channels end (nothing persisted remains). */
