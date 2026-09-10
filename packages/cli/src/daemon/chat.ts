@@ -358,9 +358,10 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         }
         const { conn, agentInfo, sessionCaps } = started;
         liveConn = conn;
-        // `mcpServers` is sent explicitly (spec: an array): the CURRENT
-        // @zed-industries/claude-agent-acp zod-validates session establishment
-        // and rejects an absent field with `Invalid params` — adapters are
+        // `mcpServers` is sent explicitly (spec: an array): ACP wrappers
+        // (zed 0.23.x AND the @agentclientprotocol one we ship for claude-code)
+        // zod-validate session establishment and reject an absent field with
+        // `Invalid params` — adapters are
         // pulled latest by `npx -y`, so the client must be maximally
         // spec-shaped. Startup race (seen on real dsh 0.1.2-rc.1): an
         // establishment fired the instant initialize resolves can beat the

@@ -242,7 +242,12 @@ describe('resolveAcpCommand', () => {
       command: 'python3',
       args: ['-m', 'acp_adapter'],
     });
-    expect(resolveAcpCommand('claude-code', {})).toMatchObject({ command: 'npx' });
+    // The official ACP-project wrapper (thinking streams on gateway models —
+    // the pre-2026-09 @zed-industries 0.23.x never requested it).
+    expect(resolveAcpCommand('claude-code', {})).toEqual({
+      command: 'npx',
+      args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+    });
     expect(resolveAcpCommand('zcode', {})).toBeNull();
     expect(
       resolveAcpCommand('claude-code', {

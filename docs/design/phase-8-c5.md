@@ -161,7 +161,11 @@ agent-exited | server-shutdown`. Rows survive machine deletion (no FKs);
 ## Daemon behavior
 
 - **Adapter command table** (`daemon/acp/adapters.ts`):
-  `claude-code → npx -y @zed-industries/claude-agent-acp`, `codex → npx -y
+  `claude-code → npx -y @agentclientprotocol/claude-agent-acp` (switched
+  2026-09 from `@zed-industries/claude-agent-acp` 0.23.x — that wrapper never
+  requested thinking on gateway/unknown models, so chat showed no thought
+  stream; the official ACP-project wrapper streams `agent_thought_chunk` by
+  default, rig-verified), `codex → npx -y
 @zed-industries/codex-acp`, `hermes → python3 -m acp_adapter`, `zcode →
 null`. Env override `HN_ACP_COMMAND_<TARGET>` (`-`→`_`, upper) replaces the
   whole command line (split on whitespace) — the hook tests and the smoke

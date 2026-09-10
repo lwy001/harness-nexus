@@ -11,9 +11,15 @@ import type { AgentTarget } from '@harness-nexus/shared';
  * tests at a fixture agent.
  */
 const DEFAULT_ACP_COMMANDS: Record<AgentTarget, readonly string[] | null> = {
-  // Official Zed adapter, now powered by the Claude Agent SDK (bundles the CLI;
-  // needs local Claude auth).
-  'claude-code': ['npx', '-y', '@zed-industries/claude-agent-acp'],
+  // The ACP project's official wrapper (took over from @zed-industries's
+  // 0.23.x, which the daemon shipped until 2026-09). Reason for the swap,
+  // rig-verified: the old wrapper never requests thinking on gateway/unknown
+  // models (MAX_THINKING_TOKENS on the adapter env didn't help either), so
+  // chat showed no thought stream; the official 0.76.0 streams
+  // agent_thought_chunk by default, advertises loadSession + list/resume
+  // (both caps shapes the daemon already detects), and returns full
+  // SessionInfo. Same switch the stable reference CC bridge runs.
+  'claude-code': ['npx', '-y', '@agentclientprotocol/claude-agent-acp'],
   // Official Zed adapter wrapping the OpenAI Codex CLI (needs `codex` on PATH).
   codex: ['npx', '-y', '@zed-industries/codex-acp'],
   // DeepSeek Harness ships a native ACP v1 profile (needs `dsh` on PATH and a
