@@ -44,7 +44,12 @@ export interface TurnStats {
   stopReason: string;
   error?: string;
   durationMs?: number;
-  usage?: { inputTokens?: number; outputTokens?: number };
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    contextUsed?: number;
+    contextSize?: number;
+  };
 }
 
 export type ConversationRow =
@@ -68,15 +73,23 @@ export interface FoldState {
   stepClosed: boolean;
   seq: number;
   turnStartedAt: number | null;
-  usage: { inputTokens?: number; outputTokens?: number } | null;
+  usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+    contextUsed?: number;
+    contextSize?: number;
+  } | null;
   permissions: PermissionCardState[];
   turnActive: boolean;
 }
 
-export type FoldAction = { type: 'reset' } | { type: 'user_message'; text: string } | {
-  type: 'event';
-  event: ChatStreamEvent;
-};
+export type FoldAction =
+  | { type: 'reset' }
+  | { type: 'user_message'; text: string }
+  | {
+      type: 'event';
+      event: ChatStreamEvent;
+    };
 
 export function createFoldState(): FoldState {
   return {
@@ -128,7 +141,10 @@ function openStep(state: FoldState, block: ContentBlock): FoldState {
     blocks: [block],
     startedAt: Date.now(),
   };
-  const rows = [...state.rows, { row: 'assistant', key: `a-${step.stepId}`, step } as ConversationRow];
+  const rows = [
+    ...state.rows,
+    { row: 'assistant', key: `a-${step.stepId}`, step } as ConversationRow,
+  ];
   return { ...state, rows, currentStepIdx: rows.length - 1, stepClosed: false };
 }
 
@@ -162,14 +178,14 @@ function nodeFromCall(call: ChatToolCallView): ToolCallNode {
   };
 }
 
-function patchToolRow(
-  state: FoldState,
-  call: ChatToolCallView,
-): FoldState {
+function patchToolRow(state: FoldState, call: ChatToolCallView): FoldState {
   const idx = state.toolRowIndex.get(call.toolCallId);
   if (idx === undefined) {
     const node = nodeFromCall(call);
-    const rows = [...state.rows, { row: 'tool', key: `t-${node.callId}`, root: node } as ConversationRow];
+    const rows = [
+      ...state.rows,
+      { row: 'tool', key: `t-${node.callId}`, root: node } as ConversationRow,
+    ];
     const toolRowIndex = new Map(state.toolRowIndex);
     toolRowIndex.set(node.callId, rows.length - 1);
     return settleCurrentStep({ ...state, rows, toolRowIndex, stepClosed: true });
@@ -202,7 +218,10 @@ function sweepRows(state: FoldState, interrupted: boolean): ConversationRow[] {
         ...row,
         step: {
           ...row.step,
-          status: interrupted && idx === state.currentStepIdx ? ('interrupted' as const) : ('settled' as const),
+          status:
+            interrupted && idx === state.currentStepIdx
+              ? ('interrupted' as const)
+              : ('settled' as const),
         },
       };
     }
@@ -264,6 +283,8 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
               ...(state.usage ?? {}),
               ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
               ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}),
+              ...(event.contextUsed !== undefined ? { contextUsed: event.contextUsed } : {}),
+              ...(event.contextSize !== undefined ? { contextSize: event.contextSize } : {}),
             },
           };
         case 'permission_request':
@@ -291,9 +312,10 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
           const next: FoldState = state;
           const rows = sweepRows(next, interrupted);
           const lastRow = rows[rows.length - 1];
-          const noRunning = rows.every(
-            (r) =>
-              (r.row === 'assistant' ? r.step.status !== 'running' : r.row !== 'tool' || r.root.status !== 'running'),
+          const noRunning = rows.every((r) =>
+            r.row === 'assistant'
+              ? r.step.status !== 'running'
+              : r.row !== 'tool' || r.root.status !== 'running',
           );
           if (noRunning && lastRow !== undefined && lastRow.row === 'turn-tail') {
             return { ...next, rows };

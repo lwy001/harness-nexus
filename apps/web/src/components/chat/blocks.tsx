@@ -15,7 +15,10 @@ import { useCopyFeedback } from './copy-feedback.js';
 
 const MAX_LINES = 8;
 
-function headTailCap(count: number, expanded: boolean): {
+function headTailCap(
+  count: number,
+  expanded: boolean,
+): {
   hidden: number;
   capped: boolean;
   headLines: number;
@@ -111,7 +114,13 @@ export const ReadBlock = memo(function ReadBlock({
       </div>
       <div className="overflow-x-auto p-2 font-mono text-xs leading-5">
         {render(head)}
-        {hidden > 0 ? <ExpandButton expanded={expanded} hidden={hidden} onClick={() => setExpanded((v) => !v)} /> : null}
+        {hidden > 0 ? (
+          <ExpandButton
+            expanded={expanded}
+            hidden={hidden}
+            onClick={() => setExpanded((v) => !v)}
+          />
+        ) : null}
         {capped ? render(tail) : null}
       </div>
     </div>
@@ -193,13 +202,21 @@ export const DiffBlock = memo(function DiffBlock({ diffs }: { diffs: DiffHunk[] 
         <div className="text-muted-foreground absolute top-1.5 right-2 z-10">
           <CopyButton
             text={rows
-              .map((r) => (r.kind === 'del' ? `- ${r.text}` : r.kind === 'add' ? `+ ${r.text}` : r.text))
+              .map((r) =>
+                r.kind === 'del' ? `- ${r.text}` : r.kind === 'add' ? `+ ${r.text}` : r.text,
+              )
               .join('\n')}
           />
         </div>
         <div className="overflow-x-auto p-2 font-mono text-xs leading-5">
           {render(head, '')}
-          {hidden > 0 ? <ExpandButton expanded={expanded} hidden={hidden} onClick={() => setExpanded((v) => !v)} /> : null}
+          {hidden > 0 ? (
+            <ExpandButton
+              expanded={expanded}
+              hidden={hidden}
+              onClick={() => setExpanded((v) => !v)}
+            />
+          ) : null}
           {capped ? render(tail, 't') : null}
         </div>
       </div>
@@ -313,7 +330,12 @@ export const SearchBlock = memo(function SearchBlock({
       out.push({ type: 'file', path: file.path, count: file.matches.length, index });
       if (collapsed.has(index)) return;
       for (const m of file.matches) {
-        out.push({ type: 'match', lineNumber: m.lineNumber, line: m.line, key: `${index}:${m.lineNumber}` });
+        out.push({
+          type: 'match',
+          lineNumber: m.lineNumber,
+          line: m.line,
+          key: `${index}:${m.lineNumber}`,
+        });
       }
     });
     return out;
@@ -378,14 +400,22 @@ export const SearchBlock = memo(function SearchBlock({
             kind === 'paths'
               ? paths.join('\n')
               : files
-                  .map((f) => [f.path, ...f.matches.map((m) => `${m.lineNumber}: ${m.line}`)].join('\n'))
+                  .map((f) =>
+                    [f.path, ...f.matches.map((m) => `${m.lineNumber}: ${m.line}`)].join('\n'),
+                  )
                   .join('\n\n')
           }
         />
       </div>
       <div className="overflow-x-auto p-2 font-mono text-xs leading-5">
         {render(head, '')}
-        {hidden > 0 ? <ExpandButton expanded={expanded} hidden={hidden} onClick={() => setExpanded((v) => !v)} /> : null}
+        {hidden > 0 ? (
+          <ExpandButton
+            expanded={expanded}
+            hidden={hidden}
+            onClick={() => setExpanded((v) => !v)}
+          />
+        ) : null}
         {capped ? render(tail, 't') : null}
       </div>
     </div>
@@ -453,7 +483,12 @@ export const TodoList = memo(function TodoList({
             <span className="mt-0.5 shrink-0" aria-hidden>
               {todo.status === 'completed' ? '●' : todo.status === 'in_progress' ? '◐' : '○'}
             </span>
-            <span className={cn('min-w-0', todo.status === 'completed' && 'text-muted-foreground line-through')}>
+            <span
+              className={cn(
+                'min-w-0',
+                todo.status === 'completed' && 'text-muted-foreground line-through',
+              )}
+            >
               {todo.content ?? ''}
             </span>
           </li>

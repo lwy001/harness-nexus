@@ -353,7 +353,9 @@ export function AgentSessionPage() {
                           </span>
                         </span>
                         <span className="text-muted-foreground font-mono text-[10px]">
-                          {open ? t('chat.sessionOpen') : (s.closeReason ?? t('chat.sessionClosed'))}
+                          {open
+                            ? t('chat.sessionOpen')
+                            : (s.closeReason ?? t('chat.sessionClosed'))}
                         </span>
                       </button>
                     );
@@ -406,7 +408,9 @@ export function AgentSessionPage() {
           <ChatStream
             state={conversation}
             cwd={currentCwd}
-            onPermissionRespond={(requestId, optionId) => void respondPermission(requestId, optionId)}
+            onPermissionRespond={(requestId, optionId) =>
+              void respondPermission(requestId, optionId)
+            }
           />
 
           <div className="shrink-0 border-t p-3">

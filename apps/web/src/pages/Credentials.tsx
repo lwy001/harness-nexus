@@ -225,72 +225,72 @@ function CreateCredential({ onClose, onCreated }: { onClose: () => void; onCreat
       description={t('credentials.addDesc')}
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="grid gap-2">
-              <Label htmlFor="cred-name">{t('common.name')}</Label>
-              <Input
-                id="cred-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('credentials.namePlaceholder')}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cred-secret">{t('credentials.secret')}</Label>
-              <Input
-                id="cred-secret"
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={t('credentials.secretPlaceholder')}
-                required
-                autoComplete="new-password"
-                spellCheck={false}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="cred-scope">{t('common.scope')}</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
-                <SelectTrigger id="cred-scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
-                  <SelectItem value="global" disabled={!isAdmin}>
-                    {t('common.scopeGlobal')}
-                    {!isAdmin && t('credentials.adminSuffix')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-2">
+            <Label htmlFor="cred-name">{t('common.name')}</Label>
+            <Input
+              id="cred-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('credentials.namePlaceholder')}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
           </div>
-          {scope === 'global' && isAdmin ? (
-            <div className="flex items-center gap-3">
-              <Switch
-                id="cred-distributable"
-                checked={distributable}
-                onCheckedChange={setDistributable}
-                aria-label={t('credentials.distributableAria')}
-              />
-              <Label htmlFor="cred-distributable" className="font-normal">
-                {t('credentials.distributableLabel1')}{' '}
-                <code className="font-mono">hnx mcp serve</code>{' '}
-                {t('credentials.distributableLabel2')} <code className="font-mono">/mcp</code>{' '}
-                {t('credentials.distributableLabel3')}
-              </Label>
-            </div>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? t('credentials.creating') : t('credentials.createButton')}
-            </Button>
+          <div className="grid gap-2">
+            <Label htmlFor="cred-secret">{t('credentials.secret')}</Label>
+            <Input
+              id="cred-secret"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder={t('credentials.secretPlaceholder')}
+              required
+              autoComplete="new-password"
+              spellCheck={false}
+            />
           </div>
-        </form>
+          <div className="grid gap-2">
+            <Label htmlFor="cred-scope">{t('common.scope')}</Label>
+            <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
+              <SelectTrigger id="cred-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="personal">{t('common.scopePersonal')}</SelectItem>
+                <SelectItem value="global" disabled={!isAdmin}>
+                  {t('common.scopeGlobal')}
+                  {!isAdmin && t('credentials.adminSuffix')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {scope === 'global' && isAdmin ? (
+          <div className="flex items-center gap-3">
+            <Switch
+              id="cred-distributable"
+              checked={distributable}
+              onCheckedChange={setDistributable}
+              aria-label={t('credentials.distributableAria')}
+            />
+            <Label htmlFor="cred-distributable" className="font-normal">
+              {t('credentials.distributableLabel1')}{' '}
+              <code className="font-mono">hnx mcp serve</code>{' '}
+              {t('credentials.distributableLabel2')} <code className="font-mono">/mcp</code>{' '}
+              {t('credentials.distributableLabel3')}
+            </Label>
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? t('credentials.creating') : t('credentials.createButton')}
+          </Button>
+        </div>
+      </form>
     </FormDialog>
   );
 }

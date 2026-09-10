@@ -1374,7 +1374,13 @@ function RemoteChatToggle({ machine, onChanged }: { machine: MachineView; onChan
  * their project directory. Inline edit + save; empty clears it (sessions fall
  * back to the picker's set-first flow).
  */
-function BaseWorkspaceField({ machine, onChanged }: { machine: MachineView; onChanged: () => void }) {
+function BaseWorkspaceField({
+  machine,
+  onChanged,
+}: {
+  machine: MachineView;
+  onChanged: () => void;
+}) {
   const { logout } = useAuth();
   const { t } = useI18n();
   const [value, setValue] = useState(machine.baseWorkspace ?? '');

@@ -295,8 +295,7 @@ CREATE TABLE IF NOT EXISTS runtime_configs (
   },
   {
     version: 13,
-    description:
-      'phase 9 W6 — machine base workspace + chat session cwd/title (portal chat)',
+    description: 'phase 9 W6 — machine base workspace + chat session cwd/title (portal chat)',
     sql: `
 -- root under which chat sessions may pick their project cwd
 ALTER TABLE machines ADD COLUMN base_workspace TEXT;

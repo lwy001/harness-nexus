@@ -79,10 +79,22 @@ export function DirPicker({
     void (async () => {
       try {
         const children = await loadLevel(baseWorkspace);
-        setRoot({ path: baseWorkspace, name: baseWorkspace, expanded: true, loading: false, children });
+        setRoot({
+          path: baseWorkspace,
+          name: baseWorkspace,
+          expanded: true,
+          loading: false,
+          children,
+        });
       } catch (e) {
         toast.error(e instanceof HarnessNexusError ? e.message : t('chat.workspaceLoadFailed'));
-        setRoot({ path: baseWorkspace, name: baseWorkspace, expanded: true, loading: false, children: [] });
+        setRoot({
+          path: baseWorkspace,
+          name: baseWorkspace,
+          expanded: true,
+          loading: false,
+          children: [],
+        });
       }
     })();
   }, [open, baseWorkspace, loadLevel, t]);
@@ -133,7 +145,10 @@ export function DirPicker({
   }
 
   const rootName = useMemo(
-    () => (baseWorkspace !== null ? baseWorkspace.replace(/\/+$/, '').split('/').pop() ?? baseWorkspace : ''),
+    () =>
+      baseWorkspace !== null
+        ? (baseWorkspace.replace(/\/+$/, '').split('/').pop() ?? baseWorkspace)
+        : '',
     [baseWorkspace],
   );
 

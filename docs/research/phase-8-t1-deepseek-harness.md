@@ -148,6 +148,16 @@ One patch row per server (`dsh-mcp-client` is the bridge; tools surface as
   `HN_ACP_COMMAND_DEEPSEEK`.
 - Sessions persist across process restarts (list/resume) — richer than our
   v1 "no resume" daemon model, but compatible: we simply never call resume.
+- **Wire dialect differs from the Zed adapters (verified 2026-09-10 against
+  the real `dsh-acp` 0.1.2-rc.1 on the rig — the cause of a full day of
+  "empty turns"):** message/thought chunks carry the block as **`content`**
+  (`{type:'text', text}`), NOT `contentBlock`; tool calls spread the fields
+  **FLAT on the update object** (`toolCallId`/`title`/`kind`/`status`/
+  `rawInput` — no `toolCallUpdate` wrapper), `kind` is always `other` with
+  the tool name in `title`; `usage_update` reports **context occupancy**
+  (`used` of `size`), not per-turn token counts. The C5 daemon's
+  `mapAcpUpdate` now speaks BOTH dialects (Zed shape first, dsh shape
+  fallback; usage maps `used/size` → `contextUsed/contextSize`).
 
 ## Version pin
 

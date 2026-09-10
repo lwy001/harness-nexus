@@ -306,7 +306,9 @@ function EnrollCard({
       description={
         <>
           {t('machines.enrollDescA')}{' '}
-          <code className="font-mono">hnx enroll --server &lt;url&gt; --token &lt;your-pat&gt;</code>
+          <code className="font-mono">
+            hnx enroll --server &lt;url&gt; --token &lt;your-pat&gt;
+          </code>
           {t('machines.enrollDescB')}
         </>
       }

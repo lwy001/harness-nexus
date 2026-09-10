@@ -58,17 +58,10 @@ export function FormDialog({
 }: FormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => (o ? null : onClose())}>
-      <DialogContent
-        className={cn(
-          SIZES[size],
-          'max-h-[calc(100svh-4rem)] gap-4 overflow-y-auto',
-        )}
-      >
+      <DialogContent className={cn(SIZES[size], 'max-h-[calc(100svh-4rem)] gap-4 overflow-y-auto')}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description !== undefined ? (
-            <DialogDescription>{description}</DialogDescription>
-          ) : null}
+          {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
         {footer !== undefined ? <DialogFooter>{footer}</DialogFooter> : null}

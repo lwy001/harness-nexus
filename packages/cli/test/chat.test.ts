@@ -88,6 +88,65 @@ describe('mapAcpUpdate', () => {
     ).toEqual({ kind: 'usage', inputTokens: 3, outputTokens: 4 });
     expect(map({ sessionUpdate: 'usage_update' })).toEqual({ kind: 'usage' });
   });
+
+  it('speaks the dsh native dialect too (content object, flat tool_call, used/size)', () => {
+    // dsh's ACP adapter: chunks carry `content` (not `contentBlock`)…
+    expect(
+      map({
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'm1',
+        content: { type: 'text', text: '收到' },
+      }),
+    ).toEqual({ kind: 'message_delta', delta: '收到' });
+    expect(
+      map({
+        sessionUpdate: 'agent_thought_chunk',
+        messageId: 'm1',
+        content: { type: 'text', text: 'hm' },
+      }),
+    ).toEqual({ kind: 'thought_delta', delta: 'hm' });
+    // …tool calls spread the fields FLAT on the update (no toolCallUpdate)…
+    expect(
+      map({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'dsh-1',
+        title: 'bash(npm test)',
+        kind: 'other',
+        status: 'in_progress',
+        rawInput: { command: 'npm test' },
+      }),
+    ).toEqual({
+      kind: 'tool_call',
+      call: {
+        toolCallId: 'dsh-1',
+        title: 'bash(npm test)',
+        kind: 'other',
+        status: 'in_progress',
+        rawInput: { command: 'npm test' },
+      },
+    });
+    expect(
+      map({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'dsh-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'ok' } }],
+      }),
+    ).toEqual({
+      kind: 'tool_call',
+      call: {
+        toolCallId: 'dsh-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'ok' } }],
+      },
+    });
+    // …and usage reports context occupancy (`used` of `size`).
+    expect(map({ sessionUpdate: 'usage_update', used: 8469, size: 262144 })).toEqual({
+      kind: 'usage',
+      contextUsed: 8469,
+      contextSize: 262144,
+    });
+  });
 });
 
 describe('toolCallView enrichment (9 W6)', () => {

@@ -36,7 +36,9 @@ export async function workspaceRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const root = resolvePath(machine.baseWorkspace);
-      const requested = resolvePath(req.query.path && req.query.path !== '' ? req.query.path : root);
+      const requested = resolvePath(
+        req.query.path && req.query.path !== '' ? req.query.path : root,
+      );
       if (requested !== root && !requested.startsWith(root + '/')) {
         throw new AppError(
           'Path is outside the machine base workspace',

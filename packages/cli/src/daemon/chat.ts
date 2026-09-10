@@ -238,7 +238,6 @@ function wireSession(
     if (mapped !== null) emitEvent(session.sessionId, mapped);
   });
 
-
   conn.setPermissionHandler((jsonrpcId, params) => {
     const requestId = randomUUID();
     const timer = setTimeout(() => {
@@ -309,9 +308,9 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
   const update = (params.update ?? {}) as UnknownRecord;
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
-      return { kind: 'message_delta', delta: textOf(update.contentBlock) };
+      return { kind: 'message_delta', delta: chunkText(update) };
     case 'agent_thought_chunk':
-      return { kind: 'thought_delta', delta: textOf(update.contentBlock) };
+      return { kind: 'thought_delta', delta: chunkText(update) };
     case 'tool_call':
     case 'tool_call_update': {
       // Claude adapters ride the registry key on the envelope's `_meta`.
@@ -324,7 +323,12 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
         cc !== null && typeof cc.toolName === 'string' && cc.toolName !== ''
           ? cc.toolName
           : undefined;
-      return { kind: 'tool_call', call: toolCallView(update.toolCallUpdate, metaToolName) };
+      // Two dialects: Zed adapters nest under `toolCallUpdate`; dsh's native
+      // adapter spreads the fields FLAT on the update object.
+      return {
+        kind: 'tool_call',
+        call: toolCallView(update.toolCallUpdate ?? update, metaToolName),
+      };
     }
     case 'usage_update': {
       const usage = (update.usage ?? {}) as UnknownRecord;
@@ -332,6 +336,10 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
         kind: 'usage',
         ...(typeof usage.inputTokens === 'number' ? { inputTokens: usage.inputTokens } : {}),
         ...(typeof usage.outputTokens === 'number' ? { outputTokens: usage.outputTokens } : {}),
+        // dsh reports context occupancy (`used` of `size`) instead of
+        // per-turn token counts.
+        ...(typeof update.used === 'number' ? { contextUsed: update.used } : {}),
+        ...(typeof update.size === 'number' ? { contextSize: update.size } : {}),
       };
     }
     case 'user_message_chunk':
@@ -360,6 +368,17 @@ export function textOf(contentBlock: unknown): string {
     default:
       return '';
   }
+}
+
+/**
+ * Text of one message/thought chunk across the two adapter dialects: Zed
+ * adapters carry `contentBlock`; dsh's native ACP adapter carries `content`
+ * (a ContentBlock-shaped object without the wrapper name).
+ */
+function chunkText(update: UnknownRecord): string {
+  const fromBlock = textOf(update.contentBlock);
+  if (fromBlock !== '') return fromBlock;
+  return textOf(update.content);
 }
 
 /**
@@ -419,11 +438,7 @@ function buildView(t: UnknownRecord, metaToolName: string | undefined): UnknownR
         : undefined;
 
   let rawInput: Record<string, unknown> | undefined;
-  if (
-    t.rawInput !== null &&
-    typeof t.rawInput === 'object' &&
-    !Array.isArray(t.rawInput)
-  ) {
+  if (t.rawInput !== null && typeof t.rawInput === 'object' && !Array.isArray(t.rawInput)) {
     const entries = Object.entries(t.rawInput as Record<string, unknown>).filter(
       ([key]) => key.length <= 128,
     );
@@ -476,7 +491,9 @@ function buildView(t: UnknownRecord, metaToolName: string | undefined): UnknownR
 
   return {
     toolCallId: String(t.toolCallId ?? ''),
-    ...(typeof t.title === 'string' && t.title !== '' ? { title: boundedString(t.title, 512) } : {}),
+    ...(typeof t.title === 'string' && t.title !== ''
+      ? { title: boundedString(t.title, 512) }
+      : {}),
     ...(toolName !== undefined ? { toolName: boundedString(toolName, 128) } : {}),
     ...(normalizeKind(t.kind) !== undefined ? { kind: normalizeKind(t.kind) } : {}),
     ...(typeof t.status === 'string' && TOOL_STATUSES.has(t.status) ? { status: t.status } : {}),

@@ -72,10 +72,7 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming }: Mark
             const isBlock = typeof className === 'string' && className.includes('language-');
             if (!isBlock) {
               return (
-                <code
-                  className="bg-muted rounded px-1 py-0.5 font-mono text-[0.85em]"
-                  {...props}
-                >
+                <code className="bg-muted rounded px-1 py-0.5 font-mono text-[0.85em]" {...props}>
                   {children}
                 </code>
               );

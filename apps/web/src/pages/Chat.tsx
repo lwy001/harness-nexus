@@ -77,7 +77,9 @@ export function ChatPage() {
   return (
     <AppShell>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">{t('chat.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">
+          {t('chat.title')}
+        </h1>
         <p className="text-muted-foreground mt-1 text-sm">{t('chat.subtitle')}</p>
       </div>
 
@@ -122,7 +124,9 @@ export function ChatPage() {
               </div>
             </section>
           ))}
-          {totalAgents === 0 ? <p className="text-muted-foreground text-sm">{t('chat.noAgentsAtAll')}</p> : null}
+          {totalAgents === 0 ? (
+            <p className="text-muted-foreground text-sm">{t('chat.noAgentsAtAll')}</p>
+          ) : null}
         </div>
       )}
     </AppShell>
@@ -153,7 +157,9 @@ function AgentCard({
           </Badge>
         </div>
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <span>{agent.source === 'deploy' ? t('chat.sourceDeploy') : t('chat.sourceDetected')}</span>
+          <span>
+            {agent.source === 'deploy' ? t('chat.sourceDeploy') : t('chat.sourceDetected')}
+          </span>
           <span aria-hidden>·</span>
           <span className="truncate font-mono" title={agent.directory}>
             {agent.directory}

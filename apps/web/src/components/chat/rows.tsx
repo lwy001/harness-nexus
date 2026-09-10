@@ -71,6 +71,12 @@ export const TurnTail = memo(function TurnTail({ stats }: { stats: TurnStats }) 
     const inT = fmtTokens(u.inputTokens);
     const outT = fmtTokens(u.outputTokens);
     if (inT !== null || outT !== null) parts.push(`↑${inT ?? '0'} ↓${outT ?? '0'}`);
+    // dsh reports context occupancy rather than per-turn counts.
+    const used = fmtTokens(u.contextUsed);
+    if (used !== null) {
+      const size = fmtTokens(u.contextSize);
+      parts.push(`ctx ${used}${size !== null ? `/${size}` : ''}`);
+    }
   }
   if (stats.stopReason === 'cancelled') parts.push(t('chat.turnCancelled'));
   if (stats.stopReason === 'max_tokens') parts.push(t('chat.turnMaxTokens'));
