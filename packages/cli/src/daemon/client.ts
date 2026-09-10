@@ -14,15 +14,16 @@ import { runtimeConfigViewPayload } from './config-view.js';
 import { listDirectories } from './workspace.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
+import { attachSessionsHandlers } from './sessions.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.9.0-p9w6';
+export const DAEMON_VERSION = '0.10.0-p9w7';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
  * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
  * 9 W3: provider-config apply; 9 W4: redacted config view; 9 W6: workspace
- * directory listing for the chat picker).
+ * directory listing for the chat picker; 9 W7: native session list/resume).
  */
 export const DAEMON_CAPABILITIES = [
   'inventory',
@@ -33,6 +34,7 @@ export const DAEMON_CAPABILITIES = [
   'runtime-config',
   'runtime-config-view',
   'workspace',
+  'sessions',
 ];
 
 /** Placeholder snapshot for a target this daemon build has no scanner for. */
@@ -70,7 +72,10 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
   });
 
   attachJobHandlers(socket, { server: options.server, token: options.token });
-  attachChatHandlers(socket);
+  // 9 W7 — the session lister needs the chat registry's live native ids
+  // (dsh refuses resuming an active session).
+  const chatRegistry = attachChatHandlers(socket);
+  attachSessionsHandlers(socket, { liveNativeIds: chatRegistry.liveNativeIds });
 
   const reportAll = (requestId?: string): void => {
     void (async () => {
