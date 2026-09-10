@@ -124,12 +124,18 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         });
         return;
       }
+      // A failed establishment (resume model/cwd mismatch, "already active",
+      // the startup race giving up, initialize timeout) must NOT leave the
+      // spawned adapter running: the channel dies server-side, so nothing
+      // would ever kill it. Track the connection from spawn to outcome.
+      let liveConn: AcpAgentConnection | null = null;
       try {
         const { conn, agentInfo, sessionCaps } = await AcpAgentConnection.start(
           cmd.command,
           cmd.args,
           { cwd, ...(opts.spawnEnv !== undefined ? { env: opts.spawnEnv } : {}) },
         );
+        liveConn = conn;
         // `mcpServers` is sent explicitly (spec: an array): the CURRENT
         // @zed-industries/claude-agent-acp zod-validates session establishment
         // and rejects an absent field with `Invalid params` — adapters are
@@ -186,6 +192,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           history: [],
         };
         sessions.set(sessionId, session);
+        liveConn = null; // registered — teardown owns the connection from here
         wireSession(session, emitEvent);
         conn.onExit(() => {
           // Crash/quit outside our control — end the channel honestly.
@@ -199,6 +206,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           ...(agentInfo.version !== undefined ? { agentVersion: agentInfo.version } : {}),
         });
       } catch (e) {
+        liveConn?.kill();
         socket.emit('chat:session.ready', {
           sessionId,
           error: e instanceof Error ? e.message : String(e),

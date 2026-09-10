@@ -552,3 +552,66 @@ describe('native sessions (9 W7): resume, history, resync', () => {
     await waitFor(() => registry.liveNativeIds().size === 0);
   }, 15000);
 });
+
+describe('resume failure hygiene (9 W7 leak regression)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('a failed establishment surfaces the error AND kills the adapter process', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile },
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-fail',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+      resume: { sessionId: 'fx-native-fail', cwd: '/tmp' },
+    });
+
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          | { error?: string }
+          | undefined,
+    );
+    expect(ready.error).toContain('no configured model');
+
+    // The adapter process must be GONE (this was the leak: every failed
+    // resume left a live dsh/npx adapter parented to the daemon forever).
+    await waitFor(() => {
+      const pids = readFileSync(pidFile, 'utf8')
+        .split('\n')
+        .map((l) => Number.parseInt(l, 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      return pids.length > 0 && pids.every((p) => !alive(p)) ? true : undefined;
+    });
+  }, 15000);
+});

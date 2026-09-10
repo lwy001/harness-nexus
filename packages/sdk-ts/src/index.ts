@@ -97,6 +97,10 @@ export interface NativeSessionView {
   cwd: string;
   title?: string | null;
   updatedAt?: string | null;
+  /** 9 W7 — the model route the session pinned at creation (dsh only). */
+  model?: string | null;
+  /** 9 W7 — set when the daemon knows this session cannot be resumed. */
+  staleReason?: string;
 }
 
 /** Machine summary riding GET /api/agent-instances/:id (9 W6 session page). */

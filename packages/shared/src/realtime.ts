@@ -524,6 +524,17 @@ export const nativeSessionViewSchema = z.object({
   cwd: z.string().min(1).max(1024),
   title: z.string().max(256).nullable().optional(),
   updatedAt: z.string().datetime().nullable().optional(),
+  /**
+   * 9 W7 — the model route the session PINNED at creation (dsh transcripts
+   * record it; adapters don't report it). Display + staleness input.
+   */
+  model: z.string().max(128).nullable().optional(),
+  /**
+   * Present when the daemon KNOWS this session cannot be resumed (e.g. dsh
+   * validates the pinned route against the live provider catalog — a config
+   * change orphans old sessions). `'model-missing'` today.
+   */
+  staleReason: z.string().max(64).optional(),
 });
 
 /** server → daemon: list the target's native sessions. */

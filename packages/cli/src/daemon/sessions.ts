@@ -5,7 +5,7 @@ import type { Socket } from 'socket.io-client';
 import { sessionsListRequestSchema, type NativeSessionView } from '@harness-nexus/shared';
 import { AcpAgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
-import { dshListSessions, nativeZstd } from './dsh-sessions.js';
+import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-sessions.js';
 
 /**
  * Native session listing (Phase 9 W7) — the chat rail's data source. The
@@ -59,6 +59,13 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
             });
             return;
           }
+          const catalog = (() => {
+            try {
+              return currentCatalogModels(readFileSync(join(home, '.dsh', 'settings.yaml'), 'utf8'));
+            } catch {
+              return null; // no settings yet — nothing to compare against
+            }
+          })();
           const sessions = dshListSessions(
             join(home, '.dsh', 'sessions'),
             {
@@ -68,7 +75,29 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
             },
             zstd,
             { liveIds: opts.liveNativeIds?.() ?? new Set<string>() },
-          );
+          ).map((s): NativeSessionView => {
+            // dsh validates the session's PINNED (provider, model) against
+            // the live catalog at resume — a provider-config change orphans
+            // old sessions. Flag them here so the rail explains instead of
+            // offering a guaranteed failure.
+            if (s.model !== null && catalog !== null && !catalog.has(s.model)) {
+              return {
+                sessionId: s.sessionId,
+                cwd: s.cwd,
+                ...(s.title !== null ? { title: s.title } : {}),
+                ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
+                model: s.model,
+                staleReason: 'model-missing',
+              };
+            }
+            return {
+              sessionId: s.sessionId,
+              cwd: s.cwd,
+              ...(s.title !== null ? { title: s.title } : {}),
+              ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
+              ...(s.model !== null ? { model: s.model } : {}),
+            };
+          });
           socket.emit('sessions:list:result', { requestId, sessions });
           return;
         }
