@@ -1,7 +1,7 @@
 # Design: Phase 9 W8 — chat Sender (composer) upgrade
 
-> Status: **DESIGNED 2026-09-10, not implemented** — pick up with §Plan.
-> Predecessor: `docs/design/phase-9-portal-ui.md` §W6 (the session page the
+> Status: **SHIPPED 2026-09-10** (see §Post-ship notes). Predecessor:
+> `docs/design/phase-9-portal-ui.md` §W6 (the session page the
 > composer lives in). User intent: 优化 Sender 框,功能样式参考智谱清言
 > 风格的 composer(卡片式两行布局:上方多行输入区,下方左侧"+"附件与
 > 权限模式 chip,右侧模型选择、推理力度下拉与圆形发送键),配色与风格
@@ -142,5 +142,33 @@ default; branch `fix/cc-acp-wrapper-thinking`). Remaining candidates:
 
 - Any wire/schema/daemon change (the four deferred controls above).
 - Mobile layout changes beyond what the card inherits for free.
-- Streaming the meter for claude-code/codex (adapter-side `used`/`size`
-  reporting — a wrapper-side question, not ours).
+- Streaming the meter for codex (adapter-side `used`/`size` reporting — a
+  wrapper-side question, not ours). The claude-code half of this item
+  resolved itself: see §Post-ship notes.
+
+## Post-ship notes (2026-09-10)
+
+- **Landed as designed** in `apps/web/src/components/chat/composer.tsx`
+  (module-scope `ContextMeter` sub-component; presentational props
+  `value/onChange/phase/turnActive/usage/onSend/onCancel` — the page keeps
+  owning the draft and actions). Strings: `chat.sendAria` / `chat.stopAria`
+  / `chat.contextUsed` added; `chat.send` / `chat.stop` retired.
+- **One small parity fix beyond the plan:** Enter no longer sends while an
+  IME composition is active (`e.nativeEvent.isComposing` guard) — the old
+  strip had this bug and the zh locale makes it user-visible.
+- **Verified E2E on the rig** (web image rebuilt from the tree, real dsh
+  session through the live channel): card + 3px focus-within ring, autogrow
+  1 row (39px) → 4 lines (107px) → clamps at 224px with internal scroll,
+  Enter sends / Shift+Enter breaks, send disabled on empty draft, live
+  stop swap during a real turn (outline + 停止生成), meter rendered from
+  live usage, en/zh strings, dark mode, zero leaked adapters after
+  disconnect.
+- **Finding — the claude-code meter is NOT empty after all.** The design
+  assumed only dsh reports occupancy; in fact the `@agentclientprotocol`
+  claude wrapper (the W7.1-era swap) reports `contextUsed`/`contextSize`
+  too — a resumed session showed `9.4k / 262.1k` live. The meter's
+  render-nothing-when-absent rule stays (it is what keeps the slot honest
+  for codex); no code change needed, the wrapper just feeds it.
+- **Deferred items unchanged** (attach, permission-mode chip, model
+  selector, effort selector) — the table above still enumerates the wire
+  arms each needs.

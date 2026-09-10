@@ -3,9 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeftIcon,
-  ArrowUpIcon,
   BotIcon,
-  CircleStopIcon,
   FolderIcon,
   PlayIcon,
   PlusIcon,
@@ -33,9 +31,9 @@ import {
 } from '@harness-nexus/sdk';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/chat/chat-stream.js';
+import { Composer } from '@/components/chat/composer.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
 import { createFoldState, fold } from '@/components/chat/fold.js';
 
@@ -497,35 +495,17 @@ export function AgentSessionPage() {
             }
           />
 
-          <div className="shrink-0 border-t p-3">
-            <div className="mx-auto flex w-full max-w-3xl items-end gap-2">
-              <Textarea
+          <div className="shrink-0 p-3">
+            <div className="mx-auto w-full max-w-3xl">
+              <Composer
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                placeholder={t('chat.placeholderReady')}
-                disabled={phase !== 'ready'}
-                rows={2}
-                autoComplete="off"
-                spellCheck={false}
-                className="min-h-0"
+                onChange={setDraft}
+                phase={phase}
+                turnActive={conversation.turnActive}
+                usage={conversation.usage}
+                onSend={() => void send()}
+                onCancel={() => void cancelTurn()}
               />
-              {conversation.turnActive ? (
-                <Button variant="outline" onClick={() => void cancelTurn()}>
-                  <CircleStopIcon className="size-4" />
-                  {t('chat.stop')}
-                </Button>
-              ) : (
-                <Button onClick={() => void send()} disabled={phase !== 'ready'}>
-                  <ArrowUpIcon className="size-4" />
-                  {t('chat.send')}
-                </Button>
-              )}
             </div>
           </div>
         </section>
