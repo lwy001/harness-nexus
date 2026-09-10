@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Socket } from 'socket.io-client';
@@ -20,7 +28,14 @@ import {
 } from '@harness-nexus/shared';
 import { AcpAgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
-import { decodeTranscript, dshHistoryItems, nativeZstd } from './dsh-sessions.js';
+import {
+  decodeTranscript,
+  dshHistoryItems,
+  findTranscript,
+  nativeZstd,
+  TranscriptTail,
+  type TailFs,
+} from './dsh-sessions.js';
 
 /**
  * Daemon-side chat session manager (Phase 8 C5, extended 9 W7).
@@ -32,13 +47,24 @@ import { decodeTranscript, dshHistoryItems, nativeZstd } from './dsh-sessions.js
  * killed on close/disconnect. One prompt in flight per session — a racing
  * prompt is dropped and `active` re-emitted so the server's busy gate resyncs.
  *
- * 9 W7 — sessions are the AGENT's own: a start event may carry `resume`
+ * 9 W7 — sessions are the agent's own: a start event may carry `resume`
  * (the agent's session id + its cwd) and is established via the ADVERTISED
  * capability (`session/load` preferred — claude/codex replay their history as
  * session/updates, which we capture and ship as `chat:history`; dsh only has
  * `session/resume`, so its transcript file is parsed instead). Every channel
  * keeps a bounded history ring (forwarded prompts + mapped events) so a
  * `chat:session.resync` (page refresh rejoin) can rebuild the browser's fold.
+ *
+ * dsh STREAMING: its ACP adapter only commits whole blocks at turn end (rig-
+ * verified — zero notifications during generation), so deepseek channels tail
+ * the transcript FILE live (`TranscriptTail`: token batches land as frames
+ * ~100–300ms apart; shapes verified against dsh 0.1.2-rc.1 source). The
+ * tail's mapper streams deltas AND emits complete blocks for steps whose
+ * deltas it never saw, so the wire's committed text chunks are suppressed
+ * wholesale while the tail is live (letting them through would double-render).
+ * No transcript yet → no tail → committed-only; the attach re-runs at each
+ * prompt (new sessions materialize their file lazily), and a corrupt tail
+ * lifts the suppression so the committed path takes over.
  */
 
 interface DaemonSession {
@@ -53,9 +79,47 @@ interface DaemonSession {
   permissions: Map<string, { jsonrpcId: number; timer: NodeJS.Timeout }>;
   /** 9 W7 — the history ring (user items + mapped events), newest last. */
   history: HistoryItem[];
+  /**
+   * dsh only — whether the WIRE's committed text chunks ever rendered for
+   * this session (true ⇒ the committed path owns bytes already shown, so a
+   * later tail attach must NOT replay the file from the beginning).
+   */
+  wireTextEmitted: boolean;
+  /**
+   * dsh only — a NEW session's transcript may materialize only after the
+   * channel opened, in which case the FIRST tail attach may replay from byte
+   * 0 (the file can only hold the in-flight turn — nothing was rendered). A
+   * resumed session's file pre-exists with rendered history: never replay.
+   */
+  tailReplayEligible: boolean;
+  /** dsh only — the live transcript tail (the streaming source). */
+  tail: TranscriptTail | null;
 }
 
 const HISTORY_MAX = 2000;
+
+/** Node fs surface for TranscriptTail. */
+const nodeTailFs: TailFs = {
+  size(path) {
+    try {
+      return statSync(path).size;
+    } catch {
+      return null;
+    }
+  },
+  readEnd(path, start) {
+    const fd = openSync(path, 'r');
+    try {
+      const len = fstatSync(fd).size - start;
+      if (len <= 0) return Buffer.alloc(0);
+      const buf = Buffer.alloc(len);
+      readSync(fd, buf, 0, len, start);
+      return buf;
+    } finally {
+      closeSync(fd);
+    }
+  },
+};
 
 export interface ChatHandlersOptions {
   /** Env source for `HN_ACP_COMMAND_<TARGET>` overrides (defaults to process.env). */
@@ -100,10 +164,59 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
   const teardown = (session: DaemonSession, reason: string): void => {
     if (sessions.get(session.sessionId) !== session) return;
     sessions.delete(session.sessionId);
+    session.tail?.stop();
     for (const [, p] of session.permissions) clearTimeout(p.timer);
     session.permissions.clear();
     session.conn.kill();
     socket.emit('chat:session.closed', { sessionId: session.sessionId, reason });
+  };
+
+  // In-flight tail attachments by native session id (one per session).
+  const tailAttaches = new Map<string, Promise<void>>();
+
+  /**
+   * dsh streaming — attach the transcript tail if it isn't live yet. Called
+   * at session ready AND at each prompt start: a NEW session's transcript is
+   * materialized lazily (the file appears only when the first prompt's user
+   * event flushes), so the ready-time attempt may legitimately find nothing.
+   * A late-attached tail misses the turn's first deltas — the mapper's
+   * committed fallback then emits the complete blocks, nothing is lost.
+   */
+  const ensureTail = (session: DaemonSession): void => {
+    if (session.target !== 'deepseek' || session.tail !== null) return;
+    if (tailAttaches.has(session.acpSessionId)) return;
+    const attach = (async () => {
+      let tailRef: TranscriptTail | null = null;
+      const tail = await attachTranscriptTail(
+        home,
+        session.acpSessionId,
+        (event) => {
+          if (sessions.get(session.sessionId) === session) emitEvent(session, event);
+        },
+        (reason) => {
+          // Mid-file corruption: stop and lift the wire suppression so the
+          // adapter's committed chunks carry the rest of the turn (a partially
+          // streamed message may render once more — rare, never silent loss).
+          console.warn(`[chat] dsh ${reason} — falling back to committed updates`);
+          if (session.tail === tailRef) session.tail = null;
+        },
+      );
+      tailRef = tail;
+      if (tail !== null && session.tail === null && sessions.get(session.sessionId) === session) {
+        session.tail = tail;
+        // Byte-0 replay only for a NEW session whose file appeared mid-turn:
+        // it can hold nothing but the un-rendered in-flight turn (a resumed
+        // session's file pre-exists with rendered history; wire-rendered text
+        // likewise rules replay out — either way skip to EOF).
+        const replay = session.tailReplayEligible && !session.wireTextEmitted;
+        session.tailReplayEligible = false;
+        tail.start(replay);
+      } else {
+        tail?.stop();
+      }
+    })().catch(() => {}); // attachment is best-effort; committed-only is the fallback
+    void attach.then(() => tailAttaches.delete(session.acpSessionId));
+    tailAttaches.set(session.acpSessionId, attach);
   };
 
   // ---- server → daemon: spawn the channel ----
@@ -190,6 +303,9 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           busy: false,
           permissions: new Map(),
           history: [],
+          wireTextEmitted: false,
+          tailReplayEligible: resume === undefined,
+          tail: null,
         };
         sessions.set(sessionId, session);
         liveConn = null; // registered — teardown owns the connection from here
@@ -198,6 +314,11 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           // Crash/quit outside our control — end the channel honestly.
           if (sessions.get(sessionId) === session) teardown(session, 'agent-exited');
         });
+        // dsh streaming: fire-and-forget the tail attach (a resume's file
+        // exists already; a new session's appears at first prompt — ensureTail
+        // re-runs then). Suppression is keyed off the live tail, never a
+        // pending attach, so it cannot be active without the tail.
+        ensureTail(session);
         emitHistory(session, history);
         socket.emit('chat:session.ready', {
           sessionId,
@@ -237,6 +358,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     // The history ring must know the user turn too — a resync rebuilds the
     // fold from items alone (no optimistic browser echo on that path).
     pushHistory(session, { type: 'user', blocks: parsed.data.prompt });
+    ensureTail(session); // lazy materialization: a new dsh file appears now
     void runPrompt(session, parsed.data.prompt, emitEvent);
   });
 
@@ -417,8 +539,33 @@ function wireSession(
   const { conn } = session;
 
   conn.setNotificationHandler((method, params) => {
-    const mapped = method === 'session/update' ? mapAcpUpdate(params) : null;
-    if (mapped !== null) emitEvent(session, mapped);
+    if (method !== 'session/update') return;
+    // dsh commits block-level text at turn end — while the transcript tail is
+    // live, its token batches already streamed this content AND its mapper
+    // emits the complete blocks for steps whose deltas it never saw, so the
+    // wire's committed chunk is redundant in every case; letting it through
+    // would double-render the message. Tools/usage still flow (idempotent by
+    // callId / field-merged).
+    const update = (params.update ?? {}) as Record<string, unknown>;
+    if (
+      session.tail !== null &&
+      (update.sessionUpdate === 'agent_message_chunk' ||
+        update.sessionUpdate === 'agent_thought_chunk')
+    ) {
+      return;
+    }
+    const mapped = mapAcpUpdate(params);
+    if (mapped !== null) {
+      if (
+        (mapped.kind === 'message_delta' || mapped.kind === 'thought_delta') &&
+        session.tail === null
+      ) {
+        // Committed text rendered through the wire — a FUTURE tail attach
+        // must skip the file's existing bytes (replaying would duplicate).
+        session.wireTextEmitted = true;
+      }
+      emitEvent(session, mapped);
+    }
   });
 
   conn.setPermissionHandler((jsonrpcId, params) => {
@@ -449,6 +596,7 @@ async function runPrompt(
   prompt: PromptBlock[],
   emitEvent: (session: DaemonSession, event: ChatStreamEvent) => void,
 ): Promise<void> {
+  const promptStartedAt = Date.now();
   session.busy = true;
   emitEvent(session, { kind: 'session_status', state: 'active' });
   try {
@@ -464,6 +612,23 @@ async function runPrompt(
     )
       ? (result!.stopReason as 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal')
       : 'end_turn';
+    // dsh: the wire settles when the agent idles, but the transcript's final
+    // write-behind batch (last deltas + the turn's commit + `turn/end`) can
+    // land a beat LATER. Emitting turn_result before those bytes would render
+    // the message tail as a post-turn bubble (the fold opens a new step after
+    // turn_result). So drain, then wait briefly for the turn/end row.
+    if (session.tail !== null) {
+      session.tail.flush();
+      const deadline = Date.now() + 600;
+      while (
+        session.tail !== null &&
+        !session.tail.turnEndSeenSince(promptStartedAt) &&
+        Date.now() < deadline
+      ) {
+        await new Promise((r) => setTimeout(r, 50));
+        session.tail?.flush();
+      }
+    }
     emitEvent(session, { kind: 'turn_result', stopReason });
   } catch (e) {
     // A rejected prompt is a TURN error (adapters answer protocol failures —
@@ -475,11 +640,36 @@ async function runPrompt(
       method: 'hnx/prompt-error',
       params: { message: e instanceof Error ? e.message : String(e) },
     });
+    session.tail?.flush();
     emitEvent(session, { kind: 'turn_result', stopReason: 'end_turn' });
   } finally {
     session.busy = false;
     emitEvent(session, { kind: 'session_status', state: 'idle' });
   }
+}
+
+/**
+ * Attach a dsh transcript tail (short retry — the file materializes with the
+ * session header at creation; write lag is the only window). Null = no tail
+ * (committed-only streaming — today's behavior).
+ */
+async function attachTranscriptTail(
+  home: string,
+  acpSessionId: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  onFatal: (reason: string) => void,
+): Promise<TranscriptTail | null> {
+  const zstd = nativeZstd();
+  if (zstd === null) return null;
+  const root = join(home, '.dsh', 'sessions');
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const file = findTranscript(root, acpSessionId, (p) => readdirSync(p));
+    if (file !== null) {
+      return new TranscriptTail(file, nodeTailFs, zstd, onEvent, { onFatal });
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
 }
 
 // ---- pure ACP → semantic mapping (exported for unit tests) ----

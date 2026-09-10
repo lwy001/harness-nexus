@@ -12,6 +12,8 @@
 > the session's pinned route against the live provider catalog at resume, so
 > a provider-config change orphans old sessions; the transcript's
 > `request/header` pins the model, our W3 settings region is the catalog).
+> Post-ship addendum — **dsh LIVE token streaming** (branch
+> `feat/p9-w7-dsh-streaming-tail`): see §"dsh live streaming" at the end.
 > User directive (verbatim intent): 会话不落到平台 —— 会话列表也不需要，所以也
 > 不存在“关闭”一说；就使用各家自带的 resume 以及会话列表。
 > Supersedes the C5 "no resume" boundary (`docs/design/phase-8-c5.md` §
@@ -226,3 +228,87 @@ user's own machine.
 - Multi-viewer history fanout beyond the rejoin resync (single re-syncing
   viewer per channel).
 - Pagination (`nextCursor`) — first page per cwd group is enough for the rail.
+
+## dsh live streaming (post-ship addendum — `feat/p9-w7-dsh-streaming-tail`)
+
+**The gap.** dsh's official ACP adapter (`@deepseek-ai/dsh-acp`) surfaces only
+COMMITTED updates: a whole reasoning/text block arrives as ONE
+`agent_message_chunk` when the turn ends; during generation the protocol
+carries nothing (rig-verified with a timing probe on 0.1.2-rc.1, and by
+pulling 0.1.5-rc.1 — same design). Every external ACP client inherits this;
+dsh's own in-process bridges stream by subscribing the session event bus,
+which an external client cannot reach. The ONE externally visible surface
+that carries token batches live is the transcript file.
+
+**Ground truth (verified against dsh 0.1.2-rc.1 source — the exact rig
+version — via a reference source package of the engine loop, the JSONL
+persistence codec, and dsh's own bridge mapper):**
+
+- The engine appends one `assistant/chunk` session event PER LLM chunk
+  (`data = { turn, step, chunk }`; chunk types `block-start | text-delta |
+reasoning-delta | tool-call-delta | block-end | usage | finish`); a step
+  ends with a committed `assistant/message` (`{ turn, step, message, usage? }`).
+- Persistence coalesces via a bounded write-behind window (~100–300ms
+  cadence) into one zstd frame per batch (append + fsync). A run of ≥3
+  (`MIN_RUN`) seq-contiguous same-block deltas packs into ONE row —
+  `text-chunks` / `reasoning-chunks` (`data = { turn, step, index, dt,
+texts }`, texts NOT joined — token boundaries are data) / `tool-call-chunks`;
+  shorter or split runs stay VERBATIM `assistant/chunk` events. **A reader
+  must map both shapes** — skipping either silently drops content.
+- dsh's own bridge maps these to ACP with a stateful `stepsWithDeltas` set
+  keyed `"turn:step"`: committed messages for steps whose deltas already went
+  out carry ONLY usage (re-sending the block would double-render); steps with
+  no streamed deltas fall back to the complete blocks.
+
+**The implementation** (all daemon-side, `packages/cli`):
+
+- `TranscriptTail` (`daemon/dsh-sessions.ts`) polls the session's
+  `session.jsonl.zstd` for appended bytes (default 250ms), splits new zstd
+  frames, buffers a torn trailing frame until its remaining bytes land, and
+  maps entries through `createDshLiveMapper()` — our mirror of the reference
+  semantics: both delta shapes → `message_delta`/`thought_delta`; the
+  `turn:step` committed dedup with full-block fallback; tools from
+  `tool/call`/`tool/result` rows; usage from the commit (`inputTokens`/
+  `outputTokens` — the wire's ctx-occupancy `usage_update` keeps flowing and
+  the fold field-merges the two).
+- **Wire suppression:** while the tail is live, the adapter's committed
+  `agent_message_chunk`/`agent_thought_chunk` are dropped — the tail streams
+  the same content AND its fallback covers commits, so the wire copy is
+  always redundant; tools/usage still flow (idempotent by `toolCallId` /
+  field-merged). A BOUNDED frame that fails to decode is mid-file corruption:
+  the tail stops (`onFatal`), suppression lifts, and the committed path takes
+  over (a partially streamed message may render once more — rare, never
+  silent loss).
+- **Attach lifecycle:** `ensureTail` runs at session ready AND at each prompt
+  (a NEW session's file materializes lazily — it appears when the first
+  prompt's user event flushes). A late attach may miss the turn's first
+  batches, so the FIRST attach for a new session (never wire-rendered text —
+  `wireTextEmitted`/`tailReplayEligible` flags) replays from BYTE 0,
+  recovering them; a resumed session's file pre-exists with rendered history,
+  so its tail skips to EOF. Concurrent attaches dedupe per native session id.
+- **Turn-end ordering:** the wire settles when the agent idles, but the final
+  write-behind batch (last deltas + commit + `turn/end` row) can land a beat
+  LATER — a delta arriving after `turn_result` would open a NEW fold step
+  (post-turn bubble). `runPrompt` therefore drains, then waits (≤600ms, 50ms
+  steps) for the transcript's `turn/end` row before emitting `turn_result`.
+  Rig-measured: the final batch lands ~34ms after the wire settles, so the
+  common cost is one extra poll tick.
+- **Degradation:** no zstd binding (Node < 22.15) or no file → no tail →
+  committed-only streaming (the pre-addendum behavior) — suppression is keyed
+  off a LIVE tail, never a pending attach, so it can never be active without
+  the tail.
+
+**Verification.** Unit: mapper semantics (both shapes, dedup, fallback,
+ignores), tail (partial-frame recovery, settle signal, fatal, byte-0 replay
+via the fixture seam). Rig (real dsh 0.1.2-rc.1 + deepseek-v4-flash):
+progressive deltas precede `turn_result` with no duplicated text; tool turns
+keep ONE stable callId across the dual sources; resume shows history and its
+new turn streams without replaying pre-resume content; zero leaked
+`dsh --profile acp` processes after repeated open/close. Daemon
+`0.10.1-p9w7`.
+
+**Upstream note.** dsh-acp could stream natively by mapping the same bus
+events its own bridges consume (the reference implementation is the proof of
+concept); until then the file tail is the only external streaming surface and
+keeps working regardless — it depends only on the documented persistence
+format, not the adapter.
