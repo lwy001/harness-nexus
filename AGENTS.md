@@ -876,7 +876,13 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
   write-behind batch lands AFTER the wire settles; a post-turn_result delta
   would open a new fold bubble). A bounded undecodable frame = corruption:
   the tail stops, suppression lifts, committed-only takes over. No zstd / no
-  file → committed-only (old behavior). Daemon `0.10.1-p9w7`.
+  file → committed-only (old behavior). Daemon `0.10.1-p9w7`. **Next:
+  W7.1** — the designed-not-implemented in-process dsh event tap
+  (spawn-time `--patch` insert of a zero-dep cordis plugin streaming the
+  `session/event` bus back to the daemon; file tail demoted to fallback) —
+  read `docs/design/phase-9-w7.1-dsh-event-tap.md` first (it carries the
+  rig spike results proving the mount mechanism, the full component plan,
+  and the rollout checklist).
 
 ## Authentication & authorization (permission interceptors)
 
