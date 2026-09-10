@@ -1044,8 +1044,14 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   REPLACED by Phase 9 W7 — the platform persists nothing session-shaped,
   list/resume/history are the agent's own); the daemon's session manager
   (`cli/src/daemon/chat.ts` + `daemon/acp/`) — per-target ACP adapter
-  subprocess table (`@zed-industries/claude-agent-acp` / `codex-acp` /
-  hermes `acp_adapter`; env override `HN_ACP_COMMAND_<TARGET>` — also how
+  subprocess table (`@agentclientprotocol/claude-agent-acp` / `codex-acp` /
+  hermes `acp_adapter`; the claude-code row was switched 2026-09 from
+  `@zed-industries/claude-agent-acp` 0.23.x, which never requested thinking on
+  gateway/unknown models → chat showed no thought stream; the official
+  ACP-project wrapper streams `agent_thought_chunk` by default, advertises
+  `loadSession`+`list`/`resume` in shapes the daemon already detects, and
+  returns full SessionInfo — rig-verified E2E; env override
+  `HN_ACP_COMMAND_<TARGET>` — also how
   tests point at `packages/cli/test/fixtures/acp-agent.mjs`), a hand-rolled
   JSON-RPC/stdio client (no new dep), ACP↔semantic mapping (`user_message_chunk`
   dropped — the browser echoes), one prompt in flight (races resync via
