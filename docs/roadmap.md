@@ -380,6 +380,12 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     as well as dsh. Attach / permission-mode chip / model and effort
     selectors remain deferred stubs (each needs a wire arm first).
     Design + post-ship notes: `docs/design/phase-9-w8-sender.md`.
+    **Shipped with it: the chat channel lifecycle hardening** (three
+    coupled defects the W8 rig pass exposed — a page that never released
+    the channel it left, a daemon that dropped closes racing the
+    establishment, and a server that could not reap a restarted daemon's
+    ghost channels; a full cap made sessions look empty). See the C5
+    design doc § "Channel lifecycle hardening".
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

@@ -118,6 +118,13 @@ export function AgentSessionPage() {
   const [conversation, dispatch] = useReducer(fold, undefined, createFoldState);
   /** Phase carried by an open ack (consumed by the sessionId effect). */
   const pendingPhaseRef = useRef<'ready' | null>(null);
+  /**
+   * The live channel id. Row hops and page exits must CLOSE it: server
+   * teardown keys on the browser socket, which an SPA navigation never
+   * drops, so an abandoned channel would sit against the machine's
+   * channel cap until three hops make every further open reject.
+   */
+  const liveChannelRef = useRef('');
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const connectTargetRef = useRef<string | null>(null);
@@ -157,6 +164,18 @@ export function AgentSessionPage() {
     void refreshSessions();
   }, [refreshSessions]);
 
+  // Leaving the page (or switching agents) disconnects the live channel —
+  // the SPA socket survives navigation, so nothing else would free it.
+  useEffect(() => {
+    return () => {
+      const live = liveChannelRef.current;
+      liveChannelRef.current = '';
+      if (live !== '') {
+        appSocket().emit('chat:session.close', { sessionId: live, reason: 'user' });
+      }
+    };
+  }, [agentId]);
+
   // Reset the pane whenever the channel changes.
   useEffect(() => {
     dispatch({ type: 'reset' });
@@ -189,11 +208,13 @@ export function AgentSessionPage() {
     };
     const onFailed = (push: ChatSessionFailedPush): void => {
       if (push.sessionId !== sessionId) return;
+      liveChannelRef.current = '';
       setPhase('closed');
       setError(push.error);
     };
     const onClosed = (push: ChatSessionClosedPush): void => {
       if (push.sessionId !== sessionId) return;
+      liveChannelRef.current = '';
       setPhase('closed');
       void refreshSessions();
     };
@@ -218,6 +239,18 @@ export function AgentSessionPage() {
   ): Promise<void> {
     if (agentId === '') return;
     setError(null);
+    // Leave before entering: the channel we are abandoning is disconnected
+    // FIRST, so its slot against `CHAT_MAX_SESSIONS_PER_MACHINE` is free by the
+    // time the new open is judged. Closing only after a successful open meant a
+    // rejected open (the cap already full) left the old channel live and the
+    // page wedged — every further click rejected, nothing ever freed.
+    // A rejoin of the SAME channel (the lost-ready-push recovery below) must
+    // not close the thing it is about to rejoin.
+    const previous = liveChannelRef.current;
+    if (previous !== '' && previous !== rejoinId) {
+      liveChannelRef.current = '';
+      void emitWithAck('chat:session.close', { sessionId: previous, reason: 'user' });
+    }
     const ack = await emitWithAck<{
       sessionId?: string;
       phase?: 'starting' | 'ready';
@@ -230,6 +263,13 @@ export function AgentSessionPage() {
     });
     if (ack.error !== undefined || ack.sessionId === undefined) {
       const code = ack.error ?? 'unknown error';
+      // Either we abandoned a live channel above, or the rejoin target is gone:
+      // both leave nothing live, so say so rather than keeping a composer that
+      // looks ready but would fail every send.
+      if (previous !== '') {
+        liveChannelRef.current = '';
+        setPhase('closed');
+      }
       setError(
         code === 'REMOTE_CHAT_DISABLED'
           ? t('chat.errRemoteChatDisabled')
@@ -250,6 +290,7 @@ export function AgentSessionPage() {
       return;
     }
     pendingPhaseRef.current = ack.phase === 'ready' ? 'ready' : null;
+    liveChannelRef.current = ack.sessionId;
     setSessionId(ack.sessionId);
     if (ack.phase !== 'ready') {
       // One-shot recovery for a ready push lost to the ack/listener race.
@@ -295,6 +336,7 @@ export function AgentSessionPage() {
   /** Channel-only teardown — the native session survives (9 W7). */
   async function disconnectChannel(): Promise<void> {
     if (sessionId === '') return;
+    liveChannelRef.current = '';
     await emitWithAck('chat:session.close', { sessionId, reason: 'user' });
     setPhase('closed');
     void refreshSessions();

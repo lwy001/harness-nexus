@@ -1092,6 +1092,20 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   (fold-style reducer, permission cards render from payload options,
   `--signal` marks the live turn only) + MachineDetail remote-chat toggle
   (confirm-first). Chat is owner-ONLY (admins excluded by design).
+  **Channel lifecycle (hardened post-W8 — three coupled defects, see the C5
+  design doc's § "Channel lifecycle hardening"):** a channel costs one of
+  `CHAT_MAX_SESSIONS_PER_MACHINE` (3) and dies with its daemon socket. (a) The
+  session page **leaves before entering** — `openChannel` closes the previous
+  channel BEFORE issuing the open (skipped when rejoining the same channel) and
+  closes on unmount; closing only after a successful open meant a rejected open
+  leaked the old slot and wedged every later click behind `SESSION_LIMIT_REACHED`.
+  (b) The daemon records ids closed **during** establishment
+  (`closedBeforeReady`) and the start handler aborts at two checkpoints — a
+  close racing the spawn used to be dropped, leaving an orphan adapter. (c) The
+  server reaps a machine's channels on **every** `/ctl` connection, not only on
+  the offline transition: a newly connected daemon owns zero channels by
+  construction, and a fast daemon restart could skip the offline reap — that is
+  what wedged a machine until the server itself restarted.
   **T1 — DeepSeek Harness (dsh) target onboarding — is shipped (2026-09,
   the first of the T-wave; supersedes the 3.8 "other agents" bucket):**
   `deepseek` is a first-class `AgentTarget` (profile enum additive; the

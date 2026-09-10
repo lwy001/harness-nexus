@@ -215,6 +215,19 @@ export async function registerRealtime(
         socket.disconnect(true);
         return;
       }
+      // A newly connected daemon owns ZERO chat channels by construction: it
+      // tears every session down when its socket drops ("channels die with the
+      // connection"). Any channel still live for this machine therefore belongs
+      // to a connection that is gone — a ghost that would sit against
+      // `CHAT_MAX_SESSIONS_PER_MACHINE` forever, rejecting every new open.
+      //
+      // This runs on EVERY connection, deliberately not inside the
+      // offline→online branch below: a daemon restart (or a reconnect) can
+      // register the new socket before the old disconnect is processed, so the
+      // machine never "went offline" and `onMachineOffline` on that path is
+      // skipped — which is exactly how a restarted daemon used to wedge chat on
+      // its machine until the server itself restarted.
+      await realtime.chat.onMachineOffline(machineId);
       const updated = await touchLastSeen(machine);
       if (presence.connected(machineId, socket.id)) {
         realtime.broadcastStatus(updated, true);

@@ -172,6 +172,16 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
   const env = opts.env ?? process.env;
   const home = opts.homeDir ?? homedir();
   const sessions = new Map<string, DaemonSession>();
+  /**
+   * Ids whose `chat:session.close` arrived BEFORE the session registered. A
+   * close can race the establishment: the channel dies server-side (a fast row
+   * hop, a page exit) while the adapter is still spawning, so the close finds
+   * no session to tear down and used to be dropped — the establishment then
+   * finished and registered an orphan process nobody could ever close. The
+   * start handler consumes the id at its checkpoints and aborts instead.
+   */
+  const closedBeforeReady = new Set<string>();
+  const CLOSED_BEFORE_READY_MAX = 64;
 
   const emitEvent = (session: DaemonSession, event: ChatStreamEvent): void => {
     pushHistory(session, { type: 'event', event });
@@ -330,6 +340,16 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       // 9 W7.1 — arm the tap before the spawn (the child needs the port/token
       // env); the spawn and the plugin's hello then race in parallel.
       const tapArmed = await armTap(target);
+      // Consumes the id: true once the channel was closed while we were busy.
+      // Called at every checkpoint — a close that raced the establishment must
+      // not leave the spawned adapter behind with no channel to own it.
+      const abortIfClosed = (): boolean => {
+        if (!closedBeforeReady.delete(sessionId)) return false;
+        tapArmed?.listener.close();
+        liveConn?.kill();
+        return true;
+      };
+      if (abortIfClosed()) return;
       try {
         const spawnOpts = {
           cwd,
@@ -405,6 +425,10 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
             throw new Error(`ACP adapter for '${target}' supports no session resume`);
           }
         }
+        // Registration is the point of no return: after it, `teardown` owns the
+        // connection. Re-check the close flag here — there is no await between
+        // this test and `sessions.set`, so no interleaving can slip past.
+        if (abortIfClosed()) return;
         const session: DaemonSession = {
           sessionId,
           acpSessionId,
@@ -563,6 +587,11 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       // AGENT's session survives this (9 W7) — only the subprocess ends.
       void session.conn.request('session/close', {}, 3000).catch(() => {});
       teardown(session, parsed.data.reason ?? 'user');
+    } else {
+      // Possibly mid-establishment — let the start handler abort. The reply is
+      // `{closed:true}` either way: the channel IS gone from the caller's view.
+      if (closedBeforeReady.size >= CLOSED_BEFORE_READY_MAX) closedBeforeReady.clear();
+      closedBeforeReady.add(parsed.data.sessionId);
     }
     ack?.({ closed: true });
   });
