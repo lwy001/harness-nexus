@@ -24,6 +24,16 @@ export interface AcpAgentInfo {
   version?: string | undefined;
 }
 
+/** The resume-relevant slice of `agentCapabilities` (9 W7). */
+export interface AcpSessionCaps {
+  /** `session/load` — resume WITH history replay (claude/codex adapters). */
+  load: boolean;
+  /** `session/resume` — resume WITHOUT replay (dsh's native adapter). */
+  resume: boolean;
+  /** `session/list` exists (the claude/codex listing path). */
+  list: boolean;
+}
+
 export class AcpAgentConnection {
   private proc: ChildProcess;
   private nextId = 1;
@@ -63,7 +73,11 @@ export class AcpAgentConnection {
     command: string,
     args: string[],
     opts: { cwd: string; env?: NodeJS.ProcessEnv | undefined; initializeTimeoutMs?: number },
-  ): Promise<{ conn: AcpAgentConnection; agentInfo: AcpAgentInfo }> {
+  ): Promise<{
+    conn: AcpAgentConnection;
+    agentInfo: AcpAgentInfo;
+    sessionCaps: AcpSessionCaps;
+  }> {
     const initializeTimeoutMs = opts.initializeTimeoutMs ?? 20000;
     let proc: ChildProcess;
     try {
@@ -83,9 +97,25 @@ export class AcpAgentConnection {
       'initialize',
       { protocolVersion: 1, clientCapabilities: {} },
       initializeTimeoutMs,
-    )) as { agentInfo?: AcpAgentInfo };
+    )) as {
+      agentInfo?: AcpAgentInfo;
+      loadSession?: boolean;
+      agentCapabilities?: { sessionCapabilities?: Record<string, unknown> };
+    };
     conn.notify('initialized', {});
-    return { conn, agentInfo: result?.agentInfo ?? {} };
+    // Advertised caps decide the resume dialect (9 W7): prefer session/load
+    // (replay for free), fall back to session/resume. `loadSession` is the
+    // pre-capability legacy flag both Zed adapters still set alongside caps.
+    const caps = result?.agentCapabilities?.sessionCapabilities ?? {};
+    return {
+      conn,
+      agentInfo: result?.agentInfo ?? {},
+      sessionCaps: {
+        load: caps['load'] !== undefined || result?.loadSession === true,
+        resume: caps['resume'] !== undefined,
+        list: caps['list'] !== undefined,
+      },
+    };
   }
 
   /** JSON-RPC request with a timeout; rejects on error/exit. */

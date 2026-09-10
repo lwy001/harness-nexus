@@ -293,7 +293,7 @@ Cross-cutting (not a numbered phase):
   `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish`.
 - Release procedure: bump the five manifests → push → run the workflow.
 
-## Phase 9 — Harness runtime lifecycle 🚧 W1–W6 shipped (2026-09)
+## Phase 9 — Harness runtime lifecycle 🚧 W1–W7 shipped (2026-09)
 
 Manage the **harness software itself** on machines — presence, version,
 install/upgrade, and the LLM provider/model configuration it runs with — the
@@ -344,14 +344,26 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     `docs/design/phase-9-portal-ui.md` §W5.
   - **W6 Portal chat — SHIPPED (2026-09)** — chat rebuilt as Agent cards →
     session page (`/chat/agents/:id`): left session list grouped by
-    `AcSession.cwd`, right the portal-reference row stream (assistant steps,
+    workspace cwd, right the portal-reference row stream (assistant steps,
     lifecycle tool rows, disclosure cards with Read/Diff/Terminal/Search/Io
     bodies, markdown + code highlight, turn tails, stick-to-bottom scroll).
     New sessions pick a subdirectory of the machine's `baseWorkspace`
     (migration `0013`; daemon-routed `workspace:list` picker; `directory` on
-    `chat:session.open`); `AcSession.title` derives from the first prompt;
-    the `acpToolCallView` wire carries toolName/rawInput/content/output.
+    `chat:session.open`); the `acpToolCallView` wire carries
+    toolName/rawInput/content/output.
     Research: `docs/research/phase-9-portal-chat-ui.md` · Design:
     `docs/design/phase-9-portal-ui.md` §W6.
+  - **W7 Native agent sessions — SHIPPED (2026-09)** — the platform
+    persists NOTHING session-shaped (`ac_sessions` dropped, migration
+    `0014`; ChatService is live-channel-only; "close" is now disconnect).
+    The session rail lists the AGENT'S OWN store live (`sessions:list` over
+    /ctl, capability `sessions`; claude-code/codex via adapter
+    `session/list`, dsh via a multi-frame-zstd file scan of
+    `~/.dsh/sessions`); row click resumes (`session/load` with replay for
+    claude/codex, `session/resume` + transcript-parse for dsh) and history
+    ships as `chat:history` — user blocks + ordinary events, folded through
+    the same reducer; a per-channel ring replays on page-refresh rejoin.
+    Design + adapter ground truth: `docs/design/phase-9-w7-native-sessions.md`.
 - Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
-  runtimes, managed-settings hierarchies.
+  runtimes, managed-settings hierarchies. hermes native sessions remain an
+  open follow-up (adapter surface unverified).

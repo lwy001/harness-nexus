@@ -110,6 +110,8 @@ export interface ChatSessionReadyPush {
   sessionId: string;
   agentName?: string;
   agentVersion?: string;
+  /** 9 W7 — the agent's OWN session id behind this channel (rail highlight). */
+  nativeSessionId?: string;
 }
 export interface ChatSessionFailedPush {
   sessionId: string;
@@ -118,6 +120,21 @@ export interface ChatSessionFailedPush {
 export interface ChatSessionClosedPush {
   sessionId: string;
   reason: string;
+}
+
+// ---- 9 W7 — native session history (mirrors shared/realtime.ts) ----
+
+/** One prompt block the browser may send / one history user item carries. */
+export type PromptBlock =
+  { type: 'text'; text: string } | { type: 'resource_link'; name: string; uri: string };
+
+/** One item of a channel's history batch: a user turn, or an ordinary event. */
+export type HistoryItem =
+  { type: 'user'; blocks: PromptBlock[] } | { type: 'event'; event: ChatStreamEvent };
+
+export interface ChatHistoryEvent {
+  sessionId: string;
+  items: HistoryItem[];
 }
 
 /** Emit with an ack callback; resolves the ack object (rejects on timeout). */

@@ -416,3 +416,139 @@ describe('session round-trip vs the fixture agent', () => {
     expect(ready.error).toBeTruthy();
   }, 15000);
 });
+
+describe('native sessions (9 W7): resume, history, resync', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 5000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+
+  it('resume via session/load captures the replay as chat:history, then ready carries the native id', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-r1',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+      resume: { sessionId: 'fx-native-1', cwd: '/tmp' },
+    });
+
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; nativeSessionId?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    expect(ready.nativeSessionId).toBe('fx-native-1');
+
+    // History shipped BEFORE ready: the replayed user turn, the message, the
+    // completed Read tool, and a synthetic turn_result so the fold settles.
+    const history = socket.eventsOf('chat:history')[0]!.payload as {
+      sessionId: string;
+      items: { type: string; blocks?: unknown[]; event?: ChatStreamEvent }[];
+    };
+    expect(history.sessionId).toBe('sess-r1');
+    const kinds = history.items.map((i) =>
+      i.type === 'user' ? 'user' : (i.event!.kind as string),
+    );
+    expect(kinds).toEqual(['user', 'message_delta', 'tool_call', 'turn_result']);
+    expect(history.items[0]!.blocks).toEqual([{ type: 'text', text: 'what did we conclude?' }]);
+    const tool = history.items.find((i) => i.type === 'event' && i.event!.kind === 'tool_call')!
+      .event as { call: { toolName?: string; status?: string; output?: string } };
+    expect(tool.call.toolName).toBe('Read');
+    expect(tool.call.status).toBe('completed');
+    expect(tool.call.output).toBe('42');
+
+    // A live turn on the resumed channel appends to the SAME ring.
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-r1',
+      prompt: [{ type: 'text', text: 'continue' }],
+    });
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'message_delta' && e.delta === 'echo: continue'),
+    );
+
+    // Resync (page refresh): the ring replays — replay history + live turn.
+    const resyncAck = vi.fn();
+    socket.receive('chat:session.resync', { sessionId: 'sess-r1' }, resyncAck);
+    expect(resyncAck).toHaveBeenCalledWith({ accepted: true });
+    const batches = socket.eventsOf('chat:history') as unknown as {
+      payload: { items: { type: string; blocks?: unknown[] }[] };
+    }[];
+    const last = batches[batches.length - 1]!.payload;
+    const userTexts = last.items
+      .filter((i) => i.type === 'user')
+      .map((i) => (i.blocks![0] as { text: string }).text);
+    expect(userTexts).toEqual(['what did we conclude?', 'continue']);
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-r1', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
+  it('resume-only adapters (the dsh shape) resume without replay and report the native id', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_ACP_NO_LOAD: '1' },
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-r2',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+      resume: { sessionId: 'fx-native-only', cwd: '/tmp' },
+    });
+
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; nativeSessionId?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    expect(ready.nativeSessionId).toBe('fx-native-only');
+    // No transcript parser for hermes → no history batch.
+    expect(socket.eventsOf('chat:history')).toHaveLength(0);
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-r2', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
+  it('liveNativeIds exposes the agent session ids for the dsh list exclusion', async () => {
+    const socket = new FakeSocket();
+    const registry = attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+    expect(registry.liveNativeIds().size).toBe(0);
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-r3',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+    expect(registry.liveNativeIds().size).toBe(1);
+
+    socket.receive('chat:session.close', { sessionId: 'sess-r3', reason: 'user' });
+    await waitFor(() => registry.liveNativeIds().size === 0);
+  }, 15000);
+});

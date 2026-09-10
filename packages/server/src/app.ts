@@ -175,6 +175,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     inventoryTimeoutMs: config.inventoryRequestTimeoutMs,
     runtimeConfigViewTimeoutMs: config.runtimeConfigViewTimeoutMs,
     workspaceListTimeoutMs: config.workspaceListTimeoutMs,
+    sessionsListTimeoutMs: config.sessionsListTimeoutMs,
     jobAckTimeoutMs: config.jobAckTimeoutMs,
     jobSweepIntervalMs: config.jobSweepIntervalMs,
     jobMaxAttempts: config.jobMaxAttempts,
@@ -183,7 +184,6 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     chatReadyTimeoutMs: config.chatReadyTimeoutMs,
   });
   app.realtime.jobs.start();
-  await app.realtime.chat.start();
   app.addHook('onClose', async () => {
     app.realtime.jobs.stop();
     await app.realtime.chat.stop();

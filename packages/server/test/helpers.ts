@@ -24,6 +24,7 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     inventoryRequestTimeoutMs: 5000,
     runtimeConfigViewTimeoutMs: 700,
     workspaceListTimeoutMs: 10000,
+    sessionsListTimeoutMs: 10000,
     jobAckTimeoutMs: 700,
     jobSweepIntervalMs: 200,
     jobMaxAttempts: 3,

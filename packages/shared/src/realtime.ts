@@ -415,6 +415,18 @@ export const chatSessionOpenRequestSchema = z.object({
    * absent = the legacy default, the agent's install directory).
    */
   directory: z.string().min(1).max(1024).optional(),
+  /**
+   * Phase 9 W7 — resume the agent's OWN native session instead of creating
+   * one. The values come from the daemon's `sessions:list` (ground truth on
+   * the machine), so the `cwd` passes through verbatim — no baseWorkspace
+   * containment (dsh enforces its own match).
+   */
+  resume: z
+    .object({
+      sessionId: z.string().min(1).max(128),
+      cwd: z.string().min(1).max(1024),
+    })
+    .optional(),
 });
 
 /** server → daemon: spawn the agent subprocess for this channel. `cwd` defaults to the agent home. */
@@ -423,6 +435,8 @@ export const chatSessionStartEventSchema = z.object({
   agentInstanceId: z.string().min(1).max(64),
   target: agentTargetSchema,
   cwd: z.string().min(1).max(1024),
+  /** 9 W7 — present when this channel resumes a native session (`session/load` / `session/resume`). */
+  resume: chatSessionOpenRequestSchema.shape.resume,
 });
 
 /** daemon → server: subprocess + ACP handshake done (`error` ⇒ spawn/initialize failed). */
@@ -430,7 +444,30 @@ export const chatSessionReadyEventSchema = z.object({
   sessionId: z.string().min(1).max(64),
   agentName: z.string().max(128).optional(),
   agentVersion: z.string().max(64).optional(),
+  /** 9 W7 — the agent's OWN session id behind this channel (row highlight + resume bookkeeping). */
+  nativeSessionId: z.string().min(1).max(128).optional(),
   error: z.string().max(512).optional(),
+});
+
+/** server → daemon: a viewer (re)joined a live channel — re-push its history (9 W7). */
+export const chatSessionResyncEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+});
+
+/**
+ * One item of a channel's history (9 W7): the user's own prompt blocks, or an
+ * ordinary stream event. Expressing history as events (not a parallel row
+ * model) keeps live and history on ONE fold path in the browser.
+ */
+export const historyItemSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('user'), blocks: z.array(promptBlockSchema).min(1).max(16) }),
+  z.object({ type: z.literal('event'), event: chatStreamEventSchema }),
+]);
+
+/** daemon → server (relayed to the channel room): the transcript batch for a (re)joined channel. */
+export const chatHistoryEventSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  items: z.array(historyItemSchema).min(1).max(2000),
 });
 
 /** browser → server: send a turn prompt. */
@@ -476,19 +513,32 @@ export const chatSessionClosedEventSchema = z.object({
   reason: z.string().max(256),
 });
 
-/** REST view of an `AcSession` audit row (`GET /api/agent-instances/:id/sessions`). */
-export const acSessionViewSchema = z.object({
-  id: z.string().min(1),
-  agentInstanceId: z.string().min(1),
-  machineId: z.string().min(1),
-  ownerId: z.string().min(1),
-  openedAt: z.string().datetime(),
-  closedAt: z.string().datetime().nullable(),
-  closeReason: z.string().nullable(),
-  /** Phase 9 W6 — the session's working directory (project grouping). */
-  cwd: z.string().nullable(),
-  /** Phase 9 W6 — derived once from the first prompt; null until then. */
-  title: z.string().nullable(),
+/**
+ * One of the agent's OWN persisted sessions (9 W7) — `session/list` from the
+ * target's ACP adapter (claude-code/codex) or dsh's native store, surfaced
+ * through `GET /api/agent-instances/:id/sessions`. The platform persists
+ * NOTHING session-shaped; this is a live read.
+ */
+export const nativeSessionViewSchema = z.object({
+  sessionId: z.string().min(1).max(128),
+  cwd: z.string().min(1).max(1024),
+  title: z.string().max(256).nullable().optional(),
+  updatedAt: z.string().datetime().nullable().optional(),
+});
+
+/** server → daemon: list the target's native sessions. */
+export const sessionsListRequestSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  target: agentTargetSchema,
+});
+
+/** daemon → server: the listing (`error` arm settles the waiter honestly). */
+export const sessionsListResultEventSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  sessions: z.array(nativeSessionViewSchema).max(200).optional(),
+  /** False when this target has no native session surface at all (hermes/zcode). */
+  supported: z.boolean().optional(),
+  error: z.string().max(512).optional(),
 });
 
 /** server → browser lifecycle pushes (typed for the web client; server-constructed). */
@@ -496,6 +546,7 @@ export const chatSessionReadyPushSchema = z.object({
   sessionId: z.string().min(1),
   agentName: z.string().max(128).optional(),
   agentVersion: z.string().max(64).optional(),
+  nativeSessionId: z.string().max(128).optional(),
 });
 export const chatSessionFailedPushSchema = z.object({
   sessionId: z.string().min(1),
@@ -547,4 +598,8 @@ export type ChatSessionClosedEvent = z.infer<typeof chatSessionClosedEventSchema
 export type ChatSessionReadyPush = z.infer<typeof chatSessionReadyPushSchema>;
 export type ChatSessionFailedPush = z.infer<typeof chatSessionFailedPushSchema>;
 export type ChatSessionClosedPush = z.infer<typeof chatSessionClosedPushSchema>;
-export type AcSessionView = z.infer<typeof acSessionViewSchema>;
+export type HistoryItem = z.infer<typeof historyItemSchema>;
+export type ChatHistoryEvent = z.infer<typeof chatHistoryEventSchema>;
+export type NativeSessionView = z.infer<typeof nativeSessionViewSchema>;
+export type SessionsListRequest = z.infer<typeof sessionsListRequestSchema>;
+export type SessionsListResultEvent = z.infer<typeof sessionsListResultEventSchema>;

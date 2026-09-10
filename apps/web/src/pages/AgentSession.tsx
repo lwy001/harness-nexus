@@ -7,7 +7,9 @@ import {
   BotIcon,
   CircleStopIcon,
   FolderIcon,
+  PlayIcon,
   PlusIcon,
+  RefreshCwIcon,
   XIcon,
 } from 'lucide-react';
 import { api } from '@/api';
@@ -18,14 +20,16 @@ import {
   appSocket,
   emitWithAck,
   type ChatEventEnvelope,
+  type ChatHistoryEvent,
   type ChatSessionClosedPush,
   type ChatSessionFailedPush,
   type ChatSessionReadyPush,
 } from '@/realtime';
-import type {
-  AcSessionView,
-  AgentInstanceMachineView,
-  AgentInstanceView,
+import {
+  HarnessNexusError,
+  type AgentInstanceMachineView,
+  type AgentInstanceView,
+  type NativeSessionView,
 } from '@harness-nexus/sdk';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,48 +40,58 @@ import { DirPicker } from '@/components/chat/dir-picker.js';
 import { createFoldState, fold } from '@/components/chat/fold.js';
 
 /**
- * The Agent session page (Phase 9 W6) — left: the session list GROUPED BY
- * WORKSPACE cwd (groups by newest session; sessions by openedAt desc; open
- * rows clickable, closed rows muted — v1 has no transcript replay, and the
- * UI never fakes one). Right: the portal-style row stream + composer. The
- * live-turn indicator is this view's single `--signal` spend. Creating a
- * session requires picking a directory under the machine's base workspace
- * (the DirPicker offers to set the base first when missing).
+ * The Agent session page (Phase 9 W6, rewired 9 W7) — left: the AGENT'S OWN
+ * session list (fetched live from the target's native store through the
+ * daemon; grouped by workspace cwd; click = RESUME). Right: the portal-style
+ * row stream + composer. The platform persists nothing session-shaped:
+ * "disconnect" ends the channel only — the conversation stays with the agent.
+ * The live-turn indicator is this view's single `--signal` spend.
  */
 
 type Phase = 'idle' | 'connecting' | 'ready' | 'closed';
 
+/** Rail data: the daemon-routed listing or the gate that blocked it. */
+type RailState =
+  | { state: 'loading' }
+  | { state: 'ready'; supported: boolean; sessions: NativeSessionView[] }
+  | { state: 'offline' }
+  | { state: 'daemon-old' }
+  | { state: 'error'; message: string };
+
 interface SessionGroup {
   cwd: string;
-  sessions: AcSessionView[];
+  sessions: NativeSessionView[];
   newest: number;
 }
 
-function groupSessions(sessions: AcSessionView[]): SessionGroup[] {
-  const map = new Map<string, AcSessionView[]>();
+function groupSessions(sessions: NativeSessionView[]): SessionGroup[] {
+  const map = new Map<string, NativeSessionView[]>();
   for (const s of sessions) {
-    const key = s.cwd ?? '';
-    const list = map.get(key);
-    if (list === undefined) map.set(key, [s]);
+    const list = map.get(s.cwd);
+    if (list === undefined) map.set(s.cwd, [s]);
     else list.push(s);
   }
   const groups: SessionGroup[] = [];
   for (const [cwd, list] of map) {
-    list.sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
-    groups.push({ cwd, sessions: list, newest: Date.parse(list[0]!.openedAt) || 0 });
+    list.sort(
+      (a, b) =>
+        (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0) ||
+        b.sessionId.localeCompare(a.sessionId),
+    );
+    groups.push({ cwd, sessions: list, newest: Date.parse(list[0]!.updatedAt ?? '') || 0 });
   }
   groups.sort((a, b) => b.newest - a.newest);
   return groups;
 }
 
 function cwdBasename(cwd: string): string {
-  if (cwd === '') return '';
   const trimmed = cwd.replace(/\/+$/, '');
   const last = trimmed.split('/').pop();
   return last === undefined || last === '' ? cwd : last;
 }
 
-function relativeTime(iso: string, locale: string): string {
+function relativeTime(iso: string | null | undefined, locale: string): string {
+  if (iso === undefined || iso === null || iso === '') return '';
   const diff = Date.now() - (Date.parse(iso) || 0);
   const minutes = Math.round(diff / 60000);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
@@ -96,8 +110,9 @@ export function AgentSessionPage() {
   const [agent, setAgent] = useState<AgentInstanceView | null>(null);
   const [machine, setMachine] = useState<AgentInstanceMachineView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [sessions, setSessions] = useState<AcSessionView[]>([]);
+  const [rail, setRail] = useState<RailState>({ state: 'loading' });
   const [sessionId, setSessionId] = useState('');
+  const [nativeSessionId, setNativeSessionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -114,6 +129,7 @@ export function AgentSessionPage() {
     setMachine(null);
     setLoadFailed(false);
     setSessionId('');
+    setNativeSessionId(null);
     setPhase('idle');
     void (async () => {
       try {
@@ -130,9 +146,12 @@ export function AgentSessionPage() {
     if (agentId === '') return;
     try {
       const res = await withAuthGuard(() => api.listAgentSessions(agentId), logout);
-      setSessions(res.sessions);
-    } catch {
-      setSessions([]);
+      setRail({ state: 'ready', supported: res.supported, sessions: res.sessions });
+    } catch (e) {
+      const code = e instanceof HarnessNexusError ? e.code : '';
+      if (code === 'MACHINE_OFFLINE') setRail({ state: 'offline' });
+      else if (code === 'DAEMON_NO_SESSIONS') setRail({ state: 'daemon-old' });
+      else setRail({ state: 'error', message: e instanceof Error ? e.message : String(e) });
     }
   }, [agentId, logout]);
 
@@ -143,6 +162,7 @@ export function AgentSessionPage() {
   // Reset the pane whenever the channel changes.
   useEffect(() => {
     dispatch({ type: 'reset' });
+    setNativeSessionId(null);
     if (sessionId === '') {
       setPhase('idle');
       return;
@@ -151,7 +171,7 @@ export function AgentSessionPage() {
     pendingPhaseRef.current = null;
   }, [sessionId]);
 
-  // Live channel wiring — the same contract as the C5 page.
+  // Live channel wiring — the same contract as the C5 page, plus 9 W7 history.
   useEffect(() => {
     if (sessionId === '') return;
     const socket = appSocket();
@@ -159,10 +179,15 @@ export function AgentSessionPage() {
       if (envelope.sessionId !== sessionId) return;
       dispatch({ type: 'event', event: envelope.event });
     };
+    const onHistory = (push: ChatHistoryEvent): void => {
+      if (push.sessionId !== sessionId) return;
+      dispatch({ type: 'history', items: push.items });
+    };
     const onReady = (push: ChatSessionReadyPush): void => {
       if (push.sessionId !== sessionId) return;
       setPhase('ready');
       setError(null);
+      if (push.nativeSessionId !== undefined) setNativeSessionId(push.nativeSessionId);
     };
     const onFailed = (push: ChatSessionFailedPush): void => {
       if (push.sessionId !== sessionId) return;
@@ -175,18 +200,24 @@ export function AgentSessionPage() {
       void refreshSessions();
     };
     socket.on('chat:event', onEvent);
+    socket.on('chat:history', onHistory);
     socket.on('chat:session.ready', onReady);
     socket.on('chat:session.failed', onFailed);
     socket.on('chat:session.closed', onClosed);
     return () => {
       socket.off('chat:event', onEvent);
+      socket.off('chat:history', onHistory);
       socket.off('chat:session.ready', onReady);
       socket.off('chat:session.failed', onFailed);
       socket.off('chat:session.closed', onClosed);
     };
   }, [sessionId, refreshSessions]);
 
-  async function openChannel(rejoinId?: string, directory?: string): Promise<void> {
+  async function openChannel(
+    rejoinId?: string,
+    directory?: string,
+    resume?: { sessionId: string; cwd: string },
+  ): Promise<void> {
     if (agentId === '') return;
     setError(null);
     const ack = await emitWithAck<{
@@ -197,6 +228,7 @@ export function AgentSessionPage() {
       agentInstanceId: agentId,
       ...(rejoinId !== undefined ? { sessionId: rejoinId } : {}),
       ...(directory !== undefined ? { directory } : {}),
+      ...(resume !== undefined ? { resume } : {}),
     });
     if (ack.error !== undefined || ack.sessionId === undefined) {
       const code = ack.error ?? 'unknown error';
@@ -221,7 +253,6 @@ export function AgentSessionPage() {
     }
     pendingPhaseRef.current = ack.phase === 'ready' ? 'ready' : null;
     setSessionId(ack.sessionId);
-    void refreshSessions();
     if (ack.phase !== 'ready') {
       // One-shot recovery for a ready push lost to the ack/listener race.
       const target = ack.sessionId;
@@ -263,17 +294,22 @@ export function AgentSessionPage() {
     });
   }
 
-  async function closeChannel(): Promise<void> {
+  /** Channel-only teardown — the native session survives (9 W7). */
+  async function disconnectChannel(): Promise<void> {
     if (sessionId === '') return;
     await emitWithAck('chat:session.close', { sessionId, reason: 'user' });
     setPhase('closed');
     void refreshSessions();
   }
 
-  const groups = useMemo(() => groupSessions(sessions), [sessions]);
-  const openCount = sessions.filter((s) => s.closedAt === null).length;
-  const currentSession = sessions.find((s) => s.id === sessionId);
-  const currentCwd = currentSession?.cwd ?? undefined;
+  const groups = useMemo(
+    () => (rail.state === 'ready' ? groupSessions(rail.sessions) : []),
+    [rail],
+  );
+  const currentCwd =
+    rail.state === 'ready'
+      ? (rail.sessions.find((s) => s.sessionId === nativeSessionId)?.cwd ?? undefined)
+      : undefined;
 
   if (loadFailed) {
     return (
@@ -291,7 +327,7 @@ export function AgentSessionPage() {
   return (
     <AppShell variant="full">
       <div className="flex h-full min-h-0">
-        {/* Left rail: new session + cwd-grouped session list */}
+        {/* Left rail: new session + the agent's native sessions, grouped by cwd */}
         <aside className="bg-sidebar/40 hidden w-72 shrink-0 flex-col border-r md:flex">
           <div className="flex items-center gap-2 border-b px-3 py-2.5">
             <Button asChild variant="ghost" size="sm" className="gap-1.5 px-2">
@@ -299,6 +335,16 @@ export function AgentSessionPage() {
                 <ArrowLeftIcon className="size-3.5" />
                 <span className="text-xs">{t('chat.backToAgents')}</span>
               </Link>
+            </Button>
+            <span className="min-w-0 flex-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              title={t('common.refresh')}
+              onClick={() => void refreshSessions()}
+            >
+              <RefreshCwIcon className="size-3.5" />
             </Button>
           </div>
           <div className="border-b p-3">
@@ -311,51 +357,75 @@ export function AgentSessionPage() {
               <PlusIcon className="size-4" />
               {t('chat.newSession')}
             </Button>
-            {machine !== null ? (
-              <p className="text-muted-foreground mt-1.5 text-center text-[11px] tabular-nums">
-                {t('chat.limitHint', { count: openCount, max: 3 })}
-              </p>
-            ) : null}
+            <p className="text-muted-foreground mt-1.5 text-center text-[11px]">
+              {t('chat.disconnectHint')}
+            </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {groups.length === 0 ? (
+            {rail.state === 'loading' ? (
+              <p className="text-muted-foreground px-2 py-4 text-xs">{t('common.loading')}</p>
+            ) : rail.state === 'offline' ? (
+              <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.sessionsOffline')}</p>
+            ) : rail.state === 'daemon-old' ? (
+              <p className="text-muted-foreground px-2 py-4 text-xs">
+                {t('chat.sessionsDaemonOld')}
+              </p>
+            ) : rail.state === 'error' ? (
+              <p className="text-muted-foreground px-2 py-4 text-xs">{rail.message}</p>
+            ) : !rail.supported ? (
+              <p className="text-muted-foreground px-2 py-4 text-xs">
+                {t('chat.sessionsUnsupported')}
+              </p>
+            ) : groups.length === 0 ? (
               <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.noSessions')}</p>
             ) : (
               groups.map((group) => (
                 <div key={group.cwd} className="mb-3">
                   <div
                     className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
-                    title={group.cwd === '' ? undefined : group.cwd}
+                    title={group.cwd}
                   >
                     <FolderIcon className="size-3 shrink-0" />
-                    <span className="truncate">
-                      {group.cwd === '' ? t('chat.unknownWorkspace') : cwdBasename(group.cwd)}
-                    </span>
+                    <span className="truncate">{cwdBasename(group.cwd)}</span>
                   </div>
                   {group.sessions.map((s) => {
-                    const open = s.closedAt === null;
-                    const active = s.id === sessionId;
+                    const active = s.sessionId === nativeSessionId;
                     return (
                       <button
-                        key={s.id}
+                        key={s.sessionId}
                         type="button"
-                        onClick={() => (open && !active ? void openChannel(s.id) : undefined)}
+                        onClick={() =>
+                          active
+                            ? undefined
+                            : void openChannel(undefined, undefined, {
+                                sessionId: s.sessionId,
+                                cwd: s.cwd,
+                              })
+                        }
                         className={cn(
                           'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
-                          active ? 'bg-accent' : open ? 'hover:bg-accent/60' : 'opacity-50',
+                          active ? 'bg-accent' : 'hover:bg-accent/60',
                         )}
-                        title={s.title ?? s.id}
+                        title={s.title ?? s.cwd}
                       >
                         <span className="flex w-full items-center justify-between gap-2">
                           <span className="truncate">{s.title ?? t('chat.untitled')}</span>
                           <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                            {relativeTime(s.openedAt, dateLocale(lang))}
+                            {relativeTime(s.updatedAt, dateLocale(lang))}
                           </span>
                         </span>
-                        <span className="text-muted-foreground font-mono text-[10px]">
-                          {open
-                            ? t('chat.sessionOpen')
-                            : (s.closeReason ?? t('chat.sessionClosed'))}
+                        <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
+                          {active ? (
+                            <>
+                              <span className="bg-signal inline-block size-1.5 rounded-full" />
+                              {t('chat.working')}
+                            </>
+                          ) : (
+                            <>
+                              <PlayIcon className="size-2.5" />
+                              {t('chat.resumeSession')}
+                            </>
+                          )}
                         </span>
                       </button>
                     );
@@ -392,9 +462,14 @@ export function AgentSessionPage() {
             ) : null}
             <span className="min-w-0 flex-1" />
             {phase === 'ready' || phase === 'connecting' ? (
-              <Button variant="outline" size="sm" onClick={() => void closeChannel()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void disconnectChannel()}
+                title={t('chat.disconnectHint')}
+              >
                 <XIcon className="size-3.5" />
-                <span className="hidden sm:inline">{t('chat.closeSession')}</span>
+                <span className="hidden sm:inline">{t('chat.disconnect')}</span>
               </Button>
             ) : null}
           </div>

@@ -70,6 +70,8 @@ export interface ServerConfig {
   runtimeConfigViewTimeoutMs: number;
   /** `workspace:list` round-trip budget (Phase 9 W6 chat directory picker). */
   workspaceListTimeoutMs: number;
+  /** `sessions:list` round-trip budget (Phase 9 W7 native session rail; an `npx` adapter spawn is slow cold). */
+  sessionsListTimeoutMs: number;
   jobAckTimeoutMs: number;
   jobSweepIntervalMs: number;
   jobMaxAttempts: number;
@@ -131,6 +133,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     inventoryRequestTimeoutMs: Number(env.INVENTORY_REQUEST_TIMEOUT_MS ?? '60000'),
     runtimeConfigViewTimeoutMs: Number(env.RUNTIME_CONFIG_VIEW_TIMEOUT_MS ?? '5000'),
     workspaceListTimeoutMs: Number(env.WORKSPACE_TIMEOUT_MS ?? '10000'),
+    sessionsListTimeoutMs: Number(env.SESSIONS_TIMEOUT_MS ?? '30000'),
     jobAckTimeoutMs: Number(env.JOB_ACK_TIMEOUT_MS ?? '60000'),
     jobSweepIntervalMs: Number(env.JOB_SWEEP_INTERVAL_MS ?? '15000'),
     jobMaxAttempts: Number(env.JOB_MAX_ATTEMPTS ?? '3'),

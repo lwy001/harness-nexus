@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 /**
- * Fixture ACP agent (Phase 8 C5 tests + smoke). Speaks ACP v1 — JSON-RPC 2.0,
- * newline-delimited — over stdio:
+ * Fixture ACP agent (Phase 8 C5 tests + smoke; 9 W7 adds sessions). Speaks
+ * ACP v1 — JSON-RPC 2.0, newline-delimited — over stdio:
  *
- *   initialize → {protocolVersion: 1, agentInfo: {name: 'fixture-agent'}}
+ *   initialize → {protocolVersion: 1, agentInfo, agentCapabilities}
+ *                (advertises sessionCapabilities list+load+resume+close unless
+ *                 FIXTURE_ACP_NO_LOAD=1 → resume only, the dsh shape)
  *   session/new → {sessionId, cwd}
+ *   session/list → one canned native session (9 W7)
+ *   session/load → REPLAYS one prior turn as session/update notifications
+ *                  (user_message_chunk + agent_message_chunk + a completed
+ *                  tool_call), then responds {sessionId} (the claude shape)
+ *   session/resume → {} with NO replay (the dsh shape)
  *   session/prompt →
  *     prompt containing 'ask-permission':
  *        session/request_permission (a REQUEST, answered by the client) →
@@ -284,10 +291,68 @@ function handleRequest(msg) {
         protocolVersion: 1,
         agentInfo: { name: 'fixture-agent', version: '0.1.0' },
         authMethods: [],
+        agentCapabilities: {
+          promptCapabilities: { image: false },
+          sessionCapabilities: process.env.FIXTURE_ACP_NO_LOAD === '1'
+            ? { list: {}, resume: {}, close: {} } // the dsh shape — no replay
+            : { list: {}, load: {}, resume: {}, close: {} },
+        },
       });
       return;
     case 'session/new':
       respond(id, { sessionId: `fx-${randomUUID().slice(0, 8)}`, cwd: params?.cwd ?? process.cwd() });
+      return;
+    case 'session/list':
+      respond(id, {
+        sessions: [
+          {
+            sessionId: 'fx-native-1',
+            // A REAL path — the daemon spawns the resume at this cwd, so a
+            // canned path that doesn't exist would fail with ENOENT.
+            cwd: '/tmp',
+            title: 'fixture: prior turn',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      return;
+    case 'session/load': {
+      // The claude/codex shape: replay the prior turn BEFORE responding.
+      const sid = params?.sessionId ?? 'fx-native-1';
+      notify('session/update', {
+        sessionId: sid,
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          contentBlock: { type: 'text', text: 'what did we conclude?' },
+        },
+      });
+      notify('session/update', {
+        sessionId: sid,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          contentBlock: { type: 'text', text: 'We concluded: 42 (replayed).' },
+        },
+      });
+      updateMeta(
+        sid,
+        {
+          sessionUpdate: 'tool_call',
+          toolCallUpdate: {
+            toolCallId: 'fx-replay-tool',
+            title: 'notes.txt',
+            kind: 'read',
+            status: 'completed',
+            rawOutput: '42',
+          },
+        },
+        { claudeCode: { toolName: 'Read' } },
+      );
+      respond(id, { sessionId: sid });
+      return;
+    }
+    case 'session/resume':
+      // The dsh shape: restores the log WITHOUT replaying old updates.
+      respond(id, {});
       return;
     case 'session/prompt': {
       const prompt = Array.isArray(params?.prompt) ? params.prompt : [];

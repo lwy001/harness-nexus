@@ -8,7 +8,6 @@
  */
 
 import type {
-  AcSession,
   Credential,
   AgentInstance,
   Job,
@@ -141,17 +140,6 @@ export interface AgentInstanceRepository {
   deleteByMachine(machineId: string): Promise<void>;
 }
 
-export interface AcSessionRepository {
-  findById(id: string): Promise<AcSession | null>;
-  listByAgentInstance(agentInstanceId: string): Promise<AcSession[]>;
-  /** Open (closedAt null) sessions of a machine — the C5 concurrency-cap input. */
-  listOpenByMachine(machineId: string): Promise<AcSession[]>;
-  /** Every open row across machines — the boot orphan-sweep input. */
-  listOpen(): Promise<AcSession[]>;
-  /** Upsert; closing a session is a save with `closedAt` set (audit rows are never deleted). */
-  save(session: AcSession): Promise<AcSession>;
-}
-
 export interface RuntimeConfigRepository {
   /** Exactly one config per (machine, target) — the latest spec wins. */
   findByMachineAndTarget(
@@ -176,6 +164,5 @@ export interface UnitOfWork {
   inventories: InventoryRepository;
   jobs: JobRepository;
   agentInstances: AgentInstanceRepository;
-  acSessions: AcSessionRepository;
   runtimeConfigs: RuntimeConfigRepository;
 }
