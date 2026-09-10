@@ -88,19 +88,15 @@ export interface PatView {
 export interface MachineView extends Machine {
   online: boolean;
 }
-/** Audit row for one chat channel (GET /api/agent-instances/:id/sessions). */
-export interface AcSessionView {
-  id: string;
-  agentInstanceId: string;
-  machineId: string;
-  ownerId: string;
-  openedAt: string;
-  closedAt: string | null;
-  closeReason: string | null;
-  /** 9 W6 — the session's working directory (session-list project grouping). */
-  cwd: string | null;
-  /** 9 W6 — derived once from the first prompt; null until then. */
-  title: string | null;
+/**
+ * One of the agent's OWN persisted sessions (9 W7) — a LIVE read through the
+ * daemon (`sessions:list`), never platform-persisted metadata.
+ */
+export interface NativeSessionView {
+  sessionId: string;
+  cwd: string;
+  title?: string | null;
+  updatedAt?: string | null;
 }
 
 /** Machine summary riding GET /api/agent-instances/:id (9 W6 session page). */
@@ -447,10 +443,11 @@ export class HarnessNexusClient {
     return this.request('GET', `/api/agent-instances/${agentInstanceId}`);
   }
 
-  /** Chat-channel audit rows for one agent instance (C5). */
+  /** 9 W7 — the agent's OWN sessions, listed live from the target's native store. */
   async listAgentSessions(agentInstanceId: string): Promise<{
     agent: AgentInstanceView;
-    sessions: AcSessionView[];
+    supported: boolean;
+    sessions: NativeSessionView[];
   }> {
     return this.request('GET', `/api/agent-instances/${agentInstanceId}/sessions`);
   }

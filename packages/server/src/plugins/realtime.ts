@@ -15,6 +15,7 @@ import {
 } from '@harness-nexus/shared';
 import { jobProgressEventSchema, jobResultEventSchema, type JobView } from '@harness-nexus/shared';
 import {
+  chatHistoryEventSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
   chatSessionCloseRequestSchema,
@@ -23,6 +24,7 @@ import {
   chatSessionReadyEventSchema,
   chatStreamEventEnvelopeSchema,
   chatTurnCancelEventSchema,
+  sessionsListResultEventSchema,
   workspaceListEventSchema,
 } from '@harness-nexus/shared';
 import { hashToken, PAT_PREFIX, generateId } from '../infra/crypto.js';
@@ -30,6 +32,7 @@ import { MachinePresence } from '../realtime/presence.js';
 import { InventoryCoordinator } from '../realtime/inventory.js';
 import { ConfigViewerCoordinator } from '../realtime/config-viewer.js';
 import { WorkspaceCoordinator } from '../realtime/workspace.js';
+import { SessionsCoordinator } from '../realtime/sessions.js';
 import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
 import { JobService } from '../jobs/service.js';
@@ -59,6 +62,8 @@ export interface RealtimeService {
   configView: ConfigViewerCoordinator;
   /** Workspace directory-listing waiters (Phase 9 W6 chat picker). */
   workspace: WorkspaceCoordinator;
+  /** Native session-listing waiters (Phase 9 W7 chat rail). */
+  sessions: SessionsCoordinator;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -78,6 +83,7 @@ export async function registerRealtime(
     chatMaxSessionsPerMachine: number;
     chatPermissionTimeoutMs: number;
     chatReadyTimeoutMs: number;
+    sessionsListTimeoutMs: number;
   },
 ): Promise<void> {
   await app.register(socketIOPlugin, {
@@ -92,6 +98,7 @@ export async function registerRealtime(
   const inventory = new InventoryCoordinator(opts.inventoryTimeoutMs);
   const configView = new ConfigViewerCoordinator(opts.runtimeConfigViewTimeoutMs);
   const workspace = new WorkspaceCoordinator(opts.workspaceListTimeoutMs);
+  const sessions = new SessionsCoordinator(opts.sessionsListTimeoutMs);
   const runtimeInstances = new DetectedInstanceSync(app.uow);
   const chat = new ChatService(
     {
@@ -149,6 +156,7 @@ export async function registerRealtime(
     chat,
     configView,
     workspace,
+    sessions,
     broadcastStatus(machine, online) {
       appNs
         .to([`user:${machine.ownerId}`, 'admins'])
@@ -163,9 +171,6 @@ export async function registerRealtime(
     },
   };
   app.decorate('realtime', realtime);
-  // Rows a previous server process left open can never resume (v1) — settle
-  // them now so the UI's session list stops offering dead channels.
-  void realtime.chat.sweepOrphanedSessions();
 
   const touchLastSeen = async (machine: Machine): Promise<Machine> => {
     const updated = { ...machine, lastSeenAt: new Date().toISOString() };
@@ -324,6 +329,18 @@ export async function registerRealtime(
       ack?.(known ? { accepted: true } : { error: 'unknown-request' });
     });
 
+    // 9 W7 — daemon reply for `sessions:list` (native session rail).
+    socket.on('sessions:list:result', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = sessionsListResultEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { requestId, ...evt } = parsed.data;
+      const known = sessions.onList(requestId, evt);
+      ack?.(known ? { accepted: true } : { error: 'unknown-request' });
+    });
+
     // C4 — daemon job reporting. Progress accepts queued/dispatched/running;
     // result settles the job (terminal states ignore stale replay).
     socket.on('job:progress', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -347,8 +364,7 @@ export async function registerRealtime(
     });
 
     // C5 — daemon chat reporting. Ready closes the starting phase (or the
-    // channel on spawn failure); events fan out to the channel room; a
-    // daemon-side close settles the AcSession row.
+    // channel on spawn failure); events fan out to the channel room.
     socket.on('chat:session.ready', (payload: unknown, ack?: (res: unknown) => void) => {
       const parsed = chatSessionReadyEventSchema.safeParse(payload);
       if (!parsed.success) {
@@ -369,6 +385,18 @@ export async function registerRealtime(
       ack?.(accepted.ok ? { accepted: true } : { error: 'unknown-session' });
     });
 
+    // 9 W7 — transcript batch for a (re)joined/resumed channel; relayed to the
+    // room exactly like chat:event.
+    socket.on('chat:history', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatHistoryEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const accepted = realtime.chat.onHistory(machineId, parsed.data);
+      ack?.(accepted.ok ? { accepted: true } : { error: 'unknown-session' });
+    });
+
     socket.on('chat:session.closed', (payload: unknown, ack?: (res: unknown) => void) => {
       const parsed = chatSessionClosedEventSchema.safeParse(payload);
       if (!parsed.success) {
@@ -385,9 +413,10 @@ export async function registerRealtime(
       inventory.failMachine(wentOffline);
       configView.failMachine(wentOffline);
       workspace.failMachine(wentOffline);
-      void realtime.jobs.recoverMachine(wentOffline);
-      // ACP has no resume in v1 — every open channel of the machine dies with
-      // its daemon; viewers are notified via chat:session.closed.
+      sessions.failMachine(wentOffline);
+      realtime.jobs.recoverMachine(wentOffline);
+      // Channels die with the daemon connection; the AGENT sessions survive
+      // on the machine (9 W7) — viewers are notified via chat:session.closed.
       void realtime.chat.onMachineOffline(wentOffline);
       void (async () => {
         const machine = await app.uow.machines.findById(wentOffline);
@@ -455,6 +484,7 @@ export async function registerRealtime(
           parsed.data.sessionId,
           socket.id,
           parsed.data.directory,
+          parsed.data.resume,
         );
         if (!result.ok) {
           ack?.({ error: result.code });

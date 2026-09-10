@@ -305,6 +305,16 @@ ALTER TABLE ac_sessions ADD COLUMN cwd TEXT;
 ALTER TABLE ac_sessions ADD COLUMN title TEXT;
     `,
   },
+  {
+    version: 14,
+    description:
+      "phase 9 W7 — sessions are the AGENT's own (native list + resume); the platform keeps nothing",
+    sql: `
+-- AcSession audit rows are gone by design: session list/history/resume all
+-- read the harness's own store through the daemon (docs/design/phase-9-w7-native-sessions.md).
+DROP TABLE IF EXISTS ac_sessions;
+    `,
+  },
 ] as const;
 
 /**

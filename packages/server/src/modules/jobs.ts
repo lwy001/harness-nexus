@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import type { Machine } from '@harness-nexus/core';
-import { AppError, createMachineJobSchema, deployJobPayloadSchema } from '@harness-nexus/shared';
+import {
+  AppError,
+  createMachineJobSchema,
+  deployJobPayloadSchema,
+  sessionsListRequestSchema,
+} from '@harness-nexus/shared';
 import { jobView } from '../jobs/service.js';
 
 /**
@@ -173,14 +179,47 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  // ---- GET /api/agent-instances/:id/sessions — AcSession audit rows (C5) ----
-  // Listing is owner-or-admin like every machine-scoped read; CHATTING is
-  // owner-only (enforced in the chat service, not here).
+  // ---- GET /api/agent-instances/:id/sessions — the agent's OWN sessions (9 W7) ----
+  // Redefined from the dropped AcSession rows: the platform persists nothing
+  // session-shaped; the rail lists what the target's native store holds,
+  // fetched live through the daemon (`sessions:list` over /ctl). Listing is
+  // owner-or-admin like every machine-scoped read; CHATTING is owner-only
+  // (enforced in the chat service, not here).
   app.get<{ Params: { id: string } }>('/api/agent-instances/:id/sessions', guard, async (req) => {
     const agent = await app.uow.agentInstances.findById(req.params.id);
     if (!agent) throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
-    await visibleMachine(agent.machineId, req.user!);
-    const sessions = await app.uow.acSessions.listByAgentInstance(agent.id);
-    return { agent, sessions };
+    const machine = await visibleMachine(agent.machineId, req.user!);
+    if (!app.realtime.presence.isOnline(machine.id)) {
+      throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+    }
+    if (!machine.capabilities.includes('sessions')) {
+      throw new AppError(
+        'Daemon does not advertise the sessions capability (upgrade hnx on the machine)',
+        409,
+        'DAEMON_NO_SESSIONS',
+      );
+    }
+
+    const requestId = randomUUID();
+    const request = sessionsListRequestSchema.parse({ requestId, target: agent.target });
+    const { done } = app.realtime.sessions.awaitList(machine.id, requestId);
+    app.io.of('/ctl').to(`machine:${machine.id}`).emit('sessions:list', request);
+    const outcome = await done;
+    // Error arm BEFORE the generic failure branches — a fast daemon error must
+    // not read as a timeout (the W6 workspace lesson).
+    if (!outcome.ok) {
+      if (outcome.error !== undefined) {
+        throw new AppError(outcome.error, 502, 'DAEMON_SESSIONS_FAILED');
+      }
+      if (outcome.reason === 'disconnected') {
+        throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+      }
+      throw new AppError('Daemon did not answer the listing in time', 504, 'SESSIONS_TIMEOUT');
+    }
+    return {
+      agent,
+      supported: outcome.supported ?? true,
+      sessions: outcome.sessions ?? [],
+    };
   });
 }

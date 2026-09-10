@@ -1,19 +1,21 @@
 import { resolve as resolvePath } from 'node:path';
-import type { AcSession, UnitOfWork } from '@harness-nexus/core';
+import type { UnitOfWork } from '@harness-nexus/core';
 import type { ChatStreamEvent, PromptBlock } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
- * Chat routing + gating + audit (Phase 8 C5). docs/design/phase-8-c5.md.
+ * Chat routing + gating (Phase 8 C5, reworked 9 W7). docs/design/phase-8-c5.md
+ * + docs/design/phase-9-w7-native-sessions.md.
  *
- * The platform never learns agent protocols: this service checks ownership and
- * the remote-chat gates, fans the daemon's semantic stream out to the
- * `chan:<sessionId>` room, keeps `AcSession` rows as the audit trail, and
- * guarantees every permission request gets an answer (user decision or
- * timeout-cancel — never a dangling agent-side waiter). Sessions have NO
- * resume: a daemon disconnect closes every open channel of that machine
- * ('connection-lost') and a server restart closes all of them
- * ('server-shutdown' recovery sweep in `start()`).
+ * The platform never learns agent protocols and — since W7 — never persists
+ * anything session-shaped: the session list, transcript, and resume mechanics
+ * are the agent's OWN, read through the daemon on demand. This service is the
+ * LIVE channel only: ownership + remote-chat gates, fanning the daemon's
+ * semantic stream out to the `chan:<sessionId>` room, history relay, and the
+ * guarantee that every permission request gets an answer (user decision or
+ * timeout-cancel — never a dangling agent-side waiter). Closing a channel
+ * kills a subprocess, never a session — the agent's store keeps it and
+ * `sessions:list` keeps offering it.
  *
  * Transport-agnostic like JobService: realtime wires the emit/join callbacks
  * to /ctl rooms and /app channel rooms.
@@ -54,6 +56,12 @@ export type ChatOpenResult =
 
 export type ChatSimpleResult = { ok: true } | { ok: false; code: string };
 
+/** A native-session resume arm as it travels browser → server → daemon (9 W7). */
+export interface ChatResumeArm {
+  sessionId: string;
+  cwd: string;
+}
+
 interface LiveSession {
   sessionId: string;
   machineId: string;
@@ -65,12 +73,12 @@ interface LiveSession {
   /** Reported agent identity — re-pushed to re-joining viewers. */
   agentName?: string | undefined;
   agentVersion?: string | undefined;
+  /** The agent's OWN session id behind this channel (9 W7 row highlight). */
+  nativeSessionId?: string | undefined;
   /** Socket of the browser that opened the channel; joined on ready. */
   openerSocketId: string | null;
   readyTimer: NodeJS.Timeout | null;
   permissionTimers: Map<string, NodeJS.Timeout>;
-  /** 9 W6 — title already derived for this channel (write-once). */
-  titleSettled: boolean;
 }
 
 export class ChatService {
@@ -85,17 +93,6 @@ export class ChatService {
     },
   ) {}
 
-  /** Recovery sweep: rows left open by a server crash/restart cannot have live channels. */
-  async start(): Promise<void> {
-    // No machine list to iterate cheaply — close every open row.
-    const machines = await this.deps.uow.machines.list();
-    for (const machine of machines) {
-      for (const row of await this.deps.uow.acSessions.listOpenByMachine(machine.id)) {
-        await this.persistClose(row, 'server-shutdown');
-      }
-    }
-  }
-
   /** Graceful shutdown: notify viewers, tell the daemons to kill subprocesses. */
   async stop(): Promise<void> {
     for (const session of [...this.live.values()]) {
@@ -106,11 +103,14 @@ export class ChatService {
   /**
    * `chat:session.open`. Without `sessionId`: create a channel (gating order is
    * normative — see the design doc). With an open `sessionId`: idempotent
-   * re-join (page refresh) — returns the same id, spawns nothing.
+   * re-join (page refresh) — returns the same id, spawns nothing, and asks the
+   * daemon to re-push the channel's history (9 W7).
    *
-   * `directory` (9 W6) picks the session's project working directory: it must
-   * be the machine's baseWorkspace or a subdirectory of it (resolved path
-   * prefix check). Absent = the legacy default (the agent's install dir).
+   * `directory` (9 W6) picks a NEW session's project working directory: it must
+   * be the machine's baseWorkspace or a subdirectory of it. `resume` (9 W7)
+   * continues the agent's OWN session instead — its `cwd` came from the
+   * daemon's listing (ground truth) and passes through verbatim, so no
+   * containment check applies (dsh enforces its own match).
    */
   async open(
     ownerId: string,
@@ -118,6 +118,7 @@ export class ChatService {
     rejoinSessionId: string | undefined,
     openerSocketId: string,
     directory: string | undefined,
+    resume: ChatResumeArm | undefined,
   ): Promise<ChatOpenResult> {
     if (rejoinSessionId !== undefined) {
       const existing = this.live.get(rejoinSessionId);
@@ -130,6 +131,14 @@ export class ChatService {
         sessionId: existing.sessionId,
         ...(existing.agentName !== undefined ? { agentName: existing.agentName } : {}),
         ...(existing.agentVersion !== undefined ? { agentVersion: existing.agentVersion } : {}),
+        ...(existing.nativeSessionId !== undefined
+          ? { nativeSessionId: existing.nativeSessionId }
+          : {}),
+      });
+      // 9 W7 — the refreshed page lost its local fold; the daemon re-emits the
+      // channel's history into the room.
+      this.deps.io.toCtl(existing.machineId, 'chat:session.resync', {
+        sessionId: existing.sessionId,
       });
       return {
         ok: true,
@@ -144,7 +153,9 @@ export class ChatService {
     const machine = await this.deps.uow.machines.findById(agent.machineId);
     if (!machine) return { ok: false, code: 'AGENT_INSTANCE_NOT_FOUND' };
     let cwd = agent.directory;
-    if (directory !== undefined) {
+    if (resume !== undefined) {
+      cwd = resume.cwd;
+    } else if (directory !== undefined) {
       if (machine.baseWorkspace === null) return { ok: false, code: 'WORKSPACE_NOT_SET' };
       const root = resolvePath(machine.baseWorkspace);
       const wanted = resolvePath(directory);
@@ -162,18 +173,6 @@ export class ChatService {
     }
 
     const sessionId = generateId();
-    const now = new Date().toISOString();
-    await this.deps.uow.acSessions.save({
-      id: sessionId,
-      agentInstanceId: agent.id,
-      machineId: machine.id,
-      ownerId,
-      openedAt: now,
-      closedAt: null,
-      closeReason: null,
-      cwd,
-      title: null,
-    });
     // Join the opener NOW: spawn-failed / spawn-timeout notifications must
     // reach the browser even though the agent never came up.
     this.deps.io.joinChannel(openerSocketId, sessionId);
@@ -187,7 +186,6 @@ export class ChatService {
       openerSocketId,
       readyTimer: null,
       permissionTimers: new Map(),
-      titleSettled: false,
     };
     session.readyTimer = setTimeout(() => {
       void this.closeInternal(session, 'spawn-timeout', { notifyDaemon: true, failed: true });
@@ -199,6 +197,7 @@ export class ChatService {
       agentInstanceId: agent.id,
       target: agent.target,
       cwd,
+      ...(resume !== undefined ? { resume } : {}),
     });
     return { ok: true, sessionId, joined: false, phase: 'starting' };
   }
@@ -210,6 +209,7 @@ export class ChatService {
       sessionId: string;
       agentName?: string | undefined;
       agentVersion?: string | undefined;
+      nativeSessionId?: string | undefined;
       error?: string | undefined;
     },
   ): Promise<void> {
@@ -229,6 +229,7 @@ export class ChatService {
     session.phase = 'ready';
     session.agentName = evt.agentName;
     session.agentVersion = evt.agentVersion;
+    session.nativeSessionId = evt.nativeSessionId;
 
     // The opener joined at open(); if they disconnected before the agent came
     // up, nobody is watching — close instead of running an agent subprocess
@@ -242,6 +243,14 @@ export class ChatService {
       sessionId: session.sessionId,
       ...(evt.agentName !== undefined ? { agentName: evt.agentName } : {}),
       ...(evt.agentVersion !== undefined ? { agentVersion: evt.agentVersion } : {}),
+      ...(evt.nativeSessionId !== undefined ? { nativeSessionId: evt.nativeSessionId } : {}),
+    });
+    // Re-push the history AFTER ready as well: a browser that attached its
+    // listeners between the daemon's direct history push and this moment
+    // still catches this one (history ingestion rebuilds from scratch, so a
+    // viewer that saw both is fine).
+    this.deps.io.toCtl(session.machineId, 'chat:session.resync', {
+      sessionId: session.sessionId,
     });
   }
 
@@ -274,6 +283,14 @@ export class ChatService {
     return { ok: true };
   }
 
+  /** Daemon's `chat:history` (9 W7) — relay the transcript batch to the room. */
+  onHistory(machineId: string, payload: { sessionId: string; items: unknown[] }): { ok: boolean } {
+    const session = this.live.get(payload.sessionId);
+    if (!session || session.machineId !== machineId) return { ok: false };
+    this.deps.io.toChannel(payload.sessionId, 'chat:history', payload);
+    return { ok: true };
+  }
+
   /** Browser's `chat:message.send` — owner check, busy gate, prompt normalization. */
   onMessageSend(
     ownerId: string,
@@ -286,28 +303,7 @@ export class ChatService {
     if (session.busy) return { ok: false, code: 'SESSION_BUSY' };
     const prompt = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     this.deps.io.toCtl(session.machineId, 'chat:message.send', { sessionId, prompt });
-    // 9 W6 — the session list's display title comes from the first prompt
-    // (write-once, best-effort: never blocks the prompt path).
-    if (!session.titleSettled) {
-      session.titleSettled = true;
-      const firstText = prompt.find((b): b is { type: 'text'; text: string } => b.type === 'text');
-      if (firstText !== undefined) void this.deriveTitle(sessionId, firstText.text);
-    }
     return { ok: true };
-  }
-
-  /** Persist the derived display title (first line, collapsed, ≤80 chars). */
-  private async deriveTitle(sessionId: string, text: string): Promise<void> {
-    const firstLine = text.split('\n')[0] ?? '';
-    const collapsed = firstLine.trim().replace(/\s+/g, ' ').slice(0, 80);
-    if (collapsed === '') return;
-    try {
-      const row = await this.deps.uow.acSessions.findById(sessionId);
-      if (!row || row.title !== null) return;
-      await this.deps.uow.acSessions.save({ ...row, title: collapsed });
-    } catch {
-      // Best-effort display field — a failed write leaves the row untitled.
-    }
   }
 
   /** Browser's `chat:turn.cancel` — idempotent; the daemon resolves the turn as cancelled. */
@@ -348,7 +344,10 @@ export class ChatService {
     return { ok: true };
   }
 
-  /** Browser's `chat:session.close`. */
+  /**
+   * Browser's `chat:session.close` — "disconnect the channel" since 9 W7: it
+   * kills the subprocess, never the agent's session (the rail keeps it).
+   */
   async close(
     ownerId: string,
     sessionId: string,
@@ -369,7 +368,7 @@ export class ChatService {
     });
   }
 
-  /** Daemon went offline — every open channel of the machine dies ("no resume"). */
+  /** Daemon went offline — every open channel of the machine ends (the agent sessions survive). */
   async onMachineOffline(machineId: string): Promise<void> {
     for (const session of [...this.live.values()]) {
       if (session.machineId === machineId) {
@@ -378,28 +377,9 @@ export class ChatService {
     }
   }
 
-  /**
-   * Boot sweep: rows left open by a previous server process can never become
-   * live again (the in-memory map starts empty and v1 has no resume) — close
-   * them so the UI's session list stops offering them as joinable.
-   */
-  async sweepOrphanedSessions(reason = 'server-restarted'): Promise<void> {
-    for (const row of await this.deps.uow.acSessions.listOpen()) {
-      if (this.live.has(row.id)) continue;
-      await this.deps.uow.acSessions.save({
-        ...row,
-        closedAt: new Date().toISOString(),
-        closeReason: reason,
-      });
-    }
-  }
-
-  /** Machine deleted / enrollment revoked — audit rows are retained, closed. */
+  /** Machine deleted / enrollment revoked — channels end (nothing persisted remains). */
   async onMachineDeleted(machineId: string): Promise<void> {
     await this.onMachineOffline(machineId);
-    for (const row of await this.deps.uow.acSessions.listOpenByMachine(machineId)) {
-      await this.persistClose(row, 'machine-deleted');
-    }
   }
 
   private async closeInternal(
@@ -429,17 +409,5 @@ export class ChatService {
         ...(reason !== '' ? { reason } : {}),
       });
     }
-
-    const row = await this.deps.uow.acSessions.findById(session.sessionId);
-    if (row) await this.persistClose(row, reason);
-  }
-
-  private async persistClose(row: AcSession, reason: string): Promise<void> {
-    if (row.closedAt !== null) return;
-    await this.deps.uow.acSessions.save({
-      ...row,
-      closedAt: new Date().toISOString(),
-      closeReason: reason.slice(0, 256),
-    });
   }
 }

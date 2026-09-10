@@ -18,11 +18,9 @@ import type {
   InventoryRepository,
   Job,
   AgentInstance,
-  AcSession,
   RuntimeConfig,
   JobRepository,
   AgentInstanceRepository,
-  AcSessionRepository,
   RuntimeConfigRepository,
   UserRepository,
   PersonalAccessTokenRepository,
@@ -969,87 +967,6 @@ export function sqliteAgentInstanceRepository(db: Database): AgentInstanceReposi
     },
     async deleteByMachine(machineId) {
       db.prepare('DELETE FROM agent_instances WHERE machine_id = ?').run(machineId);
-    },
-  };
-}
-
-// ---- ac sessions (phase 8 C5) ----
-
-interface AcSessionRow {
-  id: string;
-  agent_instance_id: string;
-  machine_id: string;
-  owner_id: string;
-  opened_at: string;
-  closed_at: string | null;
-  close_reason: string | null;
-  cwd: string | null;
-  title: string | null;
-}
-
-function mapAcSession(row: AcSessionRow): AcSession {
-  return {
-    id: row.id,
-    agentInstanceId: row.agent_instance_id,
-    machineId: row.machine_id,
-    ownerId: row.owner_id,
-    openedAt: row.opened_at,
-    closedAt: row.closed_at,
-    closeReason: row.close_reason,
-    cwd: row.cwd,
-    title: row.title,
-  };
-}
-
-export function sqliteAcSessionRepository(db: Database): AcSessionRepository {
-  return {
-    async findById(id) {
-      const row = db.prepare('SELECT * FROM ac_sessions WHERE id = ?').get(id) as
-        AcSessionRow | undefined;
-      return row ? mapAcSession(row) : null;
-    },
-    async listByAgentInstance(agentInstanceId) {
-      const rows = db
-        .prepare(
-          'SELECT * FROM ac_sessions WHERE agent_instance_id = ? ORDER BY opened_at DESC, id',
-        )
-        .all(agentInstanceId) as AcSessionRow[];
-      return rows.map(mapAcSession);
-    },
-    async listOpen() {
-      const rows = db
-        .prepare('SELECT * FROM ac_sessions WHERE closed_at IS NULL')
-        .all() as AcSessionRow[];
-      return rows.map(mapAcSession);
-    },
-    async listOpenByMachine(machineId) {
-      const rows = db
-        .prepare('SELECT * FROM ac_sessions WHERE machine_id = ? AND closed_at IS NULL')
-        .all(machineId) as AcSessionRow[];
-      return rows.map(mapAcSession);
-    },
-    async save(session) {
-      db.prepare(
-        `INSERT INTO ac_sessions
-           (id, agent_instance_id, machine_id, owner_id, opened_at, closed_at, close_reason, cwd, title)
-         VALUES (@id, @agent_instance_id, @machine_id, @owner_id, @opened_at, @closed_at, @close_reason, @cwd, @title)
-         ON CONFLICT(id) DO UPDATE SET
-           closed_at    = excluded.closed_at,
-           close_reason = excluded.close_reason,
-           cwd          = excluded.cwd,
-           title        = excluded.title`,
-      ).run({
-        id: session.id,
-        agent_instance_id: session.agentInstanceId,
-        machine_id: session.machineId,
-        owner_id: session.ownerId,
-        opened_at: session.openedAt,
-        closed_at: session.closedAt,
-        close_reason: session.closeReason,
-        cwd: session.cwd,
-        title: session.title,
-      });
-      return session;
     },
   };
 }
