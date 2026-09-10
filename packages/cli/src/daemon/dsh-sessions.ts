@@ -1,17 +1,28 @@
 import * as zlib from 'node:zlib';
-import type { HistoryItem } from '@harness-nexus/shared';
+import type { ChatStreamEvent, HistoryItem } from '@harness-nexus/shared';
 
 /**
  * dsh native session store reader (Phase 9 W7).
  * docs/design/phase-9-w7-native-sessions.md § ground truth.
  *
  * dsh persists every session at `~/.dsh/sessions/<cwd-slug>/<uuid>/
- * session.jsonl.zstd` as MULTI-FRAME zstd — one frame per write batch. Node's
+ * session.jsonl.zstd` as MULTI-FRAME zstd — one frame per write batch (the
+ * engine appends every LLM chunk as a `assistant/chunk` session event; a
+ * bounded write-behind window coalesces them ~100–300ms apart). Node's
  * one-shot AND stream zstd decoders stop after the first frame, so the reader
  * scans the frame magic (`28 B5 2F FD`), slices, and decodes each frame
- * separately. Everything here is pure/bounded and injectable for tests; the
- * zstd binding is feature-detected (needs Node ≥ 22.15 — machines running dsh
- * already require it, but the daemon degrades gracefully below it).
+ * separately. Delta runs reach disk in TWO shapes — packed `text-chunks`/
+ * `reasoning-chunks`/`tool-call-chunks` rows (runs of ≥3 seq-contiguous
+ * same-block deltas) and verbatim `assistant/chunk` events below that
+ * (MIN_RUN=3 fall-through; shapes verified against dsh 0.1.2-rc.1 source).
+ * Everything here is pure/bounded and injectable for tests; the zstd binding
+ * is feature-detected (needs Node ≥ 22.15 — machines running dsh already
+ * require it, but the daemon degrades gracefully below it).
+ *
+ * dsh's ACP adapter surfaces only COMMITTED updates — a whole reasoning/text
+ * block arrives as ONE chunk when the turn ends, so there is no streaming
+ * over the protocol. The transcript file, however, is appended LIVE with the
+ * token batches, which is what `TranscriptTail` turns into real-time deltas.
  */
 
 /** zstd frame magic, big-endian as stored. */
@@ -254,6 +265,185 @@ function parseArguments(raw: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/** The `tool/call` shape — in_progress with parsed arguments (shared: history + live tail). */
+function toolStartEvent(callId: unknown, name: unknown, args: unknown): ChatStreamEvent | null {
+  if (typeof callId !== 'string' || callId === '') return null;
+  return {
+    kind: 'tool_call',
+    call: {
+      toolCallId: callId,
+      ...(typeof name === 'string' && name !== '' ? { toolName: bounded(name, 128) } : {}),
+      status: 'in_progress',
+      ...(parseArguments(args) !== undefined
+        ? { rawInput: parseArguments(args) as Record<string, unknown> }
+        : {}),
+    },
+  };
+}
+
+/** The `tool/result` shape — completed with the joined output text (shared). */
+function toolResultEvent(message: UnknownRecord | null): ChatStreamEvent | null {
+  const source = message !== null && isRecord(message['source']) ? message['source'] : null;
+  const callId = source !== null ? source['callId'] : undefined;
+  if (typeof callId !== 'string' || callId === '') return null;
+  const texts: string[] = [];
+  const content = message !== null ? message['content'] : undefined;
+  if (Array.isArray(content)) {
+    for (const c of content) {
+      if (!isRecord(c)) continue;
+      const inner = c['content'];
+      if (!Array.isArray(inner)) continue;
+      for (const piece of inner) {
+        if (isRecord(piece) && piece['type'] === 'text' && typeof piece['text'] === 'string') {
+          texts.push(piece['text']);
+        }
+      }
+    }
+  }
+  return {
+    kind: 'tool_call',
+    call: {
+      toolCallId: callId,
+      status: 'completed',
+      ...(texts.length > 0 ? { output: bounded(texts.join('\n'), OUTPUT_MAX) } : {}),
+    },
+  };
+}
+
+/** The `turn:step` dedup key, or null when the entry carries no coordinates. */
+function stepKey(data: UnknownRecord): string | null {
+  const turn = data['turn'];
+  const step = data['step'];
+  return typeof turn === 'number' && typeof step === 'number' ? `${turn}:${step}` : null;
+}
+
+/** A usage event from a commit's `usage` payload (null when absent/malformed). */
+function usageEvent(raw: unknown): ChatStreamEvent | null {
+  if (!isRecord(raw)) return null;
+  const input = raw['inputTokens'];
+  const output = raw['outputTokens'];
+  if (typeof input !== 'number' && typeof output !== 'number') return null;
+  return {
+    kind: 'usage',
+    ...(typeof input === 'number' ? { inputTokens: input } : {}),
+    ...(typeof output === 'number' ? { outputTokens: output } : {}),
+  };
+}
+
+/** The usage marker of a verbatim `assistant/chunk` row (history path). */
+export function usageFromChunk(entry: UnknownRecord): ChatStreamEvent | null {
+  const data = isRecord(entry['data']) ? (entry['data'] as UnknownRecord) : null;
+  if (data === null) return null;
+  const chunk = isRecord(data['chunk']) ? (data['chunk'] as UnknownRecord) : null;
+  if (chunk === null || chunk['type'] !== 'usage') return null;
+  return usageEvent(chunk['usage']);
+}
+
+/**
+ * The stateful LIVE mapper: one dsh transcript entry → 0..n stream events.
+ * Mirrors the semantics of dsh's own in-process bridge mapper (reference:
+ * `updates.js` `createEventMapper`, engine/storage shapes verified against
+ * dsh 0.1.2-rc.1 — the exact rig version):
+ *
+ * - Deltas arrive in TWO on-disk shapes: packed `text-chunks`/
+ *   `reasoning-chunks` rows (runs of ≥3 seq-contiguous same-block deltas) and
+ *   verbatim `assistant/chunk` events (shorter runs — the codec's MIN_RUN=3
+ *   falls through). Both map; skipping either would silently drop content.
+ * - Committed `assistant/message` carries the step's dedup key: if deltas for
+ *   that `turn:step` were already emitted, ONLY the usage rides through
+ *   (re-sending the full block would double-render); if none were (late tail
+ *   attach, block-only adapters), the complete blocks are emitted — the wire's
+ *   committed chunk is suppressed while the tail is live, so this fallback is
+ *   the only copy. Tool-call blocks are skipped: the `tool/call` row owns them.
+ * - Turn markers and user inputs never map live — the prompt response owns
+ *   turn_result, and the browser echoes the user's own prompt.
+ */
+export type DshLiveMapper = (entry: UnknownRecord) => ChatStreamEvent[];
+
+export function createDshLiveMapper(): DshLiveMapper {
+  const stepsWithDeltas = new Set<string>();
+  return (entry) => {
+    const data = isRecord(entry['data']) ? (entry['data'] as UnknownRecord) : null;
+    if (data === null) return [];
+    switch (entry['type']) {
+      case 'text-chunks':
+      case 'reasoning-chunks': {
+        const texts = data['texts'];
+        if (!Array.isArray(texts)) return [];
+        const delta = bounded(
+          texts.filter((t): t is string => typeof t === 'string').join(''),
+          100_000,
+        );
+        if (delta === undefined || delta === '') return [];
+        const key = stepKey(data);
+        if (key !== null) stepsWithDeltas.add(key);
+        return [
+          {
+            kind: entry['type'] === 'reasoning-chunks' ? 'thought_delta' : 'message_delta',
+            delta,
+          },
+        ];
+      }
+      case 'assistant/chunk': {
+        // Verbatim delta events (runs below the codec's MIN_RUN). The usage /
+        // block-start / block-end / finish / tool-call-delta chunks carry no
+        // renderable text — usage rides the commit instead.
+        const chunk = isRecord(data['chunk']) ? (data['chunk'] as UnknownRecord) : null;
+        if (chunk === null) return [];
+        const kind =
+          chunk['type'] === 'text-delta'
+            ? 'message_delta'
+            : chunk['type'] === 'reasoning-delta'
+              ? 'thought_delta'
+              : null;
+        if (kind === null) return [];
+        const text = bounded(chunk['text'], 100_000);
+        if (text === undefined || text === '') return [];
+        const key = stepKey(data);
+        if (key !== null) stepsWithDeltas.add(key);
+        return [{ kind, delta: text }];
+      }
+      case 'assistant/message': {
+        const out: ChatStreamEvent[] = [];
+        const key = stepKey(data);
+        const streamed = key !== null && stepsWithDeltas.delete(key);
+        if (!streamed) {
+          const message = isRecord(data['message']) ? (data['message'] as UnknownRecord) : null;
+          const content = message !== null ? message['content'] : undefined;
+          if (Array.isArray(content)) {
+            for (const rawBlock of content) {
+              if (!isRecord(rawBlock)) continue;
+              const block = rawBlock as UnknownRecord;
+              if (block['type'] !== 'text' && block['type'] !== 'reasoning') continue;
+              const text = bounded(block['text'], 100_000);
+              if (text !== undefined && text !== '') {
+                out.push({
+                  kind: block['type'] === 'reasoning' ? 'thought_delta' : 'message_delta',
+                  delta: text,
+                });
+              }
+            }
+          }
+        }
+        const usage = usageEvent(data['usage']);
+        if (usage !== null) out.push(usage);
+        return out;
+      }
+      case 'tool/call': {
+        const event = toolStartEvent(data['callId'], data['name'], data['arguments']);
+        return event === null ? [] : [event];
+      }
+      case 'tool/result': {
+        const message = isRecord(data['message']) ? (data['message'] as UnknownRecord) : null;
+        const event = toolResultEvent(message);
+        return event === null ? [] : [event];
+      }
+      default:
+        return [];
+    }
+  };
+}
+
 /**
  * Map dsh transcript entries onto history items (user blocks + ordinary
  * stream events — ONE fold path in the browser). Genuine user turns are the
@@ -297,104 +487,28 @@ export function dshHistoryItems(entries: UnknownRecord[]): HistoryItem[] {
               items.push({ type: 'event', event: { kind: 'message_delta', delta: text } });
             }
           } else if (block['type'] === 'tool-call') {
-            items.push({
-              type: 'event',
-              event: {
-                kind: 'tool_call',
-                call: {
-                  toolCallId: String(block['id'] ?? 'unknown'),
-                  ...(typeof block['name'] === 'string' && block['name'] !== ''
-                    ? { toolName: bounded(block['name'], 128) }
-                    : {}),
-                  status: 'in_progress',
-                  ...(parseArguments(block['arguments']) !== undefined
-                    ? { rawInput: parseArguments(block['arguments']) as Record<string, unknown> }
-                    : {}),
-                },
-              },
-            });
+            const event = toolStartEvent(block['id'], block['name'], block['arguments']);
+            if (event !== null) items.push({ type: 'event', event });
           }
         }
         break;
       }
       case 'tool/call': {
-        // Redundant with the assistant/message tool-call block (same callId —
-        // the fold merges), but a safety net when a message lacks blocks.
-        items.push({
-          type: 'event',
-          event: {
-            kind: 'tool_call',
-            call: {
-              toolCallId: String(data['callId'] ?? 'unknown'),
-              ...(typeof data['name'] === 'string' && data['name'] !== ''
-                ? { toolName: bounded(data['name'], 128) }
-                : {}),
-              status: 'in_progress',
-              ...(parseArguments(data['arguments']) !== undefined
-                ? { rawInput: parseArguments(data['arguments']) as Record<string, unknown> }
-                : {}),
-            },
-          },
-        });
+        const event = toolStartEvent(data['callId'], data['name'], data['arguments']);
+        if (event !== null) items.push({ type: 'event', event });
         break;
       }
       case 'tool/result': {
         const message = isRecord(data['message']) ? (data['message'] as UnknownRecord) : null;
-        const source = message !== null && isRecord(message['source']) ? message['source'] : null;
-        const callId = source !== null ? source['callId'] : undefined;
-        if (typeof callId !== 'string' || callId === '') break;
-        const texts: string[] = [];
-        const content = message !== null ? message['content'] : undefined;
-        if (Array.isArray(content)) {
-          for (const c of content) {
-            if (!isRecord(c)) continue;
-            const inner = c['content'];
-            if (!Array.isArray(inner)) continue;
-            for (const piece of inner) {
-              if (
-                isRecord(piece) &&
-                piece['type'] === 'text' &&
-                typeof piece['text'] === 'string'
-              ) {
-                texts.push(piece['text']);
-              }
-            }
-          }
-        }
-        items.push({
-          type: 'event',
-          event: {
-            kind: 'tool_call',
-            call: {
-              toolCallId: callId,
-              status: 'completed',
-              ...(texts.length > 0 ? { output: bounded(texts.join('\n'), OUTPUT_MAX) } : {}),
-            },
-          },
-        });
+        const event = toolResultEvent(message);
+        if (event !== null) items.push({ type: 'event', event });
         break;
       }
       case 'assistant/chunk': {
         // Only the usage marker rides the history (the text chunks are
         // superseded by assistant/message's complete blocks).
-        const chunk = isRecord(data['chunk']) ? (data['chunk'] as UnknownRecord) : null;
-        if (chunk !== null && chunk['type'] === 'usage') {
-          const usage = isRecord(chunk['usage']) ? (chunk['usage'] as UnknownRecord) : null;
-          if (usage !== null) {
-            items.push({
-              type: 'event',
-              event: {
-                kind: 'usage',
-                ...(typeof usage['inputTokens'] === 'number'
-                  ? { inputTokens: usage['inputTokens'] }
-                  : {}),
-                ...(typeof usage['outputTokens'] === 'number'
-                  ? { outputTokens: usage['outputTokens'] }
-                  : {}),
-              },
-            });
-          }
-        }
+        const event = usageFromChunk(entry);
+        if (event !== null) items.push({ type: 'event', event });
         break;
       }
       case 'turn/end': {
@@ -425,4 +539,167 @@ function toPromptBlocks(content: unknown): { type: 'text'; text: string }[] {
     }
   }
   return blocks;
+}
+
+// ---- live transcript tail (dsh's streaming source) ----
+
+/** Locate a session's transcript by id across the slug dirs (null = absent). */
+export function findTranscript(
+  sessionsDir: string,
+  sessionId: string,
+  readdir: (path: string) => string[],
+): string | null {
+  let slugs: string[];
+  try {
+    slugs = readdir(sessionsDir);
+  } catch {
+    return null;
+  }
+  for (const slug of slugs) {
+    const candidate = `${sessionsDir}/${slug}/${sessionId}/session.jsonl.zstd`;
+    try {
+      readdir(`${sessionsDir}/${slug}/${sessionId}`);
+      return candidate; // the session dir exists — the file follows on first write
+    } catch {
+      // not under this slug
+    }
+  }
+  return null;
+}
+
+/** The fs surface `TranscriptTail` needs (injectable for tests). */
+export interface TailFs {
+  /** Current byte size, or null while the file is absent. */
+  size(path: string): number | null;
+  /** The bytes from `start` to the current end (may grow mid-call — fine). */
+  readEnd(path: string, start: number): Buffer;
+}
+
+/** Runtime knobs for `TranscriptTail`. */
+export interface TailOptions {
+  /** Poll interval (default 250ms — dsh flushes write batches ~100–300ms apart). */
+  intervalMs?: number;
+  /**
+   * Fired when the file corrupts mid-stream (a bounded frame that fails to
+   * decode): the tail stops itself and the caller should fall back to the
+   * adapter's committed chunks (wire suppression must lift).
+   */
+  onFatal?: (reason: string) => void;
+}
+
+/**
+ * Tails a dsh transcript for LIVE token streaming. Ground truth (dsh
+ * 0.1.2-rc.1 write path): every engine `assistant/chunk` event rides the
+ * session bus into a bounded write-behind batch (~100–300ms window) and lands
+ * as one zstd frame per batch — so polling the file yields token batches
+ * roughly one write window behind the model, while dsh's ACP adapter stays
+ * silent until commit. New bytes are split into frames, decoded, and mapped
+ * through a stateful `createDshLiveMapper` (packed rows AND verbatim chunk
+ * events, with the `turn:step` committed-dedup — see its doc).
+ *
+ * A trailing frame cut mid-write decodes only once its remaining bytes
+ * arrive: the last undecodable slice is buffered for the next poll (the
+ * writer completes it on the next batch or truncates it back on rollback).
+ * `start()` skips existing bytes (history was already rendered);
+ * `flush()` drains once more so a turn's final tokens stay ordered before
+ * its turn_result. A BOUNDED frame that fails to decode is corruption —
+ * `onFatal` fires and the tail stops (the committed path takes over).
+ */
+export class TranscriptTail {
+  private pending = Buffer.alloc(0);
+  private timer: NodeJS.Timeout | null = null;
+  private stopped = false;
+  private offset = 0;
+  private readonly mapper = createDshLiveMapper();
+  /** Wall-clock of the last `turn/end` row seen (0 = none). */
+  private lastTurnEndAt = 0;
+
+  constructor(
+    private readonly file: string,
+    private readonly fs: TailFs,
+    private readonly decompress: FrameDecoder,
+    private readonly onEvent: (event: ChatStreamEvent) => void,
+    private readonly opts: TailOptions = {},
+  ) {}
+
+  /** Begin polling. `replayFromBeginning` re-maps the whole file instead of
+   * skipping existing bytes — valid ONLY when nothing in it was ever
+   * rendered (a lazily-materialized new-session transcript attached mid-turn:
+   * replaying recovers the deltas that landed before the attach; the
+   * caller guarantees no earlier turn ran through the committed path). */
+  start(replayFromBeginning = false): void {
+    this.offset = replayFromBeginning ? 0 : (this.fs.size(this.file) ?? 0);
+    this.timer = setInterval(() => this.poll(), this.opts.intervalMs ?? 250);
+    this.timer.unref?.();
+  }
+
+  /** Whether a `turn/end` row landed since `since` (the settle signal). */
+  turnEndSeenSince(since: number): boolean {
+    return this.lastTurnEndAt >= since;
+  }
+
+  /** One synchronous drain (call before settling a turn). */
+  flush(): void {
+    if (!this.stopped) this.poll();
+  }
+
+  stop(): void {
+    this.stopped = true;
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+    this.pending = Buffer.alloc(0);
+  }
+
+  private poll(): void {
+    const size = this.fs.size(this.file);
+    if (size === null || size <= this.offset) return;
+    let chunk: Buffer;
+    try {
+      chunk = this.fs.readEnd(this.file, this.offset);
+    } catch {
+      return;
+    }
+    this.offset += chunk.length;
+    this.pending = Buffer.concat([this.pending, chunk]);
+    this.drain();
+  }
+
+  private drain(): void {
+    const frames = splitZstdFrames(this.pending);
+    let consumed = 0;
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i]!;
+      let text: string;
+      try {
+        text = this.decompress(frame).toString('utf8');
+      } catch {
+        if (i === frames.length - 1) break; // partial trailing frame — wait
+        // A bounded frame that won't decode is mid-file corruption: frames
+        // are self-terminating, so the mapper can no longer be trusted to
+        // see every commit. Stop and let the committed wire path take over.
+        const reason = `transcript corrupt at byte ${this.offset}: undecodable frame`;
+        this.stop();
+        this.opts.onFatal?.(reason);
+        return;
+      }
+      consumed += frame.length;
+      this.emitLines(text);
+    }
+    this.pending = this.pending.subarray(consumed);
+  }
+
+  private emitLines(text: string): void {
+    for (const line of text.split('\n')) {
+      if (line.trim() === '') continue;
+      let entry: unknown;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isRecord(entry)) continue;
+      if (entry['type'] === 'turn/end') this.lastTurnEndAt = Date.now();
+      for (const event of this.mapper(entry)) this.onEvent(event);
+    }
+  }
 }

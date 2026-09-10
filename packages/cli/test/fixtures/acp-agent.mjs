@@ -210,13 +210,21 @@ function runToolShowcase(id, sessionId) {
   finish();
 }
 
-function runPrompt(id, text) {
+function runPrompt(id, text, deferred = false) {
   const sessionId = 'fx-session'; // single-session fixture; content is what matters
   const finish = (stopReason) => {
     promptIds.delete(id);
     respond(id, { stopReason });
   };
   promptIds.add(id);
+
+  // Test seam: hold the plain echo turn so a test can append transcript
+  // frames DURING generation (the dsh live-tail streaming path).
+  const delay = Number(process.env.FIXTURE_DELAY_PROMPT_MS ?? '0');
+  if (!deferred && delay > 0) {
+    setTimeout(() => runPrompt(id, text, true), delay);
+    return;
+  }
 
   if (text.includes('please error')) {
     // A PROTOCOL error (like claude-code's "Authentication required" on
@@ -312,7 +320,12 @@ function handleRequest(msg) {
       });
       return;
     case 'session/new':
-      respond(id, { sessionId: `fx-${randomUUID().slice(0, 8)}`, cwd: params?.cwd ?? process.cwd() });
+      respond(id, {
+        // FIXTURE_SESSION_ID pins the id so tests can pre-create the dsh
+        // transcript directory for the live-tail streaming path.
+        sessionId: process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`,
+        cwd: params?.cwd ?? process.cwd(),
+      });
       return;
     case 'session/list':
       respond(id, {

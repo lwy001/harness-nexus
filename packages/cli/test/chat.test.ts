@@ -599,8 +599,7 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
     const ready = await waitFor(
       () =>
         socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
-          | { error?: string }
-          | undefined,
+          { error?: string } | undefined,
     );
     expect(ready.error).toContain('no configured model');
 
@@ -613,5 +612,248 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
         .filter((n) => Number.isFinite(n) && n > 0);
       return pids.length > 0 && pids.every((p) => !alive(p)) ? true : undefined;
     });
+  }, 15000);
+});
+
+// Node's zstd binding (needed to write real frames for the tail); absent on
+// Node < 22.15 — those tests self-skip.
+const maybeZstd = (await import('node:zlib')) as unknown as {
+  zstdCompressSync?: (b: Buffer) => Buffer;
+};
+
+describe('dsh live streaming via transcript tail (9 W7)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+
+  it('streams token batches from the transcript while the turn runs, suppressing committed chunks', async () => {
+    const zstd = maybeZstd.zstdCompressSync;
+    if (zstd === undefined) return it.skip('needs Node >= 22.15 zstd') as never;
+
+    const { mkdirSync, writeFileSync, appendFileSync } = await import('node:fs');
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-tail-'));
+    const sid = 'fx-tail-1';
+    const dir = join(home, '.dsh', 'sessions', '--tail--', sid);
+    mkdirSync(dir, { recursive: true });
+    const transcript = join(dir, 'session.jsonl.zstd');
+    const frame = (entries: unknown[]): Buffer =>
+      Buffer.concat(entries.map((e) => zstd(Buffer.from(`${JSON.stringify(e)}\n`))));
+    writeFileSync(
+      transcript,
+      frame([{ type: 'session', cwd: '/tmp', createdAt: 1, delegationDepth: 0 }]),
+    );
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_SESSION_ID: sid, FIXTURE_DELAY_PROMPT_MS: '1200' },
+      homeDir: home,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-tail',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; nativeSessionId?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    expect(ready.nativeSessionId).toBe(sid);
+
+    // The turn is in flight (the fixture waits FIXTURE_DELAY_PROMPT_MS) —
+    // "dsh" appends token batches to the transcript DURING generation.
+    setTimeout(() => {
+      appendFileSync(
+        transcript,
+        frame([
+          {
+            type: 'text-chunks',
+            seq0: 1,
+            time0: 1,
+            data: { turn: 1, step: 0, index: 0, dt: [1], texts: ['你好', '，'] },
+          },
+        ]),
+      );
+    }, 250);
+    setTimeout(() => {
+      appendFileSync(
+        transcript,
+        frame([
+          {
+            type: 'text-chunks',
+            seq0: 3,
+            time0: 2,
+            data: { turn: 1, step: 0, index: 0, dt: [], texts: ['世界'] },
+          },
+          { type: 'turn/end', seq: 4, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+        ]),
+      );
+    }, 600);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-tail',
+      prompt: [{ type: 'text', text: 'say hi slowly' }],
+    });
+    const turnDone = await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    expect(turnDone).toBeDefined();
+
+    // The streamed deltas arrived BEFORE the turn settled — and the fixture's
+    // own committed `agent_message_chunk` echo ('echo: say hi slowly') was
+    // SUPPRESSED (the tail already streamed this turn's text).
+    const deltas = socket
+      .chatEvents()
+      .filter((e): e is { kind: 'message_delta'; delta: string } => e.kind === 'message_delta')
+      .map((e) => e.delta);
+    expect(deltas).toContain('你好，');
+    expect(deltas).toContain('世界');
+    expect(deltas.join('')).not.toContain('echo: say hi slowly');
+    const turnIdx = socket.chatEvents().findIndex((e) => e.kind === 'turn_result');
+    const lastDeltaIdx = socket
+      .chatEvents()
+      .findLastIndex((e) => e.kind === 'message_delta' && e.delta === '世界');
+    expect(lastDeltaIdx).toBeLessThan(turnIdx);
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-tail', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
+  it('without a transcript (no tail) the committed chunks stream as before', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-notail-'));
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_SESSION_ID: 'fx-notail-1' },
+      homeDir: home,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-nt',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-nt',
+      prompt: [{ type: 'text', text: 'hi' }],
+    });
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'message_delta' && e.delta === 'echo: hi'),
+    );
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-nt', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
+  }, 15000);
+
+  it('a lazily-materialized transcript replays from byte 0 — pre-attach deltas are not lost', async () => {
+    const zstd = maybeZstd.zstdCompressSync;
+    if (zstd === undefined) return it.skip('needs Node >= 22.15 zstd') as never;
+
+    const { mkdirSync, writeFileSync, appendFileSync } = await import('node:fs');
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-dsh-lazy-'));
+    const sid = 'fx-lazy-1';
+    const dir = join(home, '.dsh', 'sessions', '--lazy--', sid);
+    mkdirSync(dir, { recursive: true });
+    const transcript = join(dir, 'session.jsonl.zstd');
+    const frame = (entries: unknown[]): Buffer =>
+      Buffer.concat(entries.map((e) => zstd(Buffer.from(`${JSON.stringify(e)}\n`))));
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_DEEPSEEK: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_SESSION_ID: sid, FIXTURE_DELAY_PROMPT_MS: '2500' },
+      homeDir: home,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-lazy',
+      agentInstanceId: 'ag-1',
+      target: 'deepseek',
+      cwd: '/tmp',
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; nativeSessionId?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+
+    // The prompt goes out while the transcript does NOT exist yet (dsh
+    // materializes it lazily); the file then appears already holding the
+    // turn's FIRST batch — written before any attach could see it.
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-lazy',
+      prompt: [{ type: 'text', text: 'lazy file' }],
+    });
+    setTimeout(() => {
+      writeFileSync(
+        transcript,
+        frame([
+          { type: 'session', cwd: '/tmp', createdAt: 1, delegationDepth: 0 },
+          {
+            type: 'text-chunks',
+            seq0: 1,
+            time0: 1,
+            data: { turn: 1, step: 0, index: 0, dt: [1], texts: ['早到的批次'] },
+          },
+        ]),
+      );
+    }, 120);
+    setTimeout(() => {
+      appendFileSync(
+        transcript,
+        frame([
+          {
+            type: 'text-chunks',
+            seq0: 3,
+            time0: 2,
+            data: { turn: 1, step: 0, index: 0, dt: [], texts: ['后到的批次'] },
+          },
+          { type: 'turn/end', seq: 4, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+        ]),
+      );
+    }, 900);
+
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    const deltas = socket
+      .chatEvents()
+      .filter((e): e is { kind: 'message_delta'; delta: string } => e.kind === 'message_delta')
+      .map((e) => e.delta);
+    // BOTH batches streamed — the pre-attach one via the byte-0 replay — and
+    // the wire's committed echo never doubled anything.
+    expect(deltas).toContain('早到的批次');
+    expect(deltas).toContain('后到的批次');
+    expect(deltas.join('')).not.toContain('echo: lazy file');
+
+    const closeAck = vi.fn();
+    socket.receive('chat:session.close', { sessionId: 'sess-lazy', reason: 'user' }, closeAck);
+    expect(closeAck).toHaveBeenCalledWith({ closed: true });
   }, 15000);
 });

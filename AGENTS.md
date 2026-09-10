@@ -852,6 +852,31 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
   `model` + `staleReason: 'model-missing'` (`nativeSessionView` optional
   fields) and the rail mutes them with a "pinned model no longer configured"
   hint instead of offering a guaranteed failure.
+- **dsh LIVE token streaming rides the transcript file, not the protocol**
+  (post-W7 addendum, branch `feat/p9-w7-dsh-streaming-tail`; full design in
+  `docs/design/phase-9-w7-native-sessions.md` § "dsh live streaming"):
+  `@deepseek-ai/dsh-acp` only emits COMMITTED updates (verified 0.1.2-rc.1
+  AND 0.1.5-rc.1 — zero pushes during generation), but dsh persists every
+  LLM chunk as a session event through a ~100–300ms write-behind window, so
+  `TranscriptTail` (`cli/src/daemon/dsh-sessions.ts`) polls the session's
+  `session.jsonl.zstd` and maps new frames via `createDshLiveMapper()`.
+  Shapes verified against dsh 0.1.2-rc.1 source: deltas land as packed
+  `text-chunks`/`reasoning-chunks`/`tool-call-chunks` rows (runs ≥ `MIN_RUN=3`)
+  OR verbatim `assistant/chunk` events (shorter runs) — BOTH must map.
+  Semantics mirror dsh's own in-process bridge: a `stepsWithDeltas` set keyed
+  `"turn:step"` so a committed `assistant/message` for an already-streamed
+  step carries only usage, while an unstreamed step falls back to full blocks.
+  While the tail is live the wire's committed text chunks are SUPPRESSED
+  (redundant by construction); tools/usage still flow (dedup by `toolCallId`
+  / field-merge). `ensureTail` attaches at ready AND each prompt (a new
+  session's file materializes lazily — the first attach of a never-wire-
+  rendered session replays from byte 0 to recover pre-attach deltas; a
+  resumed session skips to EOF). `runPrompt` waits ≤600ms for the
+  transcript's `turn/end` row before emitting `turn_result` (the final
+  write-behind batch lands AFTER the wire settles; a post-turn_result delta
+  would open a new fold bubble). A bounded undecodable frame = corruption:
+  the tail stops, suppression lifts, committed-only takes over. No zstd / no
+  file → committed-only (old behavior). Daemon `0.10.1-p9w7`.
 
 ## Authentication & authorization (permission interceptors)
 
