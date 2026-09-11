@@ -8,10 +8,18 @@
 #     Environment          : (leave empty)
 #     Allowed actions      : direct `npm publish` allowed
 #
-# To cut a release: bump `version` in the five package manifests in a commit
-# on main, then run this workflow (Actions → release → Run workflow). Versions
-# already on npm are rejected by the registry, which is the double-publish
-# guard.
+# The release flow (tag-driven, idempotent):
+#   1. bump `version` in the five package manifests on a branch, merge to main
+#      (the CI-parity gate — `task verify` — must have run green);
+#   2. `git tag vX.Y.Z && git push origin vX.Y.Z` — pushing the tag runs THIS
+#      workflow. The tag must equal the manifests' version (guarded below), so
+#      the tag is the release record and the manifests are the version source;
+#   3. each publish SKIPS versions already on npm, so re-running the same tag
+#      (or retrying a partially failed run) is a no-op for what landed — the
+#      guard against typos, not the registry's rejection, is what makes
+#      retries safe.
+#   Manual dispatch from main remains as the fallback (publishes whatever the
+#   manifests say, unguarded by any tag).
 #
 # pnpm is not supported for tokenless publishing — we use `pnpm pack` (it
 # substitutes `workspace:` versions) and `npm publish` the tarballs, which is
@@ -20,12 +28,14 @@
 name: release
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
   npm:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       id-token: write # mint the OIDC token npm verifies
       contents: read
@@ -41,6 +51,20 @@ jobs:
 
       - run: npm install -g npm@latest # runners ship an npm older than 11.5.1
 
+      - name: The tag must match the manifests (tag-triggered runs)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          ok=1
+          for d in core shared sdk-ts mcp-runtime cli; do
+            have=$(node -p "require('./packages/$d/package.json').version")
+            if [ "$have" != "$want" ]; then
+              echo "::error::packages/$d is $have but the tag wants $want — bump the manifests or re-tag"
+              ok=0
+            fi
+          done
+          [ "$ok" = 1 ]
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm -r test
@@ -53,12 +77,18 @@ jobs:
           done
           ls -l "$RUNNER_TEMP/tgz"
 
-      - name: Publish (OIDC — no token)
+      - name: Publish (OIDC — no token; already-published versions are skipped)
         run: |
           for tgz in "$RUNNER_TEMP/tgz"/*.tgz; do
-            echo "::group::publish $(basename "$tgz")"
-            # npm >= 12 requires an explicit tag for prerelease versions; while
-            # pre-1.0 the alphas ARE the latest (npx must work out of the box).
-            npm publish "$tgz" --tag latest
+            name=$(tar -xzOf "$tgz" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).name))")
+            version=$(tar -xzOf "$tgz" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+            echo "::group::publish $name@$version"
+            if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
+              echo "skip — $name@$version is already on npm (idempotent re-run)"
+            else
+              # npm >= 12 requires an explicit tag for prerelease versions; while
+              # pre-1.0 the alphas ARE the latest (npx must work out of the box).
+              npm publish "$tgz" --tag latest
+            fi
             echo "::endgroup::"
           done
