@@ -56,20 +56,24 @@ export function AppShell({
         {t('app.skipToContent')}
       </a>
 
-      {/* Sidebar (desktop) */}
-      <aside className="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col border-r md:flex">
-        <div className="flex h-14 items-center px-5">
+      {/* Sidebar (desktop) — brand row and footer pinned; the nav list is the
+          only scrolling part, so short viewports keep both ends reachable. */}
+      <aside className="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col overflow-hidden border-r md:flex">
+        <div className="flex h-14 shrink-0 items-center px-5">
           <Link to="/" aria-label={t('app.brandHome')}>
             <Brand size={22} />
           </Link>
         </div>
         <Separator />
-        <nav className="flex flex-col gap-1 p-3" aria-label={t('app.primaryNav')}>
+        <nav
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3"
+          aria-label={t('app.primaryNav')}
+        >
           {items.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
         </nav>
-        <div className="mt-auto p-3">
+        <div className="shrink-0 p-3">
           <div className="text-muted-foreground px-2 pb-2 text-xs uppercase tracking-wide">
             {t('app.signedIn')}
           </div>
@@ -139,7 +143,7 @@ function NavItem({ to, icon, label, end }: NavItemProps) {
       aria-label={label}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          'flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
