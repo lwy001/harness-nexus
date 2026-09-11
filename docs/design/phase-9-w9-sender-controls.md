@@ -103,8 +103,8 @@ Caps: ≤32 modes, ≤256 option values, ≤64 options, strings ≤2k.
   - mode ← configOptions `category:'mode'` (fallback `modes.availableModes`),
   - model ← `category:'model'` (grouped options via `group`),
   - effort ← `category:'thought_level'`.
-  Selects disabled while `turnActive` or not ready. Mode values are wire
-  enums (English, per the i18n exception); labels come from the adapter.
+    Selects disabled while `turnActive` or not ready. Mode values are wire
+    enums (English, per the i18n exception); labels come from the adapter.
 - Dangerous modes (id ∈ {bypassPermissions, full-access, auto}) confirm via
   `window.confirm` first — same pattern as MachineDetail's actions.
 - Switch errors surface as toasts; state settles only through
@@ -121,7 +121,7 @@ unchanged — it reads the transcript, not live config).
 ## B. Image attachments
 
 - `promptBlockSchema` += `{ type:'image', data: base64 ≤6MB, mimeType:
-  png|jpeg|webp|gif }`; send-path schemas refine ≤4 images and ≤6MB total
+png|jpeg|webp|gif }`; send-path schemas refine ≤4 images and ≤6MB total
   per turn (the socket buffer is 8MB — headroom for the envelope).
 - Client-side downscale BEFORE send (canvas, long edge ≤1568px, JPEG 0.85 —
   animated GIFs pass through untouched if ≤2MB, else rejected). The wire
@@ -209,6 +209,6 @@ unchanged — it reads the transcript, not live config).
   everything.
 - **Rig hygiene**: `pnpm deploy` now produces the machine overlay (the old
   hand-copied dist lost `node_modules` — `pnpm --filter @harness-nexus/cli
-  deploy --prod` + strip the one absolute self-symlink
+deploy --prod` + strip the one absolute self-symlink
   `node_modules/.pnpm/node_modules/@harness-nexus/cli` before `docker cp`).
   Daemon restart reaps channels; post-run adapter scan: zero processes.
