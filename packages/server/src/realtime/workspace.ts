@@ -14,6 +14,8 @@ export interface WorkspaceListOutcome {
   ok: boolean;
   reason?: 'timeout' | 'disconnected';
   directories?: WorkspaceListEvent['directories'];
+  /** 9 W9 C — regular files at the level (old daemons omit it). */
+  files?: WorkspaceListEvent['files'];
   error?: string;
 }
 
@@ -60,7 +62,7 @@ export class WorkspaceCoordinator {
       waiter.resolve({ ok: false, error: evt.error });
       return true;
     }
-    waiter.resolve({ ok: true, directories: evt.directories ?? [] });
+    waiter.resolve({ ok: true, directories: evt.directories ?? [], files: evt.files ?? [] });
     return true;
   }
 

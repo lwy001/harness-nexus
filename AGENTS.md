@@ -274,6 +274,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 - **Client daemon, machines, realtime protocol, MCP shim, ACP chat (Phase 8)**
   → `docs/design/phase-8-client.md` · C1: `docs/design/phase-8-c1.md`
+- **Sender controls (config selectors, attachments) (Phase 9 W9)**
+  → `docs/design/phase-9-w9-sender-controls.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -949,6 +951,56 @@ Summary for daily work:
   selector (per-channel override or change-model=new-session UX; interim
   read-only runtime-config badge possible), effort selector.
 
+## Sender controls — config selectors & attachments (Phase 9 W9)
+
+Full design + adapter ground truth in `docs/design/phase-9-w9-sender-controls.md`
+
+- `docs/research/phase-9-w9-composer-controls.md` (verified against claude
+  wrapper 0.76.0 / codex-acp 0.16.0 / dsh-acp 0.1.2-rc.1). Summary for daily work:
+
+* **Mode / model / reasoning-effort ride the STANDARD ACP session-config
+  surface** — no protocol invention. `session/new|load|resume` responses
+  carry `modes` + `configOptions` (categories `mode`/`model`/
+  `thought_level`); switching is `session/set_mode` /
+  `session/set_config_option`; changes push `current_mode_update` /
+  `config_option_update`. dsh has NO modes over ACP (its selector just does
+  not render — data-driven honesty).
+* **Our wire**: a `session_config` stream event (PATCH semantics; the daemon
+  merges into a per-channel snapshot and re-emits FULL state — the snapshot
+  also enters the history ring, so a resync restores the selectors), a
+  `chat:config.set` request (browser→server→daemon, owner+ready gated, NOT
+  busy-gated — dsh pins selections per turn), and `promptCapabilities` on
+  `chat:session.ready` (from initialize — `image` gates the attach UI; dsh
+  derives it per model route).
+* **Option values are OPAQUE adapter keys** (dsh model values are JSON
+  `[provider, model]`) — the UI compares by equality and never parses. Only
+  `type:'select'` rows surface (daemon filters). Dangerous mode ids
+  (`bypassPermissions`/`full-access`/`auto`) confirm-first; selectors
+  disable mid-turn.
+* **The daemon-side optimistic merge after `chat:config.set`** exists because
+  codex does not reliably push after a set — without it the selector sits on
+  the stale value; adapter pushes then confirm/correct.
+* **Images**: `promptBlockSchema` has an `image` variant (png/jpeg/webp/gif,
+  base64 ≤6MB, ≤4/turn + per-turn byte budget on the send paths — socket
+  buffer is 8MB). The browser downscales FIRST (canvas ≤1568px, WebP→JPEG
+  fallback, small GIFs pass through) so turns usually carry hundreds of KB.
+  Attach via `+` menu / clipboard paste / drag-drop; user rows render
+  thumbnails with a lightbox. Replayed (adapter) history is text-only — the
+  image turns show the adapter's own `[image]` placeholder. dsh validates
+  images strictly (canonical base64 + route support); rejections surface via
+  the existing `hnx/prompt-error` system note.
+* **File references**: `resource_link` prompt blocks (schema + daemon
+  passthrough existed since C5) — W9 adds the picker: `workspace:list` grew
+  a `files` arm (old daemons omit it → empty list), a lazy FilePicker opens
+  from the `+` menu or a TRAILING `@`, picking inserts a chip; the agent
+  reads the file with its OWN tools (claude/codex turn the link into a
+  readable reference — rig-verified via the Read tool; dsh treats it as a
+  plain text marker).
+* W3 interplay: machine-level RuntimeConfig stays the DEFAULT; a
+  session-level switch overrides for that channel's later turns only.
+* Daemon `0.12.0-p9w9` advertises the same capability set (no new caps —
+  `workspace`/`chat` gained additive arms).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -1192,15 +1244,16 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
   C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through
-  W8 are SHIPPED (2026-09, see the sections above): Agent-first inventory
+  W9 are SHIPPED (2026-09, see the sections above): Agent-first inventory
   with the runtime probe arm, detected AgentInstances (chatable),
   capture-as-profile, `harness`-type install/upgrade/pin jobs, `RuntimeConfig`
   provider/model push, redacted config viewing, modal containers + the
   portal-style chat UI (W5+W6), native agent sessions — list + resume
   with NO platform session store (W7) — the in-process dsh event tap
-  streaming source with the file tail as fallback (W7.1), and the card-style
-  chat Sender/composer (W8).** Remaining in P9: none scoped; C6
-  (orchestration) and hermes native sessions are the open follow-ups.
+  streaming source with the file tail as fallback (W7.1), the card-style
+  chat Sender/composer (W8), and the Sender controls — session-config
+  selectors + image/file attachments (W9).** Remaining in P9: none scoped;
+  C6 (orchestration) and hermes native sessions are the open follow-ups.
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and
   `docs/design/phase-9-portal-ui.md` (W5+W6) +

@@ -347,7 +347,20 @@ export const acpPermissionOptionSchema = z.object({
   kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']),
 });
 
-/** Prompt content blocks the browser may send (text + file references in v1). */
+/**
+ * One MIME an attached image may carry (9 W9 B). This is exactly the raster
+ * vocabulary EVERY shipped adapter admits — dsh validates against the same
+ * list server-side and rejects everything else with invalid_params.
+ */
+export const promptImageMimeSchema = z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+/** Per-image base64 cap; with the ≤4-image / ≤6MB-per-turn send refine this
+ * stays comfortably under the 8MB socket buffer including the envelope. */
+export const PROMPT_IMAGE_MAX_BYTES = 6 * 1024 * 1024;
+export const PROMPT_IMAGE_MAX_COUNT = 4;
+export const PROMPT_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
+
+/** Prompt content blocks the browser may send (text, file refs, images). */
 export const promptBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string().min(1).max(32000) }),
   z.object({
@@ -355,7 +368,82 @@ export const promptBlockSchema = z.discriminatedUnion('type', [
     name: z.string().min(1).max(256),
     uri: z.string().min(1).max(2048),
   }),
+  z.object({
+    type: z.literal('image'),
+    data: z.string().min(1).max(PROMPT_IMAGE_MAX_BYTES),
+    mimeType: promptImageMimeSchema,
+  }),
 ]);
+
+/** Send-path blocks with the image budget refine (history batches do NOT
+ * re-check totals — the daemon constructed them under the same caps). */
+export const promptBlocksBudgetedSchema = z
+  .array(promptBlockSchema)
+  .min(1)
+  .max(16)
+  .refine((blocks) => blocks.filter((b) => b.type === 'image').length <= PROMPT_IMAGE_MAX_COUNT, {
+    message: `at most ${PROMPT_IMAGE_MAX_COUNT} images per turn`,
+  })
+  .refine(
+    (blocks) =>
+      blocks.reduce((sum, b) => sum + (b.type === 'image' ? b.data.length : 0), 0) <=
+      PROMPT_TOTAL_IMAGE_BYTES,
+    { message: 'image payload exceeds the per-turn budget' },
+  );
+
+// ---- 9 W9 A: ACP session modes & configuration ----
+//
+// Mirrors the standard ACP surface (agentclientprotocol.com/protocol/
+// session-modes) every shipped adapter implements: `modes` + `configOptions`
+// on session/new|load|resume responses, `session/set_mode` /
+// `session/set_config_option` requests, and the `current_mode_update` /
+// `config_option_update` pushes. Option VALUES are opaque adapter keys
+// (dsh's model value is JSON [provider, model]) — compare by equality only.
+
+export const sessionModeSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().min(1).max(256),
+  description: z.string().max(1024).optional(),
+});
+
+export const sessionModeStateSchema = z.object({
+  currentModeId: z.string().min(1).max(128),
+  availableModes: z.array(sessionModeSchema).min(1).max(32),
+});
+
+export const sessionConfigValueSchema = z.object({
+  value: z.string().max(2048),
+  name: z.string().min(1).max(256),
+  description: z.string().max(1024).optional(),
+  /** dsh groups model options by provider — display grouping only. */
+  group: z.string().min(1).max(256).optional(),
+});
+
+export const sessionConfigOptionSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().min(1).max(256),
+  description: z.string().max(1024).optional(),
+  /** Semantic category ('mode' | 'model' | 'thought_level' | …) — UX only. */
+  category: z.string().min(1).max(64).optional(),
+  currentValue: z.string().max(2048).optional(),
+  options: z.array(sessionConfigValueSchema).max(256).optional(),
+});
+
+/**
+ * The `session_config` stream event — PATCH semantics: `availableModes` /
+ * `configOptions` replace when present; a lone `currentModeId` patches the
+ * current mode. The daemon emits full merged snapshots; the load-replay
+ * capture path emits adapter pushes verbatim (it has no state to merge).
+ */
+export const sessionConfigPatchSchema = z.object({
+  modes: z
+    .object({
+      currentModeId: z.string().max(128).optional(),
+      availableModes: z.array(sessionModeSchema).min(1).max(32).optional(),
+    })
+    .optional(),
+  configOptions: z.array(sessionConfigOptionSchema).max(64).optional(),
+});
 
 /**
  * The semantic chat stream (`chat:event` → `{ sessionId, event }`). Produced by
@@ -396,6 +484,8 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
     stopReason: z.enum(['end_turn', 'cancelled', 'max_tokens', 'refusal']),
   }),
   z.object({ kind: z.literal('session_status'), state: z.enum(['active', 'idle']) }),
+  // 9 W9 A — the session's mode/config snapshot (patch semantics above).
+  z.object({ kind: z.literal('session_config') }).merge(sessionConfigPatchSchema),
   z.object({ kind: z.literal('raw'), method: z.string().min(1).max(64), params: z.unknown() }),
 ]);
 
@@ -439,6 +529,18 @@ export const chatSessionStartEventSchema = z.object({
   resume: chatSessionOpenRequestSchema.shape.resume,
 });
 
+/**
+ * 9 W9 B — what the adapter's initialize result advertised about prompt
+ * content (`agentCapabilities.promptCapabilities`). `image` gates the
+ * composer's attach affordance (dsh derives it per model route, so it can
+ * legitimately be false on a live channel).
+ */
+export const promptCapabilitiesSchema = z.object({
+  image: z.boolean(),
+  audio: z.boolean().optional(),
+  embeddedContext: z.boolean().optional(),
+});
+
 /** daemon → server: subprocess + ACP handshake done (`error` ⇒ spawn/initialize failed). */
 export const chatSessionReadyEventSchema = z.object({
   sessionId: z.string().min(1).max(64),
@@ -446,6 +548,8 @@ export const chatSessionReadyEventSchema = z.object({
   agentVersion: z.string().max(64).optional(),
   /** 9 W7 — the agent's OWN session id behind this channel (row highlight + resume bookkeeping). */
   nativeSessionId: z.string().min(1).max(128).optional(),
+  /** 9 W9 B — prompt content capabilities from the initialize handshake. */
+  promptCapabilities: promptCapabilitiesSchema.optional(),
   error: z.string().max(512).optional(),
 });
 
@@ -473,14 +577,38 @@ export const chatHistoryEventSchema = z.object({
 /** browser → server: send a turn prompt. */
 export const chatMessageSendRequestSchema = z.object({
   sessionId: z.string().min(1).max(64),
-  content: z.union([z.string().min(1).max(32000), z.array(promptBlockSchema).min(1).max(16)]),
+  content: z.union([z.string().min(1).max(32000), promptBlocksBudgetedSchema]),
 });
 
 /** server → daemon: the normalized prompt blocks for `session/prompt`. */
 export const chatPromptEventSchema = z.object({
   sessionId: z.string().min(1).max(64),
-  prompt: z.array(promptBlockSchema).min(1).max(16),
+  prompt: promptBlocksBudgetedSchema,
 });
+
+/**
+ * 9 W9 A — switch the live session's permission mode / one config option.
+ * `chat:config.set` in both directions (browser → server → daemon); the
+ * daemon forwards `session/set_mode` / `session/set_config_option` and the
+ * new state returns as `session_config` stream events. `value` may be ''
+ * (dsh's provider-default reasoning effort).
+ */
+export const chatConfigSetRequestSchema = z.discriminatedUnion('kind', [
+  z.object({
+    sessionId: z.string().min(1).max(64),
+    kind: z.literal('mode'),
+    modeId: z.string().min(1).max(128),
+  }),
+  z.object({
+    sessionId: z.string().min(1).max(64),
+    kind: z.literal('option'),
+    configId: z.string().min(1).max(128),
+    value: z.string().max(2048),
+  }),
+]);
+
+/** server → daemon: same shape, forwarded verbatim over /ctl. */
+export const chatConfigSetEventSchema = chatConfigSetRequestSchema;
 
 /** browser → server and server → daemon: cancel the running turn (idempotent). */
 export const chatTurnCancelEventSchema = z.object({ sessionId: z.string().min(1).max(64) });
@@ -608,6 +736,14 @@ export type AcpToolContentItem = z.infer<typeof acpToolContentItemSchema>;
 export type AcpPermissionOption = z.infer<typeof acpPermissionOptionSchema>;
 export type PromptBlock = z.infer<typeof promptBlockSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type SessionMode = z.infer<typeof sessionModeSchema>;
+export type SessionModeState = z.infer<typeof sessionModeStateSchema>;
+export type SessionConfigValue = z.infer<typeof sessionConfigValueSchema>;
+export type SessionConfigOption = z.infer<typeof sessionConfigOptionSchema>;
+export type SessionConfigPatch = z.infer<typeof sessionConfigPatchSchema>;
+export type PromptCapabilities = z.infer<typeof promptCapabilitiesSchema>;
+export type ChatConfigSetRequest = z.infer<typeof chatConfigSetRequestSchema>;
+export type ChatConfigSetEvent = z.infer<typeof chatConfigSetEventSchema>;
 export type ChatStreamEventEnvelope = z.infer<typeof chatStreamEventEnvelopeSchema>;
 export type ChatSessionOpenRequest = z.infer<typeof chatSessionOpenRequestSchema>;
 export type ChatSessionStartEvent = z.infer<typeof chatSessionStartEventSchema>;

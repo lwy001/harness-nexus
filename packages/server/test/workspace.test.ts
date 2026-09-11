@@ -141,7 +141,7 @@ describe('GET /api/machines/:id/workspace (9 W6)', () => {
     await new Promise((r) => setTimeout(r, 150));
   });
 
-  it('round-trips one level of directories through the daemon', async () => {
+  it('round-trips one level of directories (and files, 9 W9 C) through the daemon', async () => {
     await connectDaemon(['workspace'], (requestId, path) => ({
       directories:
         path === '/home/w6/projects'
@@ -149,6 +149,10 @@ describe('GET /api/machines/:id/workspace (9 W6)', () => {
               { name: 'alpha', path: '/home/w6/projects/alpha' },
               { name: 'beta', path: '/home/w6/projects/beta' },
             ]
+          : [],
+      files:
+        path === '/home/w6/projects'
+          ? [{ name: 'notes.md', path: '/home/w6/projects/notes.md' }]
           : [],
     }));
     const root = await app.inject({
@@ -163,6 +167,7 @@ describe('GET /api/machines/:id/workspace (9 W6)', () => {
         { name: 'alpha', path: '/home/w6/projects/alpha' },
         { name: 'beta', path: '/home/w6/projects/beta' },
       ],
+      files: [{ name: 'notes.md', path: '/home/w6/projects/notes.md' }],
     });
     // Subdirectory listing — still under the root.
     const sub = await app.inject({
@@ -172,6 +177,17 @@ describe('GET /api/machines/:id/workspace (9 W6)', () => {
     });
     expect(sub.statusCode).toBe(200);
     expect(sub.json().directories).toEqual([]);
+    // An old daemon omitting the files arm degrades to an empty list.
+    daemon.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+    await connectDaemon(['workspace'], () => ({ directories: [] }));
+    const legacy = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/workspace`,
+      headers: auth(ownerJwt),
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json().files).toEqual([]);
     daemon.disconnect();
     await new Promise((r) => setTimeout(r, 150));
   });

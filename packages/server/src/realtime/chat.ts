@@ -1,6 +1,6 @@
 import { resolve as resolvePath } from 'node:path';
 import type { UnitOfWork } from '@harness-nexus/core';
-import type { ChatStreamEvent, PromptBlock } from '@harness-nexus/shared';
+import type { ChatStreamEvent, PromptBlock, PromptCapabilities } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
@@ -83,6 +83,8 @@ interface LiveSession {
   agentVersion?: string | undefined;
   /** The agent's OWN session id behind this channel (9 W7 row highlight). */
   nativeSessionId?: string | undefined;
+  /** 9 W9 B — prompt-content capabilities (gates the attach UI). */
+  promptCapabilities?: PromptCapabilities | undefined;
   /** Socket of the browser that opened the channel; joined on ready. */
   openerSocketId: string | null;
   readyTimer: NodeJS.Timeout | null;
@@ -142,6 +144,9 @@ export class ChatService {
         ...(existing.agentVersion !== undefined ? { agentVersion: existing.agentVersion } : {}),
         ...(existing.nativeSessionId !== undefined
           ? { nativeSessionId: existing.nativeSessionId }
+          : {}),
+        ...(existing.promptCapabilities !== undefined
+          ? { promptCapabilities: existing.promptCapabilities }
           : {}),
       });
       // 9 W7 — the refreshed page lost its local fold; the daemon re-emits the
@@ -233,6 +238,7 @@ export class ChatService {
       agentName?: string | undefined;
       agentVersion?: string | undefined;
       nativeSessionId?: string | undefined;
+      promptCapabilities?: PromptCapabilities | undefined;
       error?: string | undefined;
     },
   ): Promise<void> {
@@ -253,6 +259,7 @@ export class ChatService {
     session.agentName = evt.agentName;
     session.agentVersion = evt.agentVersion;
     session.nativeSessionId = evt.nativeSessionId;
+    session.promptCapabilities = evt.promptCapabilities;
 
     // The opener joined at open(); if they disconnected before the agent came
     // up, nobody is watching — close instead of running an agent subprocess
@@ -267,6 +274,9 @@ export class ChatService {
       ...(evt.agentName !== undefined ? { agentName: evt.agentName } : {}),
       ...(evt.agentVersion !== undefined ? { agentVersion: evt.agentVersion } : {}),
       ...(evt.nativeSessionId !== undefined ? { nativeSessionId: evt.nativeSessionId } : {}),
+      ...(evt.promptCapabilities !== undefined
+        ? { promptCapabilities: evt.promptCapabilities }
+        : {}),
     });
     // Re-push the history AFTER ready as well: a browser that attached its
     // listeners between the daemon's direct history push and this moment
@@ -356,6 +366,25 @@ export class ChatService {
     const session = this.live.get(sessionId);
     if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
     this.deps.io.toCtl(session.machineId, 'chat:turn.cancel', { sessionId });
+    return { ok: true };
+  }
+
+  /**
+   * Browser's `chat:config.set` (9 W9 A) — switch the live session's
+   * permission mode / one config option. Deliberately NOT busy-gated: the
+   * daemon forwards `session/set_mode` / `session/set_config_option` and the
+   * adapters pin per-turn selections, so a mid-turn set applies to the NEXT
+   * turn; the UI disables the selectors during a turn anyway.
+   */
+  onConfigSet(
+    ownerId: string,
+    sessionId: string,
+    set: { kind: 'mode'; modeId: string } | { kind: 'option'; configId: string; value: string },
+  ): ChatSimpleResult {
+    const session = this.live.get(sessionId);
+    if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
+    if (session.phase !== 'ready') return { ok: false, code: 'SESSION_NOT_READY' };
+    this.deps.io.toCtl(session.machineId, 'chat:config.set', { sessionId, ...set });
     return { ok: true };
   }
 

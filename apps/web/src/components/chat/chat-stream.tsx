@@ -103,7 +103,7 @@ export function ChatStream({ state, cwd, onPermissionRespond }: ChatStreamProps)
           {state.rows.map((row) => {
             switch (row.row) {
               case 'user':
-                return <UserMessage key={row.key} text={row.text} />;
+                return <UserMessage key={row.key} blocks={row.blocks} />;
               case 'assistant':
                 return <AssistantStepRow key={row.key} step={row.step} />;
               case 'tool':

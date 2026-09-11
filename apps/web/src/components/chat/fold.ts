@@ -3,7 +3,23 @@ import type {
   ChatStreamEvent,
   ChatToolCallView,
   HistoryItem,
+  PromptBlock,
+  SessionConfigOption,
+  SessionMode,
 } from '@/realtime';
+
+/**
+ * 9 W9 — a user row's blocks: text, attached images, and file references.
+ * Same shape as the wire's PromptBlock minus what only the agent consumes.
+ */
+export type UserBlock =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image';
+      data: string;
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+    }
+  | { type: 'resource_link'; name: string; uri: string };
 
 /**
  * The conversation fold (Phase 9 W6) — adapted from the portal reference's
@@ -62,7 +78,7 @@ export interface TurnStats {
 }
 
 export type ConversationRow =
-  | { row: 'user'; key: string; text: string }
+  | { row: 'user'; key: string; blocks: UserBlock[] }
   | { row: 'assistant'; key: string; step: AssistantStep }
   | { row: 'tool'; key: string; root: ToolCallNode }
   | { row: 'system'; key: string; text: string; tone: 'info' | 'success' | 'error' }
@@ -82,6 +98,16 @@ export interface FoldState {
   stepClosed: boolean;
   seq: number;
   turnStartedAt: number | null;
+  /**
+   * 9 W9 A — the session's mode/config state, patch-merged from
+   * `session_config` events (the composer's selectors read it; nothing
+   * else mutates it — there is NO browser-side optimism by design).
+   */
+  config: {
+    currentModeId?: string;
+    availableModes?: SessionMode[];
+    configOptions?: SessionConfigOption[];
+  };
   usage: {
     inputTokens?: number;
     outputTokens?: number;
@@ -94,7 +120,7 @@ export interface FoldState {
 
 export type FoldAction =
   | { type: 'reset' }
-  | { type: 'user_message'; text: string }
+  | { type: 'user_message'; blocks: UserBlock[] }
   | {
       type: 'event';
       event: ChatStreamEvent;
@@ -109,6 +135,7 @@ export function createFoldState(): FoldState {
     stepClosed: true,
     seq: 0,
     turnStartedAt: null,
+    config: {},
     usage: null,
     permissions: [],
     turnActive: false,
@@ -320,6 +347,20 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
     }
     case 'session_status':
       return { ...state, turnActive: event.state === 'active' };
+    case 'session_config':
+      return {
+        ...state,
+        config: {
+          ...state.config,
+          ...(event.modes?.currentModeId !== undefined
+            ? { currentModeId: event.modes.currentModeId }
+            : {}),
+          ...(event.modes?.availableModes !== undefined
+            ? { availableModes: event.modes.availableModes }
+            : {}),
+          ...(event.configOptions !== undefined ? { configOptions: event.configOptions } : {}),
+        },
+      };
     case 'raw':
       if (event.method === 'hnx/prompt-error') {
         const message = (event.params as { message?: string } | undefined)?.message;
@@ -356,7 +397,7 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
       };
       const rows: ConversationRow[] = [
         ...swept,
-        { row: 'user', key: nextKey(state, 'u'), text: action.text },
+        { row: 'user', key: nextKey(state, 'u'), blocks: action.blocks },
         { row: 'assistant', key: `a-${step.stepId}`, step },
       ];
       return {
@@ -379,13 +420,11 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
       let next = createFoldState();
       for (const item of action.items) {
         if (item.type === 'user') {
-          const text = item.blocks
-            .map((b) => (b.type === 'text' ? b.text : `[${b.name}]`))
-            .join('\n');
-          if (text === '') continue;
+          const blocks = promptBlocksToUserBlocks(item.blocks);
+          if (blocks.length === 0) continue;
           next = {
             ...next,
-            rows: [...next.rows, { row: 'user', key: nextKey(next, 'u'), text }],
+            rows: [...next.rows, { row: 'user', key: nextKey(next, 'u'), blocks }],
             turnStartedAt: Date.now(),
           };
         } else {
@@ -403,6 +442,21 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
     default:
       return state;
   }
+}
+
+/** Wire prompt blocks → user-row blocks (drops nothing the UI renders). */
+function promptBlocksToUserBlocks(blocks: readonly PromptBlock[]): UserBlock[] {
+  const out: UserBlock[] = [];
+  for (const b of blocks) {
+    if (b.type === 'text') {
+      if (b.text !== '') out.push({ type: 'text', text: b.text });
+    } else if (b.type === 'image') {
+      out.push({ type: 'image', data: b.data, mimeType: b.mimeType });
+    } else {
+      out.push({ type: 'resource_link', name: b.name, uri: b.uri });
+    }
+  }
+  return out;
 }
 
 function isRunningRow(r: ConversationRow): boolean {

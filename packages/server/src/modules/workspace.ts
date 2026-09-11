@@ -72,7 +72,9 @@ export async function workspaceRoutes(app: FastifyInstance): Promise<void> {
         throw new AppError('Daemon did not answer the listing in time', 504, 'WORKSPACE_TIMEOUT');
       }
       const directories: WorkspaceDirectory[] = outcome.directories ?? [];
-      return { path: requested, directories };
+      // 9 W9 C — regular files at the level, for the composer's @-reference
+      // picker (old daemons omit the arm; an empty list is honest).
+      return { path: requested, directories, files: outcome.files ?? [] };
     },
   );
 }

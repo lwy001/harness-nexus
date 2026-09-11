@@ -439,6 +439,63 @@ function runPrompt(id, text, deferred = false) {
   finish('end_turn');
 }
 
+/** 9 W9 A — the advertised session-config surface (claude-shaped). */
+function fixtureSessionConfig() {
+  return {
+    modes: {
+      currentModeId: 'default',
+      availableModes: [
+        { id: 'default', name: 'Manual', description: 'Always ask before making changes' },
+        { id: 'acceptEdits', name: 'Accept edits' },
+        { id: 'plan', name: 'Plan' },
+      ],
+    },
+    configOptions: [
+      {
+        id: 'mode',
+        name: 'Mode',
+        category: 'mode',
+        type: 'select',
+        currentValue: 'default',
+        options: [
+          { value: 'default', name: 'Manual' },
+          { value: 'acceptEdits', name: 'Accept edits' },
+        ],
+      },
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'fx-opus',
+        options: [
+          { value: 'fx-opus', name: 'Fixture Opus' },
+          { value: 'fx-sonnet', name: 'Fixture Sonnet' },
+        ],
+      },
+      {
+        id: 'effort',
+        name: 'Effort',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: 'default',
+        options: [
+          { value: 'default', name: 'Default' },
+          { value: 'high', name: 'High' },
+        ],
+      },
+      // A non-select row the daemon must DROP, not surface.
+      {
+        id: 'telemetry',
+        name: 'Telemetry',
+        category: 'model_config',
+        type: 'boolean',
+        currentValue: 'true',
+      },
+    ],
+  };
+}
+
 function handleRequest(msg) {
   const { id, method, params } = msg;
   switch (method) {
@@ -448,7 +505,13 @@ function handleRequest(msg) {
         agentInfo: { name: 'fixture-agent', version: '0.1.0' },
         authMethods: [],
         agentCapabilities: {
-          promptCapabilities: { image: false },
+          // 9 W9 B — FIXTURE_IMAGE_CAPS=1 flips the image capability (dsh
+          // derives it per model route; false must disable the attach UI).
+          promptCapabilities: {
+            image: process.env.FIXTURE_IMAGE_CAPS === '1',
+            audio: false,
+            embeddedContext: true,
+          },
           sessionCapabilities:
             process.env.FIXTURE_ACP_NO_LOAD === '1'
               ? { list: {}, resume: {}, close: {} } // the dsh shape — no replay
@@ -461,10 +524,13 @@ function handleRequest(msg) {
       // transcript directory for the live-tail streaming path.
       // FIXTURE_DELAY_NEW_MS widens the establishment window so tests can send
       // a close WHILE session/new is still in flight (the daemon must abort).
+      // FIXTURE_SESSION_CONFIG=1 (9 W9 A) advertises modes + configOptions on
+      // the establishment responses (the claude/codex/dsh shape).
       const answer = () =>
         respond(id, {
           sessionId: process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`,
           cwd: params?.cwd ?? process.cwd(),
+          ...(process.env.FIXTURE_SESSION_CONFIG === '1' ? fixtureSessionConfig() : {}),
         });
       const newDelay = Number(process.env.FIXTURE_DELAY_NEW_MS ?? '0');
       if (newDelay > 0) setTimeout(answer, newDelay);
@@ -526,16 +592,62 @@ function handleRequest(msg) {
         },
         { claudeCode: { toolName: 'Read' } },
       );
-      respond(id, { sessionId: sid });
+      // 9 W9 A — a replayed config push (the capture path maps it to a
+      // session_config PATCH; the response snapshot below then wins).
+      if (process.env.FIXTURE_SESSION_CONFIG === '1') {
+        notify('session/update', {
+          sessionId: sid,
+          update: { sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' },
+        });
+      }
+      respond(id, {
+        sessionId: sid,
+        ...(process.env.FIXTURE_SESSION_CONFIG === '1' ? fixtureSessionConfig() : {}),
+      });
       return;
     }
     case 'session/resume':
       // The dsh shape: restores the log WITHOUT replaying old updates.
+      respond(id, process.env.FIXTURE_SESSION_CONFIG === '1' ? fixtureSessionConfig() : {});
+      return;
+    case 'session/set_mode':
+      // 9 W9 A — apply, then confirm via the standard push (the live-path
+      // interception the daemon must exercise).
+      notify('session/update', {
+        sessionId: params?.sessionId ?? 'fx-session',
+        update: { sessionUpdate: 'current_mode_update', currentModeId: params?.modeId },
+      });
+      respond(id, {});
+      return;
+    case 'session/set_config_option':
+      notify('session/update', {
+        sessionId: params?.sessionId ?? 'fx-session',
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: [
+            {
+              id: params?.configId,
+              name: 'Model',
+              category: 'model',
+              type: 'select',
+              currentValue: params?.value,
+              options: [
+                { value: 'fx-opus', name: 'Fixture Opus' },
+                { value: 'fx-sonnet', name: 'Fixture Sonnet' },
+              ],
+            },
+          ],
+        },
+      });
       respond(id, {});
       return;
     case 'session/prompt': {
       const prompt = Array.isArray(params?.prompt) ? params.prompt : [];
-      const text = prompt.map((b) => (b.type === 'text' ? b.text : `[@${b.name ?? 'x'}]`)).join('');
+      const text = prompt
+        .map((b) =>
+          b.type === 'text' ? b.text : b.type === 'image' ? '[image]' : `[@${b.name ?? 'x'}]`,
+        )
+        .join('');
       runPrompt(id, text);
       return;
     }

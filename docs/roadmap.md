@@ -391,6 +391,18 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     open-channel visibility (listing `open`/`openChannelId` + rail rejoin
     instead of hidden rows). See the C5 design doc § "Channel lifecycle
     hardening" and § "Channel budget redesign".
-- Non-goals v1: session-level model overrides, harness uninstall, zcode/hermes
+  - **W9 Sender controls — SHIPPED (2026-09)** — the four deferred composer
+    controls, all riding STANDARD ACP surface verified across claude wrapper
+    0.76.0 / codex-acp 0.16.0 / dsh-acp 0.1.2-rc.1: permission-mode / model /
+    reasoning-effort selectors (`session_config` snapshots + `chat:config.set`,
+    data-driven rendering, opaque values, dangerous modes confirm-first),
+    image attachments (inline `image` prompt blocks with browser-side
+    downscale, `promptCapabilities.image` gating, thumbnails + lightbox;
+    rig-verified with real model vision), and file references
+    (`resource_link` chips via the workspace `files` arm + a lazy picker
+    behind `+`/trailing `@`; the agent reads them with its own tools).
+    Research: `docs/research/phase-9-w9-composer-controls.md` · design +
+    E2E notes: `docs/design/phase-9-w9-sender-controls.md`.
+- Non-goals v1: harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

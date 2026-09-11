@@ -144,7 +144,7 @@ afterAll(async () => {
   daemon?.close();
   browser?.close();
   await app?.close();
-});
+}, 20000);
 
 async function connectDaemon(capabilities: string[]): Promise<Socket> {
   const sock = io(`${baseUrl}/ctl`, {
@@ -804,5 +804,123 @@ describe('REST surface', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('DAEMON_NO_SESSIONS');
+  });
+});
+
+describe('session config (9 W9 A)', () => {
+  it(
+    'ready carries promptCapabilities; config.set forwards to the daemon; session_config relays',
+    { timeout: 15000 },
+    async () => {
+      // LOCAL daemon: reassigning the module-level var would orphan the
+      // connection an earlier describe left for afterAll to close.
+      const d = await connectDaemon(['chat']);
+      try {
+        const startP = once(d, 'chat:session.start');
+        const res = await openSession(browser, agentId);
+        const sessionId = res.sessionId!;
+        const start = (await startP) as { sessionId: string };
+
+        const readyP = once(browser, 'chat:session.ready');
+        void d.emit('chat:session.ready', {
+          sessionId: start.sessionId,
+          agentName: 'fixture-agent',
+          promptCapabilities: { image: true, embeddedContext: true },
+        });
+        const ready = (await readyP) as { promptCapabilities?: { image: boolean } };
+        expect(ready.promptCapabilities).toEqual({ image: true, embeddedContext: true });
+
+        // Mode arm — forwarded verbatim over /ctl.
+        const modeP = once(d, 'chat:config.set');
+        const modeAck = await emitAck(browser, 'chat:config.set', {
+          sessionId,
+          kind: 'mode',
+          modeId: 'acceptEdits',
+        });
+        expect(modeAck).toEqual({ accepted: true });
+        expect(await modeP).toEqual({ sessionId, kind: 'mode', modeId: 'acceptEdits' });
+
+        // Option arm (empty value allowed — dsh provider-default reasoning).
+        const optP = once(d, 'chat:config.set');
+        const optAck = await emitAck(browser, 'chat:config.set', {
+          sessionId,
+          kind: 'option',
+          configId: 'reasoning_effort',
+          value: '',
+        });
+        expect(optAck).toEqual({ accepted: true });
+        expect(await optP).toEqual({
+          sessionId,
+          kind: 'option',
+          configId: 'reasoning_effort',
+          value: '',
+        });
+
+        // The daemon's session_config snapshots relay to the channel room.
+        const configP = nextEvent(browser, (e) => e.kind === 'session_config');
+        void d.emit('chat:event', {
+          sessionId,
+          event: {
+            kind: 'session_config',
+            modes: { currentModeId: 'acceptEdits' },
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                currentValue: 'fx-opus',
+                options: [{ value: 'fx-opus', name: 'Fixture Opus' }],
+              },
+            ],
+          },
+        });
+        expect(await configP).toEqual({
+          kind: 'session_config',
+          modes: { currentModeId: 'acceptEdits' },
+          configOptions: [
+            {
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              currentValue: 'fx-opus',
+              options: [{ value: 'fx-opus', name: 'Fixture Opus' }],
+            },
+          ],
+        });
+
+        // Ownership: a config.set for an unknown session bounces.
+        const bad = await emitAck(browser, 'chat:config.set', {
+          sessionId: 'nope',
+          kind: 'mode',
+          modeId: 'x',
+        });
+        expect(bad).toEqual({ error: 'SESSION_NOT_FOUND' });
+
+        await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+      } finally {
+        d.disconnect();
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    },
+  );
+
+  it('rejects config.set while the channel is still starting', { timeout: 15000 }, async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const sessionId = res.sessionId!;
+      await startP; // deliberately NO ready yet
+      const early = await emitAck(browser, 'chat:config.set', {
+        sessionId,
+        kind: 'mode',
+        modeId: 'acceptEdits',
+      });
+      expect(early).toEqual({ error: 'SESSION_NOT_READY' });
+      await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
   });
 });

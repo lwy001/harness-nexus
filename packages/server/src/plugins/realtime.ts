@@ -18,6 +18,7 @@ import {
   chatHistoryEventSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
+  chatConfigSetRequestSchema,
   chatSessionCloseRequestSchema,
   chatSessionClosedEventSchema,
   chatSessionOpenRequestSchema,
@@ -547,6 +548,20 @@ export async function registerRealtime(
         socket.data.userId as string,
         parsed.data.sessionId,
       );
+      ack?.(result.ok ? { accepted: true } : { error: result.code });
+    });
+
+    // 9 W9 A — switch the session's permission mode / a config option. The
+    // shared schema discriminates the two arms; ownership + phase gate in the
+    // service, the daemon owns the adapter RPC and the merged snapshots.
+    socket.on('chat:config.set', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatConfigSetRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { sessionId, ...set } = parsed.data;
+      const result = realtime.chat.onConfigSet(socket.data.userId as string, sessionId, set);
       ack?.(result.ok ? { accepted: true } : { error: result.code });
     });
 

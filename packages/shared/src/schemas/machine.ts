@@ -46,13 +46,22 @@ export const workspaceDirectorySchema = z.object({
   path: z.string().min(1).max(1024),
 });
 
+/** 9 W9 C — a plain file entry for the composer's @-reference picker. */
+export const workspaceFileSchema = z.object({
+  name: z.string().min(1).max(255),
+  path: z.string().min(1).max(1024),
+});
+
 /** daemon → server: the reply (or the `error` arm). */
 export const workspaceListEventSchema = z.object({
   requestId: z.string().min(1).max(64),
   directories: z.array(workspaceDirectorySchema).max(512).optional(),
+  /** 9 W9 C — regular files at the listed level (old daemons omit it). */
+  files: z.array(workspaceFileSchema).max(512).optional(),
   error: z.string().max(512).optional(),
 });
 
 export type WorkspaceListRequest = z.infer<typeof workspaceListRequestSchema>;
 export type WorkspaceListEvent = z.infer<typeof workspaceListEventSchema>;
 export type WorkspaceDirectory = z.infer<typeof workspaceDirectorySchema>;
+export type WorkspaceFile = z.infer<typeof workspaceFileSchema>;
