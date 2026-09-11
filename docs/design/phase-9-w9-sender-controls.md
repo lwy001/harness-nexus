@@ -1,6 +1,6 @@
 # Design: Phase 9 W9 — Sender controls (session config + attachments)
 
-> Status: **DESIGNED 2026-09-11**. Ground truth:
+> Status: **SHIPPED 2026-09-11** (see §Post-ship notes). Ground truth:
 > `docs/research/phase-9-w9-composer-controls.md` (adapter matrix verified
 > against claude wrapper 0.76.0 / codex-acp 0.16.0 / dsh-acp 0.1.2-rc.1).
 > Predecessor: `docs/design/phase-9-w8-sender.md` §"Deferred" — this wave
@@ -182,3 +182,33 @@ unchanged — it reads the transcript, not live config).
   passthrough.
 - web: build gate + rig E2E (selectors render from real wrapper data, mode
   switch round-trip, image paste → thumbnail → echo, file ref chip).
+
+## Post-ship notes (2026-09-11)
+
+- **Landed as designed** — all three wires (A config selectors, B image
+  attach, C file references), daemon `0.12.0-p9w9` (workspace `files` arm +
+  session-config capture/merge + `chat:config.set`), schema arms per §A/B/C.
+- **Rig E2E against the REAL claude wrapper 0.76.0** (agent-browser through
+  the live web image): the three selectors render from the adapter's own
+  data (`Manual` / `deepseek-v4-flash` custom model row / `Default`), mode
+  Manual→**Auto** round-trips (confirm accepted, snapshot re-emitted), model
+  →**Sonnet 5**, effort →**High**; a canvas-synthesized PNG rides the drop
+  handler → compression → chip → user-row thumbnail → the model ANSWERS
+  ABOUT THE IMAGE CONTENT ("青绿色背景上白色粗体 W9 attach test") — vision
+  verified end-to-end; a trailing `@` opens the picker, `NOTES.md` becomes a
+  chip, and the agent's own **Read tool** returns the file's content. Resume
+  re-renders the selectors from the load response; replayed history shows
+  the image turn as the adapter's text-only `[image]` placeholder (by
+  design). One honest upstream finding: resuming an image-bearing session
+  under a TEXT-ONLY gateway model fails on the API side (400 "Model only
+  support text input") — surfaced as a system note via `hnx/prompt-error`;
+  switching the channel's model to a vision model heals it.
+- **E2E incidental**: first rig pass "showed no selectors" because the
+  machine's dsh agent was entered — dsh advertised no configOptions on that
+  channel (data-driven hiding works as designed); the claude agent showed
+  everything.
+- **Rig hygiene**: `pnpm deploy` now produces the machine overlay (the old
+  hand-copied dist lost `node_modules` — `pnpm --filter @harness-nexus/cli
+  deploy --prod` + strip the one absolute self-symlink
+  `node_modules/.pnpm/node_modules/@harness-nexus/cli` before `docker cp`).
+  Daemon restart reaps channels; post-run adapter scan: zero processes.
