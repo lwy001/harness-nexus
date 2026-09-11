@@ -76,6 +76,14 @@ docs/          architecture.md, mcp-proxy.md, profiles.md, roadmap.md, adr/
   unless intended.
 - **Verify before merging:** typecheck + the relevant tests/smoke for the touched
   surfaces. Unverified code must not reach `main`.
+- **Run the CI-parity gate before pushing:** CI (`.github/workflows/ci.yml`) is
+  `pnpm -r build` + `pnpm -r typecheck` + `pnpm -r test` on **Node 20** — the
+  documented engine floor. A dev box on a newer Node masks floor-only paths
+  (e.g. `zlib.zstd*` exists ≥22.15; a zstd-absent test guard once errored only
+  in CI). `task verify` (Taskfile) runs the same quartet with a Node 20
+  toolchain from `/opt/node-v20.20.2-linux-x64/bin` (override via `NODE20_BIN`);
+  without `task`, prepend that bin dir to PATH and run the three `pnpm -r`
+  commands yourself. Green locally ⇒ green in CI.
 - **Never push without an explicit user request.** `git push` — and any outward
   publish (`npm publish`, `gh pr create`, `gh release`) — happens ONLY when the user
   asks for it in the current session. Committing/merging locally is fine. This

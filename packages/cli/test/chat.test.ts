@@ -694,7 +694,7 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
   it('streams token batches from the transcript while the turn runs, suppressing committed chunks', async () => {
     const zstd = maybeZstd.zstdCompressSync;
-    if (zstd === undefined) return it.skip('needs Node >= 22.15 zstd') as never;
+    if (zstd === undefined) return; // needs Node >= 22.15 zstd (the Node 20 CI floor runs this as a no-op)
 
     const { mkdirSync, writeFileSync, appendFileSync } = await import('node:fs');
     const { mkdtempSync } = await import('node:fs');
@@ -837,7 +837,7 @@ describe('dsh live streaming via transcript tail (9 W7)', () => {
 
   it('a lazily-materialized transcript replays from byte 0 — pre-attach deltas are not lost', async () => {
     const zstd = maybeZstd.zstdCompressSync;
-    if (zstd === undefined) return it.skip('needs Node >= 22.15 zstd') as never;
+    if (zstd === undefined) return; // needs Node >= 22.15 zstd (the Node 20 CI floor runs this as a no-op)
 
     const { mkdirSync, writeFileSync, appendFileSync } = await import('node:fs');
     const { mkdtempSync } = await import('node:fs');
