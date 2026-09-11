@@ -23,6 +23,7 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     socketMaxHttpBufferSize: 1024 * 1024,
     inventoryRequestTimeoutMs: 5000,
     runtimeConfigViewTimeoutMs: 700,
+    providerModelsTimeoutMs: 2000,
     workspaceListTimeoutMs: 10000,
     sessionsListTimeoutMs: 10000,
     jobAckTimeoutMs: 700,

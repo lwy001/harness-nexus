@@ -403,6 +403,19 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     behind `+`/trailing `@`; the agent reads them with its own tools).
     Research: `docs/research/phase-9-w9-composer-controls.md` · design +
     E2E notes: `docs/design/phase-9-w9-sender-controls.md`.
+  - **W10 LLM provider management — SHIPPED (2026-09)** — cc-switch-inspired
+    provider catalog: the `LlmProvider` entity (`{name, api kind, baseUrl?,
+credentialName}` with the three kinds `openai-chat` / `openai-responses`
+    / `anthropic` and a per-Agent support matrix so the machine page only
+    offers providers the target speaks), a server-side 获取模型 model-list
+    discovery button (`POST /api/llm-providers/query-models` — the platform's
+    second deliberate outbound HTTP surface; the key never leaves the
+    server), a provider-first MachineDetail flow (pick provider → pick/fetch
+    model → apply; manual arm kept), and multi-model via
+    `RuntimeConfigSpec.models` (dsh writes its native per-provider switchable
+    list; codex/claude-code are single-default by construction — ground truth
+    in the design doc §6).
+    Design: `docs/design/phase-9-w10-llm-providers.md`.
 - Non-goals v1: harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

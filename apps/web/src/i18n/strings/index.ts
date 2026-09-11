@@ -13,6 +13,7 @@ import { settingsStrings } from './settings.js';
 import { usersStrings } from './users.js';
 import { dashboardStrings } from './dashboard.js';
 import { credentialsStrings } from './credentials.js';
+import { llmProvidersStrings } from './llmProviders.js';
 import { tokensStrings } from './tokens.js';
 import { profilesStrings } from './profiles.js';
 import { resourcesStrings } from './resources.js';
@@ -31,6 +32,7 @@ export const en = {
   users: usersStrings.en,
   dashboard: dashboardStrings.en,
   credentials: credentialsStrings.en,
+  llmProviders: llmProvidersStrings.en,
   tokens: tokensStrings.en,
   profiles: profilesStrings.en,
   resources: resourcesStrings.en,
@@ -50,6 +52,7 @@ export const zh: typeof en = {
   users: usersStrings.zh,
   dashboard: dashboardStrings.zh,
   credentials: credentialsStrings.zh,
+  llmProviders: llmProvidersStrings.zh,
   tokens: tokensStrings.zh,
   profiles: profilesStrings.zh,
   resources: resourcesStrings.zh,

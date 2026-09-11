@@ -14,6 +14,7 @@ import type {
   Job,
   AgentInstance,
   RuntimeConfig,
+  LlmProvider,
   JobRepository,
   AgentInstanceRepository,
   UserRepository,
@@ -25,6 +26,7 @@ import type {
   ResourceRepository,
   MachineRepository,
   RuntimeConfigRepository,
+  LlmProviderRepository,
 } from '@harness-nexus/core';
 import { DEFAULT_SYSTEM_SETTINGS } from '@harness-nexus/core';
 
@@ -49,6 +51,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
   // key: `${machineId}\u0000${profileId}` — one deployed instance per pair
   const agentInstances = new Map<string, AgentInstance>();
   const runtimeConfigs = new Map<string, RuntimeConfig>();
+  const llmProviders = new Map<string, LlmProvider>();
   let settings: SystemSettings = {
     allowRegistration: DEFAULT_SYSTEM_SETTINGS.allowRegistration,
     updatedAt: new Date(0).toISOString(),
@@ -342,6 +345,33 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     },
   };
 
+  const llmProviderRepo: LlmProviderRepository = {
+    async findById(id) {
+      return llmProviders.get(id) ?? null;
+    },
+    async findByName(name, scope, ownerId) {
+      return (
+        [...llmProviders.values()].find(
+          (p) =>
+            p.name === name && p.scope === scope && (scope === 'global' || p.ownerId === ownerId),
+        ) ?? null
+      );
+    },
+    async list(filter) {
+      return [...llmProviders.values()]
+        .filter((p) => (filter?.scope ? p.scope === filter.scope : true))
+        .filter((p) => (filter?.ownerId ? p.ownerId === filter.ownerId : true))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async save(provider) {
+      llmProviders.set(provider.id, provider);
+      return provider;
+    },
+    async delete(id) {
+      llmProviders.delete(id);
+    },
+  };
+
   return {
     users: userRepo,
     tokens: tokenRepo,
@@ -355,5 +385,6 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     jobs: jobRepo,
     agentInstances: agentInstanceRepo,
     runtimeConfigs: runtimeConfigRepo,
+    llmProviders: llmProviderRepo,
   };
 }

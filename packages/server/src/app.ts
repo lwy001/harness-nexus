@@ -23,6 +23,7 @@ import { machinesRoutes } from './modules/machines.js';
 import { inventoryRoutes } from './modules/inventory.js';
 import { jobsRoutes } from './modules/jobs.js';
 import { runtimeConfigRoutes } from './modules/runtime-config.js';
+import { llmProviderRoutes } from './modules/llm-providers.js';
 import { workspaceRoutes } from './modules/workspace.js';
 import { clientConfigRoutes } from './modules/client-config.js';
 import { mountMcpProxy } from './mcp/proxy.js';
@@ -101,6 +102,8 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   app.decorate('requireAdmin', requireAdmin);
   app.decorate('credentialEncryptionKey', config.credentialEncryptionKey);
   app.decorate('publicBaseUrl', config.publicBaseUrl);
+  // W10 — budget for provider model-list discovery (outbound surface #2).
+  app.decorate('providerModelsTimeoutMs', config.providerModelsTimeoutMs);
 
   // Phase 7.2 — marketplace catalog service + its allowlist. The only
   // outbound-fetch surface in the server. `createMarketplaceFetcher` returns a
@@ -223,6 +226,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     await inventoryRoutes(api);
     await jobsRoutes(api);
     await runtimeConfigRoutes(api);
+    await llmProviderRoutes(api);
     await workspaceRoutes(api);
     await clientConfigRoutes(api);
     await marketplaceRoutes(api);

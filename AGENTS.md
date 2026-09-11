@@ -276,6 +276,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
   → `docs/design/phase-8-client.md` · C1: `docs/design/phase-8-c1.md`
 - **Sender controls (config selectors, attachments) (Phase 9 W9)**
   → `docs/design/phase-9-w9-sender-controls.md`
+- **LLM provider management + model discovery + multi-model (Phase 9 W10)**
+  → `docs/design/phase-9-w10-llm-providers.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -1001,6 +1003,68 @@ Full design + adapter ground truth in `docs/design/phase-9-w9-sender-controls.md
 * Daemon `0.12.0-p9w9` advertises the same capability set (no new caps —
   `workspace`/`chat` gained additive arms).
 
+## LLM provider management (Phase 9 W10)
+
+Full design + multi-model ground truth in `docs/design/phase-9-w10-llm-providers.md`.
+Summary for daily work:
+
+- **`LlmProvider`** (core domain + `UnitOfWork.llmProviders`, migration `0015`,
+  sqlite/memory drivers) is a reusable LLM ROUTE — `{ name, api kind, baseUrl?,
+  credentialName, scope, ownerId }`. The API key is NEVER on the provider: it
+  lives in the encrypted Credential store, referenced by name (the W3 apply
+  path's distributable gate is reused verbatim). Scope rules mirror
+  credentials (global admin-mutate / personal owner-only, 404-hiding); name
+  uniqueness per `(name, scope, owner)` is read-then-write → `409
+  PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
+  scope field).
+- **Three api kinds** — `openai-chat` / `openai-responses` / `anthropic`
+  (`providerApiKindSchema`) — FINER than the W3 spec flavor because codex is
+  Responses-only while dsh's pi-ai speaks chat completions.
+  `PROVIDER_API_SUPPORT` (shared): claude-code=`[anthropic]`,
+  codex=`[openai-responses]`, deepseek=`[anthropic, openai-chat]`;
+  `providerApiToSpecApi` maps a kind onto the unchanged spec enum
+  (`anthropic-messages`/`openai`), and `runtimeSpecUnsupportedReason` still
+  gates after mapping.
+- **获取模型 (model discovery)**: `POST /api/llm-providers/query-models` takes
+  `{providerId}` OR explicit `{api, baseUrl?, credentialName}` (pre-save — the
+  create dialog and the machine page's manual arm use it). The server resolves
+  + decrypts the credential and fetches the endpoint's model list
+  (`infra/provider-models.ts`; OpenAI `GET {base}/models` with bearer — a
+  non-`/v1` base tries `{base}/v1/models` then `{base}/models` on 404 —
+  Anthropic `GET {base}/v1/models?limit=1000` with `x-api-key` +
+  `anthropic-version`). This is the platform's SECOND deliberate outbound
+  HTTP surface (marketplace fetch is #1): GET-only, http(s) only,
+  `PROVIDER_MODELS_TIMEOUT_MS` (10s), 2 MiB body cap, results reduced to
+  ids/display names (≤1000, sorted, deduped). Failures map
+  `ProviderModelsError{kind}` → `502 PROVIDER_MODELS_FAILED` /
+  `504 PROVIDER_MODELS_TIMEOUT`; `fetchProviderModels` takes an injectable
+  `fetch` — tests NEVER touch the network.
+- **RuntimeConfigSpec additions (additive, optional)**: `providerId`
+  (provenance — validated visible at PUT, echoed in the view so the machine
+  form pre-selects; the spec stays a SNAPSHOT, deleting the provider never
+  invalidates a stored row) and `models` (extra switchable ids ≤16; the PUT
+  normalizes to EXTRAS ONLY — dedupe, drop the default — and the writers
+  prepend `model` themselves). SQLite mapper null-normalizes pre-W10 rows.
+- **Multi-model ground truth** (design §6): dsh natively supports a
+  per-provider `models:` list — its session model picker reads that live
+  catalog — so the dsh writer emits `unique([model, ...models])` (default
+  leads; `agent-default-model` + the acp override stay pinned to the
+  default). codex is a single root `model` (picker = built-in presets);
+  claude-code is a single top-level `model` (picker = SDK model infos) — both
+  IGNORE `models`. Machine default (W3) + dsh pre-seeded switchable set
+  (W10) + in-session switching (W9) is the complete story.
+- **Web**: `/llm-providers` page (nav 供应商, `PlugZapIcon`; table + FormDialog
+  CRUD + per-row fetch-models dialog; credential picker lists DISTRIBUTABLE
+  credentials only — every consumer of a provider is an apply-config).
+  MachineDetail's `ProviderConfigForm` is provider-first: provider select
+  filtered by `PROVIDER_API_SUPPORT[target]` auto-fills label/api/baseUrl/
+  credential (read-only summary; the only editable baseUrl case is a
+  baseUrl-less provider on deepseek), model input + fetch button, fetched
+  list as a Select, extras as a collapsible checkbox list, manual arm kept
+  as fallback (incl. stored specs whose provider was deleted —
+  `providerGone` note). Strings in `strings/llmProviders.ts` +
+  `machineDetail.*` W10 keys (en/zh).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
@@ -1244,15 +1308,17 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
   token stored). See "Releasing to npm" under Common commands. Remaining:
   C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through
-  W9 are SHIPPED (2026-09, see the sections above): Agent-first inventory
+  W10 are SHIPPED (2026-09, see the sections above): Agent-first inventory
   with the runtime probe arm, detected AgentInstances (chatable),
   capture-as-profile, `harness`-type install/upgrade/pin jobs, `RuntimeConfig`
   provider/model push, redacted config viewing, modal containers + the
   portal-style chat UI (W5+W6), native agent sessions — list + resume
   with NO platform session store (W7) — the in-process dsh event tap
   streaming source with the file tail as fallback (W7.1), the card-style
-  chat Sender/composer (W8), and the Sender controls — session-config
-  selectors + image/file attachments (W9).** Remaining in P9: none scoped;
+  chat Sender/composer (W8), the Sender controls — session-config
+  selectors + image/file attachments (W9), and LLM provider management with
+  server-side model discovery + the dsh multi-model list (W10).** Remaining
+  in P9: none scoped;
   C6 (orchestration) and hermes native sessions are the open follow-ups.
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and

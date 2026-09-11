@@ -262,6 +262,10 @@ function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string
     }
   }
   const yq = JSON.stringify; // JSON quoting is valid YAML 1.2 double-quoting
+  // W10 — dsh's per-provider `models:` list IS the session-switchable set;
+  // the default model leads. (The server already dedupes against `model`,
+  // this is belt-and-braces for hand-queued bundles.)
+  const modelIds = [...new Set([spec.model, ...(spec.models ?? [])])];
   const region = [
     SETTINGS_BEGIN,
     `${DSH_LLM_NS}:`,
@@ -272,7 +276,7 @@ function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string
     `      baseURL: ${yq(spec.baseUrl!)}`,
     `      apiKeyEnv: ${DSH_API_KEY_ENV}`,
     `      models:`,
-    `        - id: ${yq(spec.model)}`,
+    ...modelIds.map((id) => `        - id: ${yq(id)}`),
     `${DSH_DEFAULT_MODEL_NS}:`,
     `  provider: harness-nexus`,
     `  model: ${yq(spec.model)}`,

@@ -13,6 +13,7 @@ import {
   StoreIcon,
   LaptopIcon,
   MessageSquareIcon,
+  PlugZapIcon,
 } from 'lucide-react';
 import { useAuth } from '@/auth';
 import { useI18n, type TFunc } from '@/i18n';
@@ -170,6 +171,11 @@ function navItems(isAdmin: boolean, t: TFunc): NavItemProps[] {
       to: '/credentials',
       icon: <KeyRoundIcon className="size-4" />,
       label: t('app.navCredentials'),
+    },
+    {
+      to: '/llm-providers',
+      icon: <PlugZapIcon className="size-4" />,
+      label: t('app.navProviders'),
     },
     { to: '/tokens', icon: <TicketIcon className="size-4" />, label: t('app.navTokens') },
   ];

@@ -52,6 +52,12 @@ export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
     api: row.spec.api,
     model: row.spec.model,
     credentialName: row.spec.credentialName,
+    ...(row.spec.providerId !== null && row.spec.providerId !== undefined
+      ? { providerId: row.spec.providerId }
+      : {}),
+    ...(row.spec.models !== null && row.spec.models !== undefined
+      ? { models: row.spec.models }
+      : {}),
     ...(row.spec.extra !== null ? { extra: row.spec.extra } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -181,6 +187,23 @@ export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
+      // W10 — `providerId` is provenance only, but it must still name a
+      // provider visible to the caller at PUT time (a dangling ref later is
+      // fine: the spec is a snapshot and the form falls back to manual).
+      if (spec.providerId !== undefined) {
+        const provider = await app.uow.llmProviders.findById(spec.providerId);
+        if (!provider || (provider.scope === 'personal' && provider.ownerId !== req.user!.id)) {
+          throw new AppError('Provider not found', 404, 'PROVIDER_NOT_FOUND');
+        }
+      }
+
+      // W10 — extra switchable models: dedupe and drop the default (the
+      // writers prepend `model` themselves; the stored value is the extras
+      // only, and an empty remainder normalizes back to null).
+      const uniqueExtras =
+        spec.models !== undefined ? [...new Set(spec.models)].filter((m) => m !== spec.model) : [];
+      const models = uniqueExtras.length > 0 ? uniqueExtras : null;
+
       // Soft capability gate (harness jobs' rule): an online daemon without the
       // W3 config executor would settle the job as unsupported — refuse early.
       // An offline machine may queue.
@@ -208,6 +231,8 @@ export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
           api: spec.api,
           model: spec.model,
           credentialName: spec.credentialName,
+          providerId: spec.providerId ?? null,
+          models,
           extra: spec.extra ?? null,
         },
         createdAt: existing?.createdAt ?? now,

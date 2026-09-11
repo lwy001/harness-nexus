@@ -36,10 +36,16 @@ import type {
   HarnessAction,
   RuntimeConfigSpec,
   RuntimeConfigView,
+  LlmProviderView,
+  LlmModelInfo,
+  ProviderApiKind,
+  ProviderModelsQueryInput,
 } from '@harness-nexus/shared';
 export {
   SCANNABLE_TARGETS,
   RUNTIME_API_SUPPORT,
+  PROVIDER_API_SUPPORT,
+  providerApiToSpecApi,
   jobViewSchema,
   HOOK_EVENTS,
   HOOK_SUPPORT,
@@ -58,6 +64,9 @@ export type {
   HarnessAction,
   RuntimeConfigSpec,
   RuntimeConfigView,
+  LlmProviderView,
+  LlmModelInfo,
+  ProviderApiKind,
   MarketplaceCatalog,
   MarketplacePlugin,
   MarketplaceSource,
@@ -516,6 +525,47 @@ export class HarnessNexusClient {
     secret: string;
   }> {
     return this.request('GET', `/api/client/runtime-config?target=${encodeURIComponent(target)}`);
+  }
+
+  // ---- LLM providers (Phase 9 W10; cc-switch-style reusable routes) ----
+  async listLlmProviders(): Promise<LlmProviderView[]> {
+    const res = await this.request('GET', '/api/llm-providers');
+    return res.providers;
+  }
+
+  async createLlmProvider(input: {
+    name: string;
+    api: ProviderApiKind;
+    baseUrl?: string;
+    credentialName: string;
+    scope?: 'global' | 'personal';
+  }): Promise<{ provider: LlmProviderView }> {
+    return this.request('POST', '/api/llm-providers', input);
+  }
+
+  async updateLlmProvider(
+    id: string,
+    input: {
+      name?: string;
+      api?: ProviderApiKind;
+      /** `null` clears the override back to the official endpoint. */
+      baseUrl?: string | null;
+      credentialName?: string;
+    },
+  ): Promise<{ provider: LlmProviderView }> {
+    return this.request('PATCH', `/api/llm-providers/${id}`, input);
+  }
+
+  async deleteLlmProvider(id: string): Promise<void> {
+    await this.request('DELETE', `/api/llm-providers/${id}`);
+  }
+
+  /** 获取模型 — discover the endpoint's model list (server-side fetch). */
+  async queryProviderModels(
+    query: ProviderModelsQueryInput | { providerId: string },
+  ): Promise<LlmModelInfo[]> {
+    const res = await this.request('POST', '/api/llm-providers/query-models', query);
+    return res.models;
   }
 
   // ---- settings ----

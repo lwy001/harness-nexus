@@ -51,17 +51,23 @@ import {
 import { RocketIcon, SquareIcon } from 'lucide-react';
 import {
   HarnessNexusError,
+  PROVIDER_API_SUPPORT,
   RUNTIME_API_SUPPORT,
+  providerApiToSpecApi,
   type AgentInstanceView,
   type CredentialView,
   type ImportResult,
   type InventoryDiff,
   type JobView,
+  type LlmModelInfo,
+  type LlmProviderView,
   type MachineView,
   type Profile,
   type RuntimeConfigSpec,
   type RuntimeTarget,
 } from '@harness-nexus/sdk';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDownIcon } from 'lucide-react';
 
 /** Wire shape of `job:update` (mirrors shared/realtime.ts). */
 interface JobUpdateEvent {
@@ -535,11 +541,16 @@ function ViewConfigButton({
 }
 
 /**
- * Provider config sub-form (Phase 9 W3) — the Agent's LLM route, applied into
- * the harness's NATIVE config by an `apply-config` job (confirm-first: the
- * write ships the credential's plaintext to the machine). Renders nothing for
- * targets the daemon doesn't runtime-manage (hermes, old hnx).
+ * Provider config sub-form (Phase 9 W3 + W10 provider-first flow) — the
+ * Agent's LLM route, applied into the harness's NATIVE config by an
+ * `apply-config` job (confirm-first: the write ships the credential's
+ * plaintext to the machine). W10: pick a stored LlmProvider (filtered to the
+ * APIs this Agent speaks) and only choose the model — 获取模型 discovers the
+ * endpoint's list server-side. Manual entry remains as the fallback arm.
+ * Renders nothing for targets the daemon doesn't runtime-manage.
  */
+const MANUAL_PROVIDER = '__manual__';
+
 function ProviderConfigForm({
   machineId,
   target,
@@ -551,32 +562,48 @@ function ProviderConfigForm({
 }) {
   const { logout } = useAuth();
   const { t } = useI18n();
+  const [providers, setProviders] = useState<LlmProviderView[] | null>(null);
   const [creds, setCreds] = useState<CredentialView[] | null>(null);
+  const [providerId, setProviderId] = useState<string>(''); // '' | id | MANUAL_PROVIDER
+  const [providerGone, setProviderGone] = useState(false);
   const [providerLabel, setProviderLabel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiFlavor, setApiFlavor] = useState<string>('');
   const [credentialName, setCredentialName] = useState('');
+  const [extraModels, setExtraModels] = useState<string[]>([]);
+  const [fetched, setFetched] = useState<LlmModelInfo[] | null>(null);
+  const [fetching, setFetching] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const managedTarget = runtime !== null ? (target as RuntimeTarget) : null;
   const apiOptions = managedTarget !== null ? RUNTIME_API_SUPPORT[managedTarget] : [];
+  const supportedKinds = managedTarget !== null ? PROVIDER_API_SUPPORT[managedTarget] : [];
+  const usableProviders = (providers ?? []).filter((p) => supportedKinds.includes(p.api));
+  const selectedProvider = usableProviders.find((p) => p.id === providerId) ?? null;
+  const manual = selectedProvider === null;
 
-  // Prefill from the stored spec; the api flavor also defaults to the first
-  // (and for two targets the only) supported option.
+  // Prefill: a stored providerId that still resolves selects that provider;
+  // otherwise (no provider, or it was deleted) the manual arm carries the
+  // stored spec fields.
   useEffect(() => {
     if (managedTarget === null) return;
     let cancelled = false;
     void (async () => {
       let existing: RuntimeConfigSpec | null = null;
       try {
-        const res = await withAuthGuard(
+        existing = await withAuthGuard(
           () => api.getRuntimeConfig(machineId, managedTarget),
           logout,
         );
-        existing = res;
       } catch {
         existing = null; // 404 (nothing stored yet) or transient — empty form
+      }
+      let allProviders: LlmProviderView[] = [];
+      try {
+        allProviders = await withAuthGuard(() => api.listLlmProviders(), logout);
+      } catch {
+        allProviders = [];
       }
       let distributable: CredentialView[] = [];
       try {
@@ -587,12 +614,21 @@ function ProviderConfigForm({
         distributable = [];
       }
       if (cancelled) return;
+      setProviders(allProviders);
       setCreds(distributable);
+      const kinds = PROVIDER_API_SUPPORT[managedTarget];
+      const match =
+        existing?.providerId !== undefined
+          ? allProviders.find((p) => p.id === existing?.providerId && kinds.includes(p.api))
+          : undefined;
+      setProviderGone(existing?.providerId !== undefined && match === undefined);
+      setProviderId(match?.id ?? MANUAL_PROVIDER);
       setProviderLabel(existing?.providerLabel ?? '');
       setBaseUrl(existing?.baseUrl ?? '');
       setModel(existing?.model ?? '');
       setApiFlavor(existing?.api ?? apiOptions[0] ?? '');
       setCredentialName(existing?.credentialName ?? '');
+      setExtraModels((existing?.models ?? []).filter((m) => m !== existing?.model));
     })();
     return () => {
       cancelled = true;
@@ -602,16 +638,50 @@ function ProviderConfigForm({
 
   if (managedTarget === null) return null;
 
+  /** The spec's effective base URL: the provider's, or the supplemental/manual input. */
+  const effectiveBaseUrl =
+    selectedProvider !== null ? (selectedProvider.baseUrl ?? baseUrl.trim()) : baseUrl.trim();
+
+  async function fetchModels(): Promise<void> {
+    setFetching(true);
+    try {
+      const list = await withAuthGuard(() => {
+        if (selectedProvider !== null) {
+          return api.queryProviderModels({ providerId: selectedProvider.id });
+        }
+        // Manual arm — the explicit query shape. Spec flavors map onto the
+        // fetch kinds (the models endpoint is shared by both openai kinds).
+        return api.queryProviderModels({
+          api: apiFlavor === 'anthropic-messages' ? 'anthropic' : 'openai-chat',
+          ...(baseUrl.trim() !== '' ? { baseUrl: baseUrl.trim() } : {}),
+          credentialName,
+        });
+      }, logout);
+      setFetched(list);
+      toast.success(t('machineDetail.fetchedCount', { count: list.length }));
+    } catch (e) {
+      toast.error(
+        e instanceof HarnessNexusError ? e.message : t('machineDetail.fetchModelsFailed'),
+      );
+    } finally {
+      setFetching(false);
+    }
+  }
+
   async function apply(): Promise<void> {
     if (!window.confirm(t('machineDetail.applyConfirm', { target }))) return;
     setBusy(true);
     try {
       const spec: RuntimeConfigSpec = {
-        providerLabel: providerLabel.trim(),
-        api: (apiFlavor || apiOptions[0]) as RuntimeConfigSpec['api'],
+        providerLabel: (selectedProvider?.name ?? providerLabel).trim(),
+        api: (selectedProvider !== null
+          ? providerApiToSpecApi(selectedProvider.api)
+          : apiFlavor || apiOptions[0]) as RuntimeConfigSpec['api'],
         model: model.trim(),
-        credentialName,
-        ...(baseUrl.trim() !== '' ? { baseUrl: baseUrl.trim() } : {}),
+        credentialName: selectedProvider?.credentialName ?? credentialName,
+        ...(selectedProvider !== null ? { providerId: selectedProvider.id } : {}),
+        ...(extraModels.length > 0 ? { models: extraModels } : {}),
+        ...(effectiveBaseUrl !== '' ? { baseUrl: effectiveBaseUrl } : {}),
       };
       await withAuthGuard(() => api.putRuntimeConfig(machineId, managedTarget!, spec), logout);
       toast.success(t('machineDetail.applyToast'));
@@ -623,7 +693,12 @@ function ProviderConfigForm({
   }
 
   const ready =
-    providerLabel.trim() !== '' && model.trim() !== '' && credentialName !== '' && !busy;
+    model.trim() !== '' &&
+    !busy &&
+    (selectedProvider !== null || (providerLabel.trim() !== '' && credentialName !== ''));
+
+  const fetchedChoices = (fetched ?? []).filter((m) => m.id !== model);
+  const needBaseUrlNote = selectedProvider !== null && selectedProvider.baseUrl === null;
 
   return (
     <div className="flex flex-col gap-3 border-t px-6 pt-4">
@@ -632,83 +707,216 @@ function ProviderConfigForm({
         <p className="text-muted-foreground text-xs">{t('machineDetail.providerDesc')}</p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
-        <div className="grid min-w-44 gap-2">
-          <Label htmlFor={`pc-label-${target}`}>{t('machineDetail.providerLabelLabel')}</Label>
-          <Input
-            id={`pc-label-${target}`}
-            value={providerLabel}
-            onChange={(e) => setProviderLabel(e.target.value)}
-            placeholder={t('machineDetail.providerLabelPlaceholder')}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
         <div className="grid min-w-52 gap-2">
-          <Label htmlFor={`pc-url-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
-          <Input
-            id={`pc-url-${target}`}
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={t('machineDetail.baseUrlPlaceholder')}
-            className="font-mono text-xs"
-            autoComplete="off"
-            spellCheck={false}
-            inputMode="url"
-          />
-        </div>
-        <div className="grid min-w-24 gap-2">
-          <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelLabel')}</Label>
-          <Input
-            id={`pc-model-${target}`}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="font-mono text-xs"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-        <div className="grid min-w-36 gap-2">
-          <Label htmlFor={`pc-api-${target}`}>{t('machineDetail.apiLabel')}</Label>
-          {apiOptions.length > 1 ? (
-            <Select value={apiFlavor} onValueChange={setApiFlavor}>
-              <SelectTrigger id={`pc-api-${target}`} className="font-mono text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {apiOptions.map((a) => (
-                  <SelectItem key={a} value={a} className="font-mono text-xs">
-                    {a}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Badge variant="outline" className="font-mono text-[10px]">
-              {apiOptions[0]}
-            </Badge>
-          )}
-        </div>
-        <div className="grid min-w-44 gap-2">
-          <Label htmlFor={`pc-cred-${target}`}>{t('machineDetail.credentialLabel')}</Label>
-          <Select value={credentialName} onValueChange={setCredentialName}>
-            <SelectTrigger id={`pc-cred-${target}`} className="font-mono text-xs">
-              <SelectValue placeholder={t('machineDetail.pickCredential')} />
+          <Label htmlFor={`pc-provider-${target}`}>{t('machineDetail.providerPickLabel')}</Label>
+          <Select
+            value={providerId}
+            onValueChange={(v) => {
+              setProviderId(v);
+              setFetched(null);
+              setExtraModels([]);
+            }}
+          >
+            <SelectTrigger id={`pc-provider-${target}`}>
+              <SelectValue placeholder={t('machineDetail.pickProvider')} />
             </SelectTrigger>
             <SelectContent>
-              {(creds ?? []).map((c) => (
-                <SelectItem key={c.id} value={c.name} className="font-mono text-xs">
-                  {c.name}
+              {usableProviders.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
                 </SelectItem>
               ))}
+              <SelectItem value={MANUAL_PROVIDER}>{t('machineDetail.manualOption')}</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {selectedProvider !== null ? (
+          <div className="grid gap-1">
+            <span className="text-muted-foreground text-xs">
+              {t('machineDetail.providerPickLabel')}
+            </span>
+            <p className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge variant="outline" className="font-mono text-[10px]">
+                {selectedProvider.api}
+              </Badge>
+              <span className="font-mono">
+                {selectedProvider.baseUrl ?? t('machineDetail.baseUrlPlaceholder')}
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className="font-mono">{selectedProvider.credentialName}</span>
+            </p>
+          </div>
+        ) : null}
+        {needBaseUrlNote && managedTarget === 'deepseek' ? (
+          <p className="text-warn text-xs">{t('machineDetail.baseUrlNeeded')}</p>
+        ) : null}
+
+        {manual ? (
+          <>
+            <div className="grid min-w-44 gap-2">
+              <Label htmlFor={`pc-label-${target}`}>{t('machineDetail.providerLabelLabel')}</Label>
+              <Input
+                id={`pc-label-${target}`}
+                value={providerLabel}
+                onChange={(e) => setProviderLabel(e.target.value)}
+                placeholder={t('machineDetail.providerLabelPlaceholder')}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="grid min-w-52 gap-2">
+              <Label htmlFor={`pc-url-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
+              <Input
+                id={`pc-url-${target}`}
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={t('machineDetail.baseUrlPlaceholder')}
+                className="font-mono text-xs"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="url"
+              />
+            </div>
+            <div className="grid min-w-24 gap-2">
+              <Label htmlFor={`pc-api-${target}`}>{t('machineDetail.apiLabel')}</Label>
+              {apiOptions.length > 1 ? (
+                <Select value={apiFlavor} onValueChange={setApiFlavor}>
+                  <SelectTrigger id={`pc-api-${target}`} className="font-mono text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {apiOptions.map((a) => (
+                      <SelectItem key={a} value={a} className="font-mono text-xs">
+                        {a}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  {apiOptions[0]}
+                </Badge>
+              )}
+            </div>
+            <div className="grid min-w-44 gap-2">
+              <Label htmlFor={`pc-cred-${target}`}>{t('machineDetail.credentialLabel')}</Label>
+              <Select value={credentialName} onValueChange={setCredentialName}>
+                <SelectTrigger id={`pc-cred-${target}`} className="font-mono text-xs">
+                  <SelectValue placeholder={t('machineDetail.pickCredential')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(creds ?? []).map((c) => (
+                    <SelectItem key={c.id} value={c.name} className="font-mono text-xs">
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : null}
+
+        {selectedProvider !== null && selectedProvider.baseUrl === null ? (
+          <div className="grid min-w-52 gap-2">
+            <Label htmlFor={`pc-url2-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
+            <Input
+              id={`pc-url2-${target}`}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={t('machineDetail.baseUrlPlaceholder')}
+              className="font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+              inputMode="url"
+            />
+          </div>
+        ) : null}
+
+        <div className="grid min-w-44 gap-2">
+          <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelLabel')}</Label>
+          <div className="flex gap-2">
+            <Input
+              id={`pc-model-${target}`}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              disabled={fetching || (manual && credentialName === '')}
+              onClick={() => void fetchModels()}
+              title={t('machineDetail.fetchModels')}
+              aria-label={t('machineDetail.fetchModels')}
+            >
+              <RefreshCwIcon className={fetching ? 'animate-spin' : ''} />
+            </Button>
+          </div>
         </div>
         <Button onClick={() => void apply()} disabled={!ready}>
           {busy ? t('machineDetail.applying') : t('machineDetail.applyButton')}
         </Button>
       </div>
-      {creds !== null && creds.length === 0 ? (
+
+      {providers !== null && usableProviders.length === 0 && manual ? (
+        <p className="text-muted-foreground text-xs">{t('machineDetail.noProviders')}</p>
+      ) : null}
+      {providerGone ? <p className="text-warn text-xs">{t('machineDetail.providerGone')}</p> : null}
+      {manual && creds !== null && creds.length === 0 ? (
         <p className="text-muted-foreground text-xs">{t('machineDetail.noCredentials')}</p>
+      ) : null}
+
+      {fetched !== null && fetched.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <div className="grid max-w-64 gap-2">
+            <Label htmlFor={`pc-fetched-${target}`}>{t('machineDetail.modelLabel')}</Label>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger id={`pc-fetched-${target}`} className="font-mono text-xs">
+                <SelectValue placeholder={t('machineDetail.pickFetchedModel')} />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {fetched.map((m) => (
+                  <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
+                    {m.name !== undefined && m.name !== m.id ? `${m.id} — ${m.name}` : m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {fetchedChoices.length > 0 ? (
+            <Collapsible>
+              <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-xs hover:underline">
+                <ChevronDownIcon className="size-3.5" />
+                {t('machineDetail.extraModelsLabel', { count: extraModels.length })}
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto">
+                  {fetchedChoices.map((m) => (
+                    <label key={m.id} className="flex cursor-pointer items-center gap-2 text-xs">
+                      <Checkbox
+                        checked={extraModels.includes(m.id)}
+                        onCheckedChange={(checked) => {
+                          setExtraModels((prev) =>
+                            checked === true ? [...prev, m.id] : prev.filter((x) => x !== m.id),
+                          );
+                        }}
+                      />
+                      <span className="font-mono">{m.id}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {t('machineDetail.extraModelsHint')}
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
