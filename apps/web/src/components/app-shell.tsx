@@ -27,9 +27,11 @@ import { cn } from '@/lib/utils';
 
 /**
  * Dashboard chrome: left sidebar nav + top header. The mobile drawer mirrors
- * the same nav. `variant="full"` (chat session page): the main column drops
- * its width cap + padding and the shell locks to the viewport height, so the
- * page can lay out full-height panes.
+ * the same nav. The shell is viewport-locked: the sidebar stays put while the
+ * main column scrolls independently (the header is sticky inside that column).
+ * `variant="full"` (chat session page): the main column drops its width cap +
+ * padding and hands scrolling to the page itself, which lays out full-height
+ * panes.
  */
 export function AppShell({
   children,
@@ -45,12 +47,7 @@ export function AppShell({
   const full = variant === 'full';
 
   return (
-    <div
-      className={cn(
-        'bg-background text-foreground flex',
-        full ? 'h-svh overflow-hidden' : 'min-h-svh',
-      )}
-    >
+    <div className="bg-background text-foreground flex h-svh overflow-hidden">
       {/* Skip link — first focusable element, jumps to main content. */}
       <a
         href="#main"
@@ -59,20 +56,24 @@ export function AppShell({
         {t('app.skipToContent')}
       </a>
 
-      {/* Sidebar (desktop) */}
-      <aside className="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col border-r md:flex">
-        <div className="flex h-14 items-center px-5">
+      {/* Sidebar (desktop) — brand row and footer pinned; the nav list is the
+          only scrolling part, so short viewports keep both ends reachable. */}
+      <aside className="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col overflow-hidden border-r md:flex">
+        <div className="flex h-14 shrink-0 items-center px-5">
           <Link to="/" aria-label={t('app.brandHome')}>
             <Brand size={22} />
           </Link>
         </div>
         <Separator />
-        <nav className="flex flex-col gap-1 p-3" aria-label={t('app.primaryNav')}>
+        <nav
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3"
+          aria-label={t('app.primaryNav')}
+        >
           {items.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
         </nav>
-        <div className="mt-auto p-3">
+        <div className="shrink-0 p-3">
           <div className="text-muted-foreground px-2 pb-2 text-xs uppercase tracking-wide">
             {t('app.signedIn')}
           </div>
@@ -89,8 +90,8 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Main column — the scroll container; the sidebar beside it never moves */}
+      <div className={cn('flex min-w-0 flex-1 flex-col', !full && 'overflow-y-auto')}>
         <header className="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-30 flex h-14 items-center gap-2 border-b px-4 backdrop-blur md:px-6">
           {/* Mobile: drawer trigger + brand (sidebar is hidden below md) */}
           <MobileNav>
@@ -142,7 +143,7 @@ function NavItem({ to, icon, label, end }: NavItemProps) {
       aria-label={label}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          'flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
