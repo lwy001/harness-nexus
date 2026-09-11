@@ -76,7 +76,51 @@ export type ChatStreamEvent =
     }
   | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
   | { kind: 'session_status'; state: 'active' | 'idle' }
+  | ({ kind: 'session_config' } & SessionConfigPatch)
   | { kind: 'raw'; method: string; params: unknown };
+
+// ---- 9 W9 A — ACP session modes & configuration (mirrors shared/realtime.ts) ----
+
+export interface SessionMode {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface SessionConfigValue {
+  value: string;
+  name: string;
+  description?: string;
+  /** dsh groups model options by provider — display grouping only. */
+  group?: string;
+}
+
+export interface SessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  currentValue?: string;
+  options?: SessionConfigValue[];
+}
+
+/**
+ * PATCH semantics: `availableModes` / `configOptions` replace when present;
+ * a lone `currentModeId` patches the current mode. The daemon emits full
+ * merged snapshots; option VALUES are opaque adapter keys (dsh model values
+ * are JSON `[provider, model]` — compare by equality, never parse).
+ */
+export interface SessionConfigPatch {
+  modes?: { currentModeId?: string; availableModes?: SessionMode[] };
+  configOptions?: SessionConfigOption[];
+}
+
+/** 9 W9 A — the set payload (what the composer emits). */
+export type ChatConfigSetPayload =
+  { kind: 'mode'; modeId: string } | { kind: 'option'; configId: string; value: string };
+
+/** 9 W9 A — browser → server: switch the session's mode / one option. */
+export type ChatConfigSet = { sessionId: string } & ChatConfigSetPayload;
 
 /** 9 W6 — one ACP ToolCallContent item (diff / content / terminal). */
 export interface AcpToolContentItem {
@@ -112,6 +156,8 @@ export interface ChatSessionReadyPush {
   agentVersion?: string;
   /** 9 W7 — the agent's OWN session id behind this channel (rail highlight). */
   nativeSessionId?: string;
+  /** 9 W9 B — prompt-content capabilities (gates the attach affordance). */
+  promptCapabilities?: { image: boolean; audio?: boolean; embeddedContext?: boolean };
 }
 export interface ChatSessionFailedPush {
   sessionId: string;
@@ -126,7 +172,13 @@ export interface ChatSessionClosedPush {
 
 /** One prompt block the browser may send / one history user item carries. */
 export type PromptBlock =
-  { type: 'text'; text: string } | { type: 'resource_link'; name: string; uri: string };
+  | { type: 'text'; text: string }
+  | { type: 'resource_link'; name: string; uri: string }
+  | {
+      type: 'image';
+      data: string;
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+    };
 
 /** One item of a channel's history batch: a user turn, or an ordinary event. */
 export type HistoryItem =

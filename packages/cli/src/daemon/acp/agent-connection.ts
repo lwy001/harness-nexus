@@ -61,6 +61,18 @@ export function deriveSessionCaps(result: unknown): AcpSessionCaps {
   };
 }
 
+/**
+ * 9 W9 B — prompt-content capabilities from the initialize result. `image`
+ * gates the composer's attach affordance; dsh derives it per model route so
+ * a live channel may legitimately advertise false.
+ */
+export function derivePromptCaps(result: unknown): { image: boolean } {
+  const r = (result ?? {}) as {
+    agentCapabilities?: { promptCapabilities?: { image?: unknown } };
+  };
+  return { image: r.agentCapabilities?.promptCapabilities?.image === true };
+}
+
 export class AcpAgentConnection {
   private proc: ChildProcess;
   private nextId = 1;
@@ -104,6 +116,7 @@ export class AcpAgentConnection {
     conn: AcpAgentConnection;
     agentInfo: AcpAgentInfo;
     sessionCaps: AcpSessionCaps;
+    promptCaps: { image: boolean };
   }> {
     const initializeTimeoutMs = opts.initializeTimeoutMs ?? 20000;
     let proc: ChildProcess;
@@ -139,6 +152,7 @@ export class AcpAgentConnection {
       conn,
       agentInfo: result?.agentInfo ?? {},
       sessionCaps: deriveSessionCaps(result),
+      promptCaps: derivePromptCaps(result),
     };
   }
 

@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { BrainIcon, ChevronDownIcon } from 'lucide-react';
+import { BrainIcon, ChevronDownIcon, FileTextIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { MarkdownText } from './markdown-text.js';
-import type { TurnStats } from './fold.js';
+import type { TurnStats, UserBlock } from './fold.js';
 
 /**
  * Row renderers for the conversation stream (Phase 9 W6), ported from the
@@ -13,12 +14,69 @@ import type { TurnStats } from './fold.js';
  * line while running, first line once settled) and expands to the full text.
  */
 
-export const UserMessage = memo(function UserMessage({ text }: { text: string }) {
+/**
+ * 9 W9 — the user row renders BLOCKS: text (as before), image thumbnails
+ * (click → lightbox), and file-reference chips. One bubble still: the blocks
+ * stack in send order inside it.
+ */
+export const UserMessage = memo(function UserMessage({ blocks }: { blocks: UserBlock[] }) {
+  const { t } = useI18n();
+  const [zoom, setZoom] = useState<Extract<UserBlock, { type: 'image' }> | null>(null);
+  const texts = blocks.filter((b): b is Extract<UserBlock, { type: 'text' }> => b.type === 'text');
+  const others = blocks.filter((b) => b.type !== 'text');
   return (
     <div className="flex flex-col items-end">
-      <div className="bg-muted text-foreground max-w-[min(34rem,82%)] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
-        {text}
+      <div className="bg-muted text-foreground flex max-w-[min(34rem,82%)] flex-col gap-2 rounded-2xl px-4 py-2.5 text-sm leading-relaxed">
+        {others.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {others.map((b, i) =>
+              b.type === 'image' ? (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setZoom(b)}
+                  className="ring-border hover:ring-ring overflow-hidden rounded-md ring-1 transition-[box-shadow]"
+                  title={t('chat.imagePreview')}
+                >
+                  <img
+                    src={`data:${b.mimeType};base64,${b.data}`}
+                    alt={t('chat.imagePreview')}
+                    className="max-h-24 max-w-[10rem] object-cover"
+                  />
+                </button>
+              ) : (
+                <span
+                  key={i}
+                  className="bg-background inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs"
+                  title={b.uri}
+                >
+                  <FileTextIcon className="size-3 shrink-0" />
+                  <span className="truncate">@{b.name}</span>
+                </span>
+              ),
+            )}
+          </div>
+        ) : null}
+        {texts.length > 0 ? (
+          <div className="whitespace-pre-wrap break-words">
+            {texts.map((b, i) => (
+              <span key={i}>{b.text}</span>
+            ))}
+          </div>
+        ) : null}
       </div>
+      {zoom !== null ? (
+        <Dialog open onOpenChange={(o) => (o ? undefined : setZoom(null))}>
+          <DialogContent className="max-w-3xl p-3">
+            <DialogTitle className="sr-only">{t('chat.imagePreview')}</DialogTitle>
+            <img
+              src={`data:${zoom.mimeType};base64,${zoom.data}`}
+              alt={t('chat.imagePreview')}
+              className="max-h-[75vh] w-full object-contain"
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 });

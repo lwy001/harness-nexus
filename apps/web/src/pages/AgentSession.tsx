@@ -33,9 +33,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/chat/chat-stream.js';
-import { Composer } from '@/components/chat/composer.js';
+import { Composer, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
-import { createFoldState, fold } from '@/components/chat/fold.js';
+import { FilePicker } from '@/components/chat/file-picker.js';
+import {
+  attachmentsBytes,
+  fileToAttachment,
+  ImageAttachError_,
+  MAX_IMAGES_PER_TURN,
+  MAX_TOTAL_IMAGE_BYTES,
+  type DraftAttachment,
+} from '@/components/chat/image-attach.js';
+import { createFoldState, fold, type UserBlock } from '@/components/chat/fold.js';
+import type { ChatConfigSetPayload } from '@/realtime';
 
 /**
  * The Agent session page (Phase 9 W6, rewired 9 W7) — left: the AGENT'S OWN
@@ -115,6 +125,12 @@ export function AgentSessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 9 W9 — composer controls state.
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [fileRefs, setFileRefs] = useState<DraftFileRef[]>([]);
+  const [filePickerOpen, setFilePickerOpen] = useState(false);
+  /** From the ready push's promptCapabilities — gates image attach. */
+  const [imageSupported, setImageSupported] = useState(false);
   const [conversation, dispatch] = useReducer(fold, undefined, createFoldState);
   /** Phase carried by an open ack (consumed by the sessionId effect). */
   const pendingPhaseRef = useRef<'ready' | null>(null);
@@ -180,6 +196,9 @@ export function AgentSessionPage() {
   useEffect(() => {
     dispatch({ type: 'reset' });
     setNativeSessionId(null);
+    setAttachments([]);
+    setFileRefs([]);
+    setImageSupported(false);
     if (sessionId === '') {
       setPhase('idle');
       return;
@@ -205,6 +224,7 @@ export function AgentSessionPage() {
       setPhase('ready');
       setError(null);
       if (push.nativeSessionId !== undefined) setNativeSessionId(push.nativeSessionId);
+      setImageSupported(push.promptCapabilities?.image === true);
       // Re-list so the just-opened row flips to its 已打开 (channel attached)
       // state instead of still offering a fresh resume.
       void refreshSessions();
@@ -320,18 +340,92 @@ export function AgentSessionPage() {
     }
   }
 
-  async function send(): Promise<void> {
-    const text = draft.trim();
-    if (text === '' || sessionId === '' || phase !== 'ready' || conversation.turnActive) return;
-    setDraft('');
-    dispatch({ type: 'user_message', text });
-    const ack = await emitWithAck<{ accepted?: boolean; error?: string }>('chat:message.send', {
+  /** Draft edits — a trailing `@` opens the file-reference picker (9 W9 C). */
+  function changeDraft(value: string): void {
+    setDraft(value);
+    if (value.endsWith('@') && phase === 'ready' && machine?.baseWorkspace != null) {
+      setFilePickerOpen(true);
+    }
+  }
+
+  /** Compress + append picked/pasted/dropped images (9 W9 B). */
+  async function addImages(files: File[]): Promise<void> {
+    for (const file of files) {
+      if (attachments.length >= MAX_IMAGES_PER_TURN) {
+        toast.error(t('chat.imageCountLimit', { count: MAX_IMAGES_PER_TURN }));
+        return;
+      }
+      try {
+        const attachment = await fileToAttachment(file);
+        if (attachmentsBytes([...attachments, attachment]) > MAX_TOTAL_IMAGE_BYTES) {
+          toast.error(t('chat.imageBudget'));
+          return;
+        }
+        setAttachments((prev) => [...prev, attachment]);
+      } catch (e) {
+        if (e instanceof ImageAttachError_) {
+          toast.error(
+            e.code === 'too-large'
+              ? t('chat.imageTooLarge', { name: e.name_ })
+              : e.code === 'bad-type'
+                ? t('chat.imageBadType', { name: e.name_ })
+                : t('chat.imageDecodeFailed', { name: e.name_ }),
+          );
+        }
+      }
+    }
+  }
+
+  /** A picked workspace file becomes a `resource_link` chip (9 W9 C). */
+  function pickFile(file: { name: string; path: string }): void {
+    setFileRefs((prev) =>
+      prev.some((f) => f.uri === `file://${file.path}`)
+        ? prev
+        : [...prev, { name: file.name, uri: `file://${file.path}` }],
+    );
+    // Strip the trailing `@` that opened the picker, if any.
+    setDraft((prev) => (prev.endsWith('@') ? prev.slice(0, -1) : prev));
+  }
+
+  /** Switch the session's mode / a config option (9 W9 A) — state settles
+   *  through session_config events; there is no browser-side optimism. */
+  async function configSet(set: ChatConfigSetPayload): Promise<void> {
+    if (sessionId === '') return;
+    const ack = await emitWithAck<{ accepted?: boolean; error?: string }>('chat:config.set', {
       sessionId,
-      content: text,
+      ...set,
     });
     if (ack.error !== undefined) {
-      // The turn never started — put the draft back so nothing is lost.
+      toast.error(t('chat.configSetFailed', { error: ack.error }));
+    }
+  }
+
+  async function send(): Promise<void> {
+    const text = draft.trim();
+    const canSend = text !== '' || attachments.length > 0 || fileRefs.length > 0;
+    if (!canSend || sessionId === '' || phase !== 'ready' || conversation.turnActive) return;
+    const blocks: UserBlock[] = [
+      ...(text !== '' ? [{ type: 'text' as const, text }] : []),
+      ...fileRefs.map((f) => ({ type: 'resource_link' as const, name: f.name, uri: f.uri })),
+      ...attachments.map((a) => ({
+        type: 'image' as const,
+        data: a.data,
+        mimeType: a.mimeType,
+      })),
+    ];
+    setDraft('');
+    setAttachments([]);
+    setFileRefs([]);
+    dispatch({ type: 'user_message', blocks });
+    const ack = await emitWithAck<{ accepted?: boolean; error?: string }>('chat:message.send', {
+      sessionId,
+      content: blocks,
+    });
+    if (ack.error !== undefined) {
+      // The turn never started — put everything back so nothing is lost.
       setDraft(text);
+      setAttachments(attachments);
+      setFileRefs(fileRefs);
       toast.error(
         ack.error === 'SESSION_BUSY'
           ? t('chat.turnBusy')
@@ -580,18 +674,38 @@ export function AgentSessionPage() {
             <div className="mx-auto w-full max-w-3xl">
               <Composer
                 value={draft}
-                onChange={setDraft}
+                onChange={changeDraft}
                 phase={phase}
                 turnActive={conversation.turnActive}
                 usage={conversation.usage}
                 onSend={() => void send()}
                 onCancel={() => void cancelTurn()}
+                attachments={attachments}
+                fileRefs={fileRefs}
+                onRemoveAttachment={(id) =>
+                  setAttachments((prev) => prev.filter((a) => a.id !== id))
+                }
+                onRemoveFileRef={(uri) => setFileRefs((prev) => prev.filter((f) => f.uri !== uri))}
+                onPickImages={(files) => void addImages(files)}
+                onOpenFilePicker={() => setFilePickerOpen(true)}
+                imageSupported={imageSupported}
+                config={conversation.config satisfies ComposerConfig}
+                onConfigSet={(set) => void configSet(set)}
               />
             </div>
           </div>
         </section>
       </div>
 
+      {machine !== null ? (
+        <FilePicker
+          open={filePickerOpen}
+          onClose={() => setFilePickerOpen(false)}
+          machineId={machine.id}
+          baseWorkspace={machine.baseWorkspace}
+          onPick={pickFile}
+        />
+      ) : null}
       {machine !== null ? (
         <DirPicker
           open={pickerOpen}

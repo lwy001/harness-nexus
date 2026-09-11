@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   appHandshakeAuthSchema,
+  chatConfigSetRequestSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
+  chatPromptEventSchema,
   chatSessionOpenRequestSchema,
+  chatSessionReadyEventSchema,
   chatSessionStartEventSchema,
   chatStreamEventEnvelopeSchema,
   chatStreamEventSchema,
@@ -242,5 +245,136 @@ describe('chat request schemas (C5)', () => {
         cwd: '/x',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('chat session config schemas (9 W9 A)', () => {
+  it('accepts full and patch session_config events', () => {
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'session_config',
+        modes: {
+          currentModeId: 'acceptEdits',
+          availableModes: [
+            { id: 'default', name: 'Manual', description: 'Always ask' },
+            { id: 'acceptEdits', name: 'Accept edits' },
+          ],
+        },
+        configOptions: [
+          {
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            currentValue: '["deepseek-official","deepseek-chat"]',
+            options: [{ value: '["p","m"]', name: 'm', group: 'p' }],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    // A lone currentModeId patch (the current_mode_update mapping).
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'session_config',
+        modes: { currentModeId: 'plan' },
+      }).success,
+    ).toBe(true);
+    // An empty value option row (dsh's provider-default reasoning effort).
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'session_config',
+        configOptions: [
+          {
+            id: 'reasoning_effort',
+            name: 'Reasoning effort',
+            category: 'thought_level',
+            currentValue: '',
+            options: [{ value: '', name: 'Provider default' }],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      chatStreamEventSchema.safeParse({ kind: 'session_config', modes: { currentModeId: 7 } })
+        .success,
+    ).toBe(false);
+  });
+
+  it('config set discriminates mode vs option and allows an empty value', () => {
+    expect(
+      chatConfigSetRequestSchema.parse({ sessionId: 's1', kind: 'mode', modeId: 'auto' }),
+    ).toEqual({ sessionId: 's1', kind: 'mode', modeId: 'auto' });
+    expect(
+      chatConfigSetRequestSchema.parse({
+        sessionId: 's1',
+        kind: 'option',
+        configId: 'reasoning_effort',
+        value: '',
+      }),
+    ).toEqual({ sessionId: 's1', kind: 'option', configId: 'reasoning_effort', value: '' });
+    expect(chatConfigSetRequestSchema.safeParse({ sessionId: 's1', kind: 'mode' }).success).toBe(
+      false,
+    );
+    expect(
+      chatConfigSetRequestSchema.safeParse({ sessionId: 's1', kind: 'option', configId: 'model' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('ready carries optional prompt capabilities', () => {
+    expect(
+      chatSessionReadyEventSchema.parse({
+        sessionId: 's1',
+        promptCapabilities: { image: true, embeddedContext: true },
+      }),
+    ).toEqual({ sessionId: 's1', promptCapabilities: { image: true, embeddedContext: true } });
+    expect(chatSessionReadyEventSchema.parse({ sessionId: 's1' })).toEqual({ sessionId: 's1' });
+    expect(
+      chatSessionReadyEventSchema.safeParse({ sessionId: 's1', promptCapabilities: {} }).success,
+    ).toBe(false);
+  });
+});
+
+describe('prompt image blocks (9 W9 B)', () => {
+  const image = (data: string): { type: 'image'; data: string; mimeType: 'image/png' } => ({
+    type: 'image',
+    data,
+    mimeType: 'image/png',
+  });
+
+  it('accepts an image block on the send paths', () => {
+    expect(
+      chatMessageSendRequestSchema.safeParse({
+        sessionId: 's1',
+        content: [{ type: 'text', text: 'look' }, image('aGk=')],
+      }).success,
+    ).toBe(true);
+    expect(
+      chatPromptEventSchema.safeParse({
+        sessionId: 's1',
+        prompt: [image('aGk=')],
+      }).success,
+    ).toBe(true);
+    expect(
+      chatMessageSendRequestSchema.safeParse({
+        sessionId: 's1',
+        content: [{ type: 'image', data: 'aGk=', mimeType: 'image/bmp' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('caps image count and total payload per turn', () => {
+    const four = Array.from({ length: 4 }, () => image('aaaa'));
+    const five = [...four, image('aaaa')];
+    expect(
+      chatPromptEventSchema.safeParse({
+        sessionId: 's1',
+        prompt: [...four, { type: 'text', text: 'x' }],
+      }).success,
+    ).toBe(true);
+    expect(chatPromptEventSchema.safeParse({ sessionId: 's1', prompt: five }).success).toBe(false);
+    const twoBig = [image('a'.repeat(4 * 1024 * 1024)), image('a'.repeat(4 * 1024 * 1024))];
+    expect(chatPromptEventSchema.safeParse({ sessionId: 's1', prompt: twoBig }).success).toBe(
+      false,
+    );
   });
 });

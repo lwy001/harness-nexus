@@ -11,19 +11,20 @@ import {
 import { collectItems, scanAllTargets, scanTarget, scannerFor } from '../inventory/scan.js';
 import { probeRuntimes } from '../inventory/runtime.js';
 import { runtimeConfigViewPayload } from './config-view.js';
-import { listDirectories } from './workspace.js';
+import { listDirectories, listFiles } from './workspace.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 import { attachSessionsHandlers } from './sessions.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.11.0-p9w7.1';
+export const DAEMON_VERSION = '0.12.0-p9w9';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
  * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
  * 9 W3: provider-config apply; 9 W4: redacted config view; 9 W6: workspace
- * directory listing for the chat picker; 9 W7: native session list/resume).
+ * directory listing for the chat picker; 9 W7: native session list/resume;
+ * 9 W9: session-config selectors, prompt images, workspace files).
  */
 export const DAEMON_CAPABILITIES = [
   'inventory',
@@ -190,9 +191,17 @@ export function runDaemon(options: DaemonOptions): Promise<void> {
     ack?.({ accepted: true });
     void (async () => {
       try {
+        // 9 W9 C — files ride next to the directories (the picker surfaces
+        // them; the W6 dir-picker ignores them). One readdir would be nicer,
+        // but the listing is capped and rare — keep the helpers simple.
+        const [directories, files] = await Promise.all([
+          listDirectories(parsed.data.path),
+          listFiles(parsed.data.path),
+        ]);
         socket.emit('workspace:list', {
           requestId: parsed.data.requestId,
-          directories: await listDirectories(parsed.data.path),
+          directories,
+          files,
         });
       } catch (e) {
         socket.emit('workspace:list', {

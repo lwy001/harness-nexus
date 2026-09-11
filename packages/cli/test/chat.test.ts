@@ -1110,3 +1110,200 @@ describe('dsh live streaming via the in-process event tap (9 W7.1)', () => {
     expect(closeAck).toHaveBeenCalledWith({ closed: true });
   }, 15000);
 });
+
+describe('session config (9 W9 A)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 5000): Promise<T> {
+    const started = Date.now();
+    return new Promise((resolve, reject) => {
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+
+  it('takeConfigOptions keeps only select rows and nulls on junk', async () => {
+    const { takeConfigOptions, takeSessionConfig } = await import('../src/daemon/chat.js');
+    expect(takeConfigOptions('nope')).toBeNull();
+    expect(takeConfigOptions([])).toBeNull();
+    const kept = takeConfigOptions([
+      {
+        id: 'model',
+        name: 'Model',
+        type: 'select',
+        currentValue: 'm1',
+        options: [{ value: 'm1', name: 'M1' }],
+      },
+      { id: 'telemetry', name: 'Telemetry', type: 'boolean', currentValue: 'true' },
+      { junk: true },
+    ]);
+    expect(kept).not.toBeNull();
+    expect(kept!.map((o) => o.id)).toEqual(['model']);
+    expect(
+      takeSessionConfig({
+        modes: { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Manual' }] },
+      }),
+    ).toEqual({
+      modes: { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Manual' }] },
+      options: [],
+    });
+    expect(takeSessionConfig({})).toBeNull();
+    expect(takeSessionConfig({ configOptions: [{ id: 'x', name: 'X', type: 'select' }] })).toEqual({
+      options: [{ id: 'x', name: 'X' }],
+    });
+  });
+
+  it('mapAcpUpdate maps the config pushes as PATCH events (capture path)', () => {
+    expect(
+      mapAcpUpdate({ update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan' } }),
+    ).toEqual({
+      kind: 'session_config',
+      modes: { currentModeId: 'plan' },
+    });
+    expect(mapAcpUpdate({ update: { sessionUpdate: 'current_mode_update' } })).toBeNull();
+    expect(
+      mapAcpUpdate({
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions: [
+            { id: 'effort', name: 'Effort', category: 'thought_level', type: 'select' },
+          ],
+        },
+      }),
+    ).toEqual({
+      kind: 'session_config',
+      configOptions: [{ id: 'effort', name: 'Effort', category: 'thought_level' }],
+    });
+  });
+
+  it('establishment snapshot → ready caps → config.set round-trip → pushes merge', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: {
+        FIXTURE_SESSION_CONFIG: '1',
+        FIXTURE_IMAGE_CAPS: '1',
+        FIXTURE_SESSION_ID: 'fx-cfg',
+      },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-cfg',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string; promptCapabilities?: { image: boolean } } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    expect(ready.promptCapabilities).toEqual({ image: true });
+
+    // The establishment snapshot arrives as a FULL session_config event
+    // (modes + the three select options; the boolean telemetry row dropped).
+    const snapshot = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'session_config'),
+    );
+    if (snapshot.kind !== 'session_config') throw new Error('not a config event');
+    expect(snapshot.modes?.currentModeId).toBe('default');
+    expect(snapshot.configOptions?.map((o) => o.id)).toEqual(['mode', 'model', 'effort']);
+
+    // Mode switch: the daemon forwards set_mode; the fixture confirms via a
+    // current_mode_update push, which the daemon merges into a FULL snapshot.
+    const modeAck = vi.fn();
+    socket.receive(
+      'chat:config.set',
+      { sessionId: 'sess-cfg', kind: 'mode', modeId: 'acceptEdits' },
+      modeAck,
+    );
+    await waitFor(() => (modeAck.mock.calls.length > 0 ? true : undefined));
+    expect(modeAck).toHaveBeenCalledWith({ accepted: true });
+    const afterMode = await waitFor(() => {
+      const configs = socket.chatEvents().filter((e) => e.kind === 'session_config');
+      const last = configs[configs.length - 1];
+      return last !== undefined &&
+        last.kind === 'session_config' &&
+        last.modes?.currentModeId === 'acceptEdits'
+        ? last
+        : undefined;
+    });
+    if (afterMode.kind !== 'session_config') throw new Error('unreachable');
+    expect(afterMode.modes?.availableModes?.map((m) => m.id)).toEqual([
+      'default',
+      'acceptEdits',
+      'plan',
+    ]);
+
+    // Option switch: the fixture's config_option_update REPLACES the option
+    // list; the daemon re-emits the merged snapshot.
+    const optAck = vi.fn();
+    socket.receive(
+      'chat:config.set',
+      { sessionId: 'sess-cfg', kind: 'option', configId: 'model', value: 'fx-sonnet' },
+      optAck,
+    );
+    await waitFor(() => (optAck.mock.calls.length > 0 ? true : undefined));
+    expect(optAck).toHaveBeenCalledWith({ accepted: true });
+    const afterOpt = await waitFor(() => {
+      const configs = socket.chatEvents().filter((e) => e.kind === 'session_config');
+      const last = configs[configs.length - 1];
+      return last !== undefined &&
+        last.kind === 'session_config' &&
+        last.configOptions?.some((o) => o.id === 'model' && o.currentValue === 'fx-sonnet')
+        ? last
+        : undefined;
+    });
+    if (afterOpt.kind !== 'session_config') throw new Error('unreachable');
+    expect(afterOpt.configOptions?.map((o) => o.id)).toEqual(['model']);
+
+    // Unknown session → error ack.
+    const badAck = vi.fn();
+    socket.receive('chat:config.set', { sessionId: 'nope', kind: 'mode', modeId: 'x' }, badAck);
+    expect(badAck).toHaveBeenCalledWith({ error: 'unknown-session' });
+    const protoAck = vi.fn();
+    socket.receive('chat:config.set', { kind: 'mode' }, protoAck);
+    expect(protoAck).toHaveBeenCalledWith({ error: 'proto:invalid' });
+  }, 15000);
+
+  it('an image prompt block passes through verbatim and echoes', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { FIXTURE_IMAGE_CAPS: '1' },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-img',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { promptCapabilities?: { image: boolean } } | undefined,
+    );
+    const ack = vi.fn();
+    socket.receive(
+      'chat:message.send',
+      {
+        sessionId: 'sess-img',
+        prompt: [
+          { type: 'text', text: 'look ' },
+          { type: 'image', data: 'aGk=', mimeType: 'image/png' },
+        ],
+      },
+      ack,
+    );
+    expect(ack).toHaveBeenCalledWith({ accepted: true });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta === 'echo: look [image]'),
+    );
+  }, 15000);
+});

@@ -14,17 +14,22 @@ import type { Socket } from 'socket.io-client';
 import {
   acpPermissionOptionSchema,
   acpToolCallViewSchema,
+  chatConfigSetEventSchema,
   chatPermissionRespondEventSchema,
   chatPromptEventSchema,
   chatSessionCloseEventSchema,
   chatSessionResyncEventSchema,
   chatSessionStartEventSchema,
   chatTurnCancelEventSchema,
+  sessionConfigOptionSchema,
+  sessionModeStateSchema,
   type AcpPermissionOption,
   type AcpToolCallView,
   type ChatStreamEvent,
   type HistoryItem,
   type PromptBlock,
+  type SessionConfigOption,
+  type SessionModeState,
 } from '@harness-nexus/shared';
 import { AcpAgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
@@ -90,6 +95,16 @@ interface DaemonSession {
   busy: boolean;
   /** In-flight permission requests by our wire requestId. */
   permissions: Map<string, { jsonrpcId: number; timer: NodeJS.Timeout }>;
+  /**
+   * 9 W9 A — the merged session-config snapshot (modes + select options).
+   * Source of truth for the composer's selectors; every change emits a FULL
+   * `session_config` event (which also enters the history ring, so a resync
+   * restores the selectors for free).
+   */
+  config: {
+    modes?: SessionModeState;
+    options: SessionConfigOption[];
+  };
   /** 9 W7 — the history ring (user items + mapped events), newest last. */
   history: HistoryItem[];
   /**
@@ -196,6 +211,20 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     socket.emit('chat:history', {
       sessionId: session.sessionId,
       items: session.history.slice(-HISTORY_MAX),
+    });
+  };
+
+  /**
+   * 9 W9 A — emit the session's FULL merged config snapshot as a
+   * `session_config` stream event (into the ring and the live room). The
+   * browser's selectors settle exclusively through these events — the
+   * daemon-side optimistic merge after `chat:config.set` reuses this path.
+   */
+  const emitConfig = (session: DaemonSession): void => {
+    emitEvent(session, {
+      kind: 'session_config',
+      ...(session.config.modes !== undefined ? { modes: { ...session.config.modes } } : {}),
+      ...(session.config.options.length > 0 ? { configOptions: session.config.options } : {}),
     });
   };
 
@@ -371,7 +400,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
             tapArmed.hello,
           ]);
         }
-        const { conn, agentInfo, sessionCaps } = started;
+        const { conn, agentInfo, sessionCaps, promptCaps } = started;
         liveConn = conn;
         // `mcpServers` is sent explicitly (spec: an array): ACP wrappers
         // (zed 0.23.x AND the @agentclientprotocol one we ship for claude-code)
@@ -384,11 +413,16 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         // for provider …"). Retry that specific failure a few times.
         let acpSessionId: string;
         let history: HistoryItem[] = [];
+        // 9 W9 A — the establishment response's session-config snapshot
+        // (modes + configOptions). Read from whichever arm established the
+        // session; null when the adapter advertised nothing (or only junk).
+        let establishedConfig: ReturnType<typeof takeSessionConfig> = null;
         if (resume === undefined) {
           const created = (await establish(conn, 'session/new', { cwd, mcpServers: [] })) as {
             sessionId?: string;
           };
           acpSessionId = created?.sessionId ?? sessionId;
+          establishedConfig = takeSessionConfig(created);
         } else {
           // 9 W7 — pick the method from the ADVERTISED capability: `load`
           // replays history (captured below), `resume` does not (dsh → we
@@ -404,16 +438,18 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
               })) as { sessionId?: string };
               acpSessionId = loaded?.sessionId ?? resume.sessionId;
               history = finishCaptured(captured);
+              establishedConfig = takeSessionConfig(loaded);
             } finally {
               stopCapture();
             }
           } else if (sessionCaps.resume) {
-            await establish(conn, 'session/resume', {
+            const resumed = (await establish(conn, 'session/resume', {
               sessionId: resume.sessionId,
               cwd,
               mcpServers: [],
-            });
+            })) as Record<string, unknown>;
             acpSessionId = resume.sessionId;
+            establishedConfig = takeSessionConfig(resumed);
             history =
               target === 'deepseek' ? await dshTranscriptHistory(home, resume.sessionId) : [];
           } else {
@@ -431,6 +467,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           conn,
           busy: false,
           permissions: new Map(),
+          config: establishedConfig ?? { options: [] },
           history: [],
           wireTextEmitted: false,
           tailReplayEligible: resume === undefined,
@@ -483,11 +520,16 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         // pending attach, so it cannot be active without the tail.
         ensureTail(session);
         emitHistory(session, history);
+        // 9 W9 A — the authoritative config snapshot rides AFTER the replayed
+        // history (a load's replay patches settle first; last write wins) and
+        // enters the ring, so a resync restores the selectors.
+        if (establishedConfig !== null) emitConfig(session);
         socket.emit('chat:session.ready', {
           sessionId,
           nativeSessionId: acpSessionId,
           ...(agentInfo.name !== undefined ? { agentName: agentInfo.name } : {}),
           ...(agentInfo.version !== undefined ? { agentVersion: agentInfo.version } : {}),
+          promptCapabilities: promptCaps,
         });
       } catch (e) {
         tapArmed?.listener.close();
@@ -540,6 +582,51 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     ack?.({ accepted: true });
     // The pending session/prompt resolves as 'cancelled' → turn_result fires.
     void session.conn.request('session/cancel', {}, 5000).catch(() => {});
+  });
+
+  // 9 W9 A — switch the live session's permission mode / one config option.
+  // NOT busy-gated: dsh pins the selection per PROMPT (a mid-turn set applies
+  // to the next turn) and the UI disables the selectors during a turn anyway.
+  socket.on('chat:config.set', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = chatConfigSetEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    const session = sessions.get(parsed.data.sessionId);
+    if (session === undefined) {
+      ack?.({ error: 'unknown-session' });
+      return;
+    }
+    const set = parsed.data;
+    const request =
+      set.kind === 'mode' ? ('session/set_mode' as const) : ('session/set_config_option' as const);
+    const params =
+      set.kind === 'mode'
+        ? { sessionId: session.acpSessionId, modeId: set.modeId }
+        : { sessionId: session.acpSessionId, configId: set.configId, value: set.value };
+    void session.conn.request(request, params, 15000).then(
+      () => {
+        // Optimistic daemon-side merge: adapters confirm/correct through
+        // config pushes, but codex does not reliably push after a set —
+        // without this the selector would sit on the stale value.
+        if (set.kind === 'mode') {
+          session.config.modes = {
+            currentModeId: set.modeId,
+            availableModes: session.config.modes?.availableModes ?? [],
+          };
+        } else {
+          session.config.options = session.config.options.map((o) =>
+            o.id === set.configId ? { ...o, currentValue: set.value } : o,
+          );
+        }
+        emitConfig(session);
+        ack?.({ accepted: true });
+      },
+      (e: unknown) => {
+        ack?.({ error: e instanceof Error ? e.message : String(e) });
+      },
+    );
   });
 
   socket.on('chat:permission.respond', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -705,13 +792,38 @@ function wireSession(
 
   conn.setNotificationHandler((method, params) => {
     if (method !== 'session/update') return;
+    const update = (params.update ?? {}) as Record<string, unknown>;
+    // 9 W9 A — session-config pushes merge into the daemon's snapshot and
+    // re-emit it in full (needs the session state, so they are intercepted
+    // BEFORE the stateless mapping below).
+    if (update.sessionUpdate === 'current_mode_update') {
+      const modeId =
+        typeof update.currentModeId === 'string' && update.currentModeId !== ''
+          ? update.currentModeId
+          : null;
+      if (modeId !== null) {
+        session.config.modes = {
+          currentModeId: modeId,
+          availableModes: session.config.modes?.availableModes ?? [],
+        };
+        emitEvent(session, { kind: 'session_config', modes: { ...session.config.modes } });
+      }
+      return;
+    }
+    if (update.sessionUpdate === 'config_option_update') {
+      const options = takeConfigOptions(update.configOptions);
+      if (options !== null) {
+        session.config.options = options;
+        emitEvent(session, { kind: 'session_config', configOptions: options });
+      }
+      return;
+    }
     // dsh commits block-level text at turn end — while a streaming source is
     // live (the transcript tail OR the 9 W7.1 event tap), its deltas already
     // streamed this content AND its mapper emits the complete blocks for
     // steps whose deltas it never saw, so the wire's committed chunk is
     // redundant in every case; letting it through would double-render the
     // message. Tools/usage still flow (idempotent by callId / field-merged).
-    const update = (params.update ?? {}) as Record<string, unknown>;
     if (
       (session.tail !== null || session.tap !== null) &&
       (update.sessionUpdate === 'agent_message_chunk' ||
@@ -854,10 +966,61 @@ async function attachTranscriptTail(
 
 type UnknownRecord = Record<string, unknown>;
 
+/**
+ * 9 W9 A — validate an adapter's `configOptions` array down to the
+ * platform's bounded view: only `type:'select'` rows survive (the three
+ * shipped adapters expose mode/model/effort as selects; boolean options from
+ * future adapters are dropped rather than half-surfaced). Null = nothing
+ * usable in the payload.
+ */
+export function takeConfigOptions(raw: unknown): SessionConfigOption[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: SessionConfigOption[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as UnknownRecord;
+    if (r['type'] !== undefined && r['type'] !== 'select') continue;
+    const parsed = sessionConfigOptionSchema.safeParse(r);
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * 9 W9 A — the session-config slice of an establishment response
+ * (`session/new` / `load` / `resume`): `modes` + `configOptions`, each
+ * independently validated. Null = the adapter advertised nothing usable.
+ */
+export function takeSessionConfig(
+  result: unknown,
+): { modes?: SessionModeState; options: SessionConfigOption[] } | null {
+  const r = (result ?? {}) as UnknownRecord;
+  const modes = sessionModeStateSchema.safeParse(r['modes']);
+  const options = takeConfigOptions(r['configOptions']);
+  if (!modes.success && options === null) return null;
+  return {
+    ...(modes.success ? { modes: modes.data } : {}),
+    options: options ?? [],
+  };
+}
+
 /** Map one ACP `session/update` params object; null = drop (user echo). */
 export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
   const update = (params.update ?? {}) as UnknownRecord;
   switch (update.sessionUpdate) {
+    // 9 W9 A — config pushes on the CAPTURE path (session/load replay: no
+    // session state to merge into, so the adapter's patch maps verbatim).
+    case 'current_mode_update': {
+      const modeId =
+        typeof update.currentModeId === 'string' && update.currentModeId !== ''
+          ? update.currentModeId
+          : null;
+      return modeId === null ? null : { kind: 'session_config', modes: { currentModeId: modeId } };
+    }
+    case 'config_option_update': {
+      const options = takeConfigOptions(update.configOptions);
+      return options === null ? null : { kind: 'session_config', configOptions: options };
+    }
     case 'agent_message_chunk':
       return { kind: 'message_delta', delta: chunkText(update) };
     case 'agent_thought_chunk':

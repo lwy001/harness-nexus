@@ -344,7 +344,12 @@ export class HarnessNexusClient {
   async listMachineWorkspace(
     machineId: string,
     path?: string,
-  ): Promise<{ path: string; directories: { name: string; path: string }[] }> {
+  ): Promise<{
+    path: string;
+    directories: { name: string; path: string }[];
+    /** 9 W9 C — regular files at the level (empty against old daemons). */
+    files: { name: string; path: string }[];
+  }> {
     const query = path !== undefined && path !== '' ? `?path=${encodeURIComponent(path)}` : '';
     return this.request('GET', `/api/machines/${machineId}/workspace${query}`);
   }
