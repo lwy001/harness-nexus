@@ -113,19 +113,30 @@ To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server
 
 ### Releasing to npm
 
-Five packages publish in lockstep (`@harness-nexus/{core,shared,mcp-runtime,sdk,cli}`):
-bump `version` in all five manifests, push, then run the `release` workflow
-(GitHub Actions → release → Run workflow). It publishes via **OIDC trusted
-publishing** — zero npm credentials in GitHub (per-package trusted publisher
-registered on npmjs.com: sinrimin/harness-nexus + `release.yml`). pnpm itself
-doesn't support tokenless publishing, so the workflow `pnpm pack`s each package
-(which substitutes `workspace:` versions) and `npm publish`es the tarballs with
-`--tag latest` (npm ≥ 12 demands an explicit tag for prereleases; pre-1.0 the
-alphas ARE latest so `npx` works out of the box). Manual channel from a dev
-machine: `npm_config_registry=https://registry.npmjs.org/ pnpm -r publish` with
-a granular bypass-2FA token in `~/.npmrc` — a machine whose `~/.npmrc` defaults
-to a registry mirror MUST override the registry explicitly or auth silently
-targets the mirror.
+Five packages publish in lockstep (`@harness-nexus/{core,shared,mcp-runtime,sdk,cli}`).
+**The flow is tag-driven (2026-09-11 onward):**
+
+1. Bump `version` in all five manifests on a branch, merge to main — after the
+   CI-parity gate (`task verify`, Node 20) ran green.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z` — pushing the tag triggers the
+   `release` workflow. The tag MUST equal the manifests' version (the workflow
+   guards it and fails on mismatch); the tag is the release record.
+3. Each publish SKIPS versions already on npm, so re-running the same tag or
+   retrying a partially failed run is a no-op for what already landed.
+   Manual dispatch from main (`workflow_dispatch`) remains the fallback — it
+   publishes whatever the manifests say, unguarded by any tag.
+
+Publishing uses **OIDC trusted publishing** — zero npm credentials in GitHub
+(per-package trusted publisher registered on npmjs.com: sinrimin/harness-nexus +
+`release.yml`). pnpm itself doesn't support tokenless publishing, so the workflow
+`pnpm pack`s each package (which substitutes `workspace:` versions) and
+`npm publish`es the tarballs with `--tag latest` (npm ≥ 12 demands an explicit
+tag for prereleases; pre-1.0 the alphas ARE latest so `npx` works out of the
+box). Manual channel from a dev machine:
+`npm_config_registry=https://registry.npmjs.org/ pnpm -r publish` with a granular
+bypass-2FA token in `~/.npmrc` — a machine whose `~/.npmrc` defaults to a
+registry mirror MUST override the registry explicitly or auth silently targets
+the mirror.
 
 ## Coding conventions
 
