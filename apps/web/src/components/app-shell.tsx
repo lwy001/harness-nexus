@@ -27,9 +27,11 @@ import { cn } from '@/lib/utils';
 
 /**
  * Dashboard chrome: left sidebar nav + top header. The mobile drawer mirrors
- * the same nav. `variant="full"` (chat session page): the main column drops
- * its width cap + padding and the shell locks to the viewport height, so the
- * page can lay out full-height panes.
+ * the same nav. The shell is viewport-locked: the sidebar stays put while the
+ * main column scrolls independently (the header is sticky inside that column).
+ * `variant="full"` (chat session page): the main column drops its width cap +
+ * padding and hands scrolling to the page itself, which lays out full-height
+ * panes.
  */
 export function AppShell({
   children,
@@ -45,12 +47,7 @@ export function AppShell({
   const full = variant === 'full';
 
   return (
-    <div
-      className={cn(
-        'bg-background text-foreground flex',
-        full ? 'h-svh overflow-hidden' : 'min-h-svh',
-      )}
-    >
+    <div className="bg-background text-foreground flex h-svh overflow-hidden">
       {/* Skip link — first focusable element, jumps to main content. */}
       <a
         href="#main"
@@ -89,8 +86,8 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Main column — the scroll container; the sidebar beside it never moves */}
+      <div className={cn('flex min-w-0 flex-1 flex-col', !full && 'overflow-y-auto')}>
         <header className="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-30 flex h-14 items-center gap-2 border-b px-4 backdrop-blur md:px-6">
           {/* Mobile: drawer trigger + brand (sidebar is hidden below md) */}
           <MobileNav>
