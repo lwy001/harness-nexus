@@ -59,8 +59,8 @@ drivers implemented.
 invariant is "the plaintext leaves the server only inside the daemon's
 machine-PAT bundle, only for a **distributable** credential". Reusing the
 credential store keeps one encryption path, one distributability gate, and
-rotation for free. The provider is the *route*, the credential stays the
-*secret*.
+rotation for free. The provider is the _route_, the credential stays the
+_secret_.
 
 ### 3.2 Api kinds vs. W3 spec flavors
 
@@ -68,11 +68,11 @@ The W3 `RuntimeConfigSpec.api` enum stays `'anthropic-messages' | 'openai'`
 (writers keyed on it are untouched). Providers use a FINER kind because
 codex and dsh differ inside "openai":
 
-| kind               | speaks                    | maps to spec api    |
-| ------------------ | ------------------------- | ------------------- |
-| `anthropic`        | Anthropic Messages        | `anthropic-messages` |
-| `openai-chat`      | OpenAI Chat Completions   | `openai`            |
-| `openai-responses` | OpenAI Responses          | `openai`            |
+| kind               | speaks                  | maps to spec api     |
+| ------------------ | ----------------------- | -------------------- |
+| `anthropic`        | Anthropic Messages      | `anthropic-messages` |
+| `openai-chat`      | OpenAI Chat Completions | `openai`             |
+| `openai-responses` | OpenAI Responses        | `openai`             |
 
 **Per-Agent support matrix** (`PROVIDER_API_SUPPORT`, shared):
 
@@ -103,12 +103,12 @@ Scope model identical to credentials: `global` readable by any authenticated
 user, admin-only to mutate; `personal` owner-only; 404 (not 403) hides
 foreign rows. Not-found and foreign rows are indistinguishable.
 
-| Route | Behavior |
-| --- | --- |
-| `POST /api/llm-providers` | create; `scope:'global'` requires admin; referenced credential must be visible to the caller (`404 CREDENTIAL_NOT_FOUND`); name taken → `409 PROVIDER_NAME_TAKEN` |
-| `GET /api/llm-providers` | caller's personal + all globals |
-| `PATCH /api/llm-providers/:id` | name/api/baseUrl/credentialName mutable; **scope immutable** (409 `PROVIDER_SCOPE_IMMUTABLE`); re-validates credential + name |
-| `DELETE /api/llm-providers/:id` | owner-or-admin; stored runtime configs keep applying (snapshot semantics) |
+| Route                                  | Behavior                                                                                                                                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/llm-providers`              | create; `scope:'global'` requires admin; referenced credential must be visible to the caller (`404 CREDENTIAL_NOT_FOUND`); name taken → `409 PROVIDER_NAME_TAKEN`                                                                                                  |
+| `GET /api/llm-providers`               | caller's personal + all globals                                                                                                                                                                                                                                    |
+| `PATCH /api/llm-providers/:id`         | name/api/baseUrl/credentialName mutable; **scope immutable** (409 `PROVIDER_SCOPE_IMMUTABLE`); re-validates credential + name                                                                                                                                      |
+| `DELETE /api/llm-providers/:id`        | owner-or-admin; stored runtime configs keep applying (snapshot semantics)                                                                                                                                                                                          |
 | `POST /api/llm-providers/query-models` | body `{providerId}` **or** `{api, baseUrl?, credentialName}` (works before the provider is saved — the create dialog and the machine page's manual arm both use it). Resolves + decrypts the credential, fetches the model list, returns `{models: {id, name?}[]}` |
 
 ### Model-list fetching (`infra/provider-models.ts`)
@@ -169,7 +169,7 @@ What each harness can ACTUALLY do with multiple models (sources:
 codex-rs + dsh 0.1.2-rc.1; `docs/research/phase-9-w9-composer-controls.md`):
 
 - **dsh — natively multi-model per provider.** A route's `models:
-  PiAiModelProfile[]` list (only `id` required; context defaults at route
+PiAiModelProfile[]` list (only `id` required; context defaults at route
   level) IS the switchable set; dsh groups session model options by provider
   and pushes `config_option_update` on topology changes. W3 wrote exactly
   one entry; W10's writer writes `unique([model, ...models])`. The default
@@ -179,7 +179,7 @@ codex-rs + dsh 0.1.2-rc.1; `docs/research/phase-9-w9-composer-controls.md`):
   built-in presets (`models_manager`), not config.toml. `models` is ignored.
 - **claude-code — one default via top-level `model`.** The documented
   multi-slot vocabulary (`ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{OPUS,SONNET,
-  HAIKU}_MODEL`) exists, but the wrapper's session picker reads SDK model
+HAIKU}_MODEL`) exists, but the wrapper's session picker reads SDK model
   infos, not settings.json. `models` is ignored.
 
 So: machine-level default (W3, unchanged) + pre-seeded switchable set (dsh

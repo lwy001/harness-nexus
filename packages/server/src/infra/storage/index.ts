@@ -8,5 +8,7 @@ declare module 'fastify' {
     credentialEncryptionKey: string;
     /** PUBLIC_BASE_URL — absolute origin for emitted marketplace URLs. */
     publicBaseUrl: string;
+    /** W10 — fetch budget for provider model-list discovery. See config.ts. */
+    providerModelsTimeoutMs: number;
   }
 }

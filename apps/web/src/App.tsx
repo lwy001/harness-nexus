@@ -10,6 +10,7 @@ import { DashboardPage } from '@/pages/Dashboard';
 import { UsersPage } from '@/pages/Users';
 import { SettingsPage } from '@/pages/Settings';
 import { CredentialsPage } from '@/pages/Credentials';
+import { LlmProvidersPage } from '@/pages/LlmProviders';
 import { TokensPage } from '@/pages/Tokens';
 import { McpManagementPage } from '@/pages/McpManagement';
 import { ProfilesPage } from '@/pages/Profiles';
@@ -74,6 +75,14 @@ export function App() {
                 element={
                   <RequireAuth>
                     <CredentialsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/llm-providers"
+                element={
+                  <RequireAuth>
+                    <LlmProvidersPage />
                   </RequireAuth>
                 }
               />

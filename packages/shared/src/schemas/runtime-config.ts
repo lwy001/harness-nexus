@@ -38,6 +38,18 @@ export const runtimeConfigSpecSchema = z.object({
   model: z.string().min(1).max(128),
   /** Handle of the distributable credential carrying the API key. */
   credentialName: z.string().min(1).max(64),
+  /**
+   * W10 — provenance: the LlmProvider row this spec was filled from. The
+   * spec stays a SNAPSHOT (a deleted provider never invalidates it); the
+   * field only lets the machine form pre-select the provider.
+   */
+  providerId: z.string().min(1).optional(),
+  /**
+   * W10 — extra switchable model ids beyond the default `model` (≤16,
+   * deduped route-side). Only the dsh writer consumes them; codex and
+   * claude-code are single-default by construction (design §6).
+   */
+  models: z.array(z.string().min(1).max(128)).max(16).optional(),
   /** Target-specific extras (kept schema-loose on purpose). */
   extra: z.record(z.string(), z.unknown()).optional(),
 });

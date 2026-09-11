@@ -8,3 +8,4 @@ export * from './machine.js';
 export * from './inventory.js';
 export * from './job.js';
 export * from './runtime-config.js';
+export * from './llm-provider.js';

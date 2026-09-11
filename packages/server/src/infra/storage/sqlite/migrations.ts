@@ -315,6 +315,26 @@ ALTER TABLE ac_sessions ADD COLUMN title TEXT;
 DROP TABLE IF EXISTS ac_sessions;
     `,
   },
+  {
+    version: 15,
+    description: 'phase 9 W10 — LLM provider catalog (reusable routes; the key stays a Credential)',
+    sql: `
+-- Name uniqueness is per (name, scope, owner), enforced read-then-write in
+-- the route (mirrors the resources \`key\` rule — no composite unique index
+-- over a nullable owner_id).
+CREATE TABLE IF NOT EXISTS llm_providers (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  api             TEXT NOT NULL,
+  base_url        TEXT,
+  credential_name TEXT NOT NULL,
+  scope           TEXT NOT NULL,
+  owner_id        TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+    `,
+  },
 ] as const;
 
 /**

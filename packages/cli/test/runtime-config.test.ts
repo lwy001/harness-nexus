@@ -251,6 +251,29 @@ describe('applyRuntimeConfig — deepseek', () => {
     expect((patch2.match(/^- id: acp$/gm) ?? []).length).toBe(1);
   });
 
+  it('W10 — writes the multi-model switchable list (default first, deduped)', () => {
+    applyRuntimeConfig(
+      'deepseek',
+      spec({ models: ['gw-large', 'gw-mini', 'gw-flash'] }),
+      'sk-dsh',
+      home,
+    );
+    const settings = readFileSync(path.join(home, '.dsh/settings.yaml'), 'utf8');
+    const modelsBlock = settings
+      .split('models:\n')[1]!
+      .split('agent-default-model:')[0]
+      .trim()
+      .split('\n')
+      .map((l) => l.trim());
+    // The default leads even when the extras list repeated it.
+    expect(modelsBlock).toEqual(['- id: "gw-large"', '- id: "gw-mini"', '- id: "gw-flash"']);
+    // The default selection + acp override stay pinned to the default model.
+    expect(settings).toContain('model: "gw-large"');
+    const patch = readFileSync(path.join(home, '.dsh/cordis.patch.yml'), 'utf8');
+    expect(patch).toContain('model: "gw-large"');
+    expect(patch).not.toContain('gw-mini');
+  });
+
   it('a []-placeholder base is absorbed, not appended after (two docs = boot error)', () => {
     const only = mkdtempSync(path.join(tmpdir(), 'hnx-rc-empty-'));
     mkdirSync(path.join(only, '.dsh'), { recursive: true });

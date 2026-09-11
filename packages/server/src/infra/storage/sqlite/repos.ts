@@ -19,9 +19,11 @@ import type {
   Job,
   AgentInstance,
   RuntimeConfig,
+  LlmProvider,
   JobRepository,
   AgentInstanceRepository,
   RuntimeConfigRepository,
+  LlmProviderRepository,
   UserRepository,
   PersonalAccessTokenRepository,
   SystemSettingsRepository,
@@ -984,12 +986,18 @@ interface RuntimeConfigRow {
 }
 
 function mapRuntimeConfig(row: RuntimeConfigRow): RuntimeConfig {
+  const spec = JSON.parse(row.spec) as RuntimeConfig['spec'];
   return {
     id: row.id,
     machineId: row.machine_id,
     ownerId: row.owner_id,
     target: row.target as RuntimeConfig['target'],
-    spec: JSON.parse(row.spec) as RuntimeConfig['spec'],
+    // W10 fields are optional on the wire — normalize pre-W10 rows to null.
+    spec: {
+      ...spec,
+      providerId: spec.providerId ?? null,
+      models: spec.models ?? null,
+    },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1026,6 +1034,94 @@ export function sqliteRuntimeConfigRepository(db: Database): RuntimeConfigReposi
     },
     async deleteByMachine(machineId) {
       db.prepare('DELETE FROM runtime_configs WHERE machine_id = ?').run(machineId);
+    },
+  };
+}
+
+// ---- LLM provider catalog (phase 9 W10) ----
+
+interface LlmProviderRow {
+  id: string;
+  name: string;
+  api: string;
+  base_url: string | null;
+  credential_name: string;
+  scope: string;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const mapLlmProvider = (r: LlmProviderRow): LlmProvider => ({
+  id: r.id,
+  name: r.name,
+  api: r.api as LlmProvider['api'],
+  baseUrl: r.base_url,
+  credentialName: r.credential_name,
+  scope: r.scope as LlmProvider['scope'],
+  ownerId: r.owner_id,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export function sqliteLlmProviderRepository(db: Database): LlmProviderRepository {
+  return {
+    async findById(id) {
+      const row = db.prepare('SELECT * FROM llm_providers WHERE id = ?').get(id) as
+        LlmProviderRow | undefined;
+      return row ? mapLlmProvider(row) : null;
+    },
+    async findByName(name, scope, ownerId) {
+      const row = db
+        .prepare(
+          'SELECT * FROM llm_providers WHERE name = ? AND scope = ? AND (scope = ? OR owner_id = ?)',
+        )
+        .get(name, scope, 'global', ownerId ?? '') as LlmProviderRow | undefined;
+      return row ? mapLlmProvider(row) : null;
+    },
+    async list(filter) {
+      const where: string[] = [];
+      const params: Record<string, unknown> = {};
+      if (filter?.scope) {
+        where.push('scope = @scope');
+        params.scope = filter.scope;
+      }
+      if (filter?.ownerId) {
+        where.push('owner_id = @ownerId');
+        params.ownerId = filter.ownerId;
+      }
+      const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const rows = db
+        .prepare(`SELECT * FROM llm_providers ${clause} ORDER BY created_at`)
+        .all(params) as LlmProviderRow[];
+      return rows.map(mapLlmProvider);
+    },
+    async save(provider) {
+      db.prepare(
+        `INSERT INTO llm_providers
+           (id, name, api, base_url, credential_name, scope, owner_id, created_at, updated_at)
+         VALUES (@id, @name, @api, @base_url, @credential_name, @scope, @owner_id, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           name            = excluded.name,
+           api             = excluded.api,
+           base_url        = excluded.base_url,
+           credential_name = excluded.credential_name,
+           updated_at      = excluded.updated_at`,
+      ).run({
+        id: provider.id,
+        name: provider.name,
+        api: provider.api,
+        base_url: provider.baseUrl,
+        credential_name: provider.credentialName,
+        scope: provider.scope,
+        owner_id: provider.ownerId,
+        created_at: provider.createdAt,
+        updated_at: provider.updatedAt,
+      });
+      return provider;
+    },
+    async delete(id) {
+      db.prepare('DELETE FROM llm_providers WHERE id = ?').run(id);
     },
   };
 }

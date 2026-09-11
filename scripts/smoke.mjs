@@ -2417,6 +2417,77 @@ if (w3Err.includes('Error:')) {
 }
 
 // ===========================================================================
+// [9 W10] LLM provider management — CRUD + scope rules, and the provider-
+// first runtime-config PUT (providerId provenance + extras-only models).
+// The query-models fetch itself is covered by the stubbed server tests —
+// the smoke only pins its failure mapping against a dead endpoint.
+// ===========================================================================
+log('\n--- [9 W10] provider CRUD + name-taken gate ---');
+r = await req('POST', '/api/llm-providers', {
+  token: userToken,
+  body: {
+    name: 'w10-gw',
+    api: 'openai-responses',
+    baseUrl: 'https://gw.example.com/v1',
+    credentialName: 'w3-gw-key',
+  },
+});
+expect('w10 provider created (scope defaults to personal)', r.status, 201);
+const w10ProviderId = r.json.provider.id;
+
+r = await req('POST', '/api/llm-providers', {
+  token: userToken,
+  body: { name: 'w10-gw', api: 'anthropic', credentialName: 'w3-gw-key' },
+});
+expect('duplicate name in scope rejected', r.status, 409);
+
+r = await req('GET', '/api/llm-providers', { token: userToken });
+expect(
+  'provider listed for its owner',
+  r.json.providers.some((p) => p.id === w10ProviderId),
+  true,
+);
+r = await req('GET', '/api/llm-providers', { token: adminToken });
+expect(
+  'foreign personal provider hidden from others',
+  r.json.providers.some((p) => p.id === w10ProviderId),
+  false,
+);
+
+log('\n--- [9 W10] provider-mode runtime-config PUT (providerId + models) ---');
+const w10Machine = await req('POST', '/api/machines', {
+  token: userToken,
+  body: { name: 'w10-box' },
+});
+expect('w10 enroll status', w10Machine.status, 201);
+r = await req('PUT', `/api/machines/${w10Machine.json.machine.id}/runtime-config/codex`, {
+  token: userToken,
+  body: {
+    providerLabel: 'w10-gw',
+    api: 'openai',
+    model: 'gpt-5',
+    credentialName: 'w3-gw-key',
+    providerId: w10ProviderId,
+    models: ['gpt-5', 'gpt-5-mini'],
+  },
+});
+expect('provider-mode spec accepted (queues while offline)', r.status, 201);
+expect('providerId echoed', r.json.config.providerId, w10ProviderId);
+expect('models stored as extras only (default dropped)', r.json.config.models.join(','), 'gpt-5-mini');
+
+r = await req('POST', '/api/llm-providers/query-models', {
+  token: userToken,
+  body: { providerId: w10ProviderId },
+});
+expect('dead endpoint maps to 502 PROVIDER_MODELS_FAILED', r.status, 502);
+expect('error code', r.json.error, 'PROVIDER_MODELS_FAILED');
+
+r = await req('DELETE', `/api/machines/${w10Machine.json.machine.id}`, { token: userToken });
+expect('w10 machine cleanup', r.status, 200);
+r = await req('DELETE', `/api/llm-providers/${w10ProviderId}`, { token: userToken });
+expect('provider deleted (applied specs keep their snapshots)', r.json.ok, true);
+
+// ===========================================================================
 // [9 W6] Portal chat — the workspace listing round-trip through a REAL daemon
 // dist (one level of subdirectories under the machine's base workspace), the
 // chat open-with-directory + cwd validation matrix over the fake browser

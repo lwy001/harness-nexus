@@ -405,7 +405,7 @@ secret}` bundle at execution time (machine-PAT REST exception #3) and
     E2E notes: `docs/design/phase-9-w9-sender-controls.md`.
   - **W10 LLM provider management — SHIPPED (2026-09)** — cc-switch-inspired
     provider catalog: the `LlmProvider` entity (`{name, api kind, baseUrl?,
-    credentialName}` with the three kinds `openai-chat` / `openai-responses`
+credentialName}` with the three kinds `openai-chat` / `openai-responses`
     / `anthropic` and a per-Agent support matrix so the machine page only
     offers providers the target speaks), a server-side 获取模型 model-list
     discovery button (`POST /api/llm-providers/query-models` — the platform's

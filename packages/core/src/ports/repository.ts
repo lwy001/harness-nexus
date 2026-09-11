@@ -11,6 +11,7 @@ import type {
   Credential,
   AgentInstance,
   Job,
+  LlmProvider,
   Machine,
   MachineInventorySnapshot,
   McpServer,
@@ -152,6 +153,19 @@ export interface RuntimeConfigRepository {
   deleteByMachine(machineId: string): Promise<void>;
 }
 
+export interface LlmProviderRepository {
+  findById(id: string): Promise<LlmProvider | null>;
+  /** Name uniqueness is per (name, scope, owner) — the route enforces it read-then-write. */
+  findByName(
+    name: string,
+    scope: 'global' | 'personal',
+    ownerId?: string,
+  ): Promise<LlmProvider | null>;
+  list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<LlmProvider[]>;
+  save(provider: LlmProvider): Promise<LlmProvider>;
+  delete(id: string): Promise<void>;
+}
+
 export interface UnitOfWork {
   resources: ResourceRepository;
   profiles: ProfileRepository;
@@ -165,4 +179,5 @@ export interface UnitOfWork {
   jobs: JobRepository;
   agentInstances: AgentInstanceRepository;
   runtimeConfigs: RuntimeConfigRepository;
+  llmProviders: LlmProviderRepository;
 }

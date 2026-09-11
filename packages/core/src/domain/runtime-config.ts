@@ -14,6 +14,17 @@ export interface RuntimeConfigSpecData {
   api: 'anthropic-messages' | 'openai';
   model: string;
   credentialName: string;
+  /**
+   * W10 — provenance only: the LlmProvider this spec was filled from. The
+   * spec stays a snapshot; a deleted provider never invalidates the row.
+   */
+  providerId: string | null;
+  /**
+   * W10 — extra switchable model ids beyond the default `model`. Only the
+   * dsh writer consumes them (its native per-provider `models:` list);
+   * codex/claude-code are single-default by construction.
+   */
+  models: string[] | null;
   extra: Record<string, unknown> | null;
 }
 
