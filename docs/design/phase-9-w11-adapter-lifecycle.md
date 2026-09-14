@@ -1,11 +1,13 @@
 # Design: Phase 9 W11 — Adapter process lifecycle & session truth
 
-> Status: **DESIGNED 2026-09-14, not yet implemented.** Trigger: three rig
-> incidents in one day (see §1) exposed that adapter processes are the least
-> governed object in the stack and that the session rail cannot answer "which
-> of these are actually alive". Predecessors: C5's channel lifecycle notes and
-> the W7 "failed establishment kills the adapter" fix — this wave generalizes
-> them from "close paths are correct" to "processes are ACCOUNTED for".
+> Status: **B (channel snapshot + tab bar + one-click cleanup) SHIPPED
+> 2026-09-14** (server+web only, daemon untouched — see §B and the post-ship
+> notes); A/C/D/E designed, not yet implemented. Trigger: three rig incidents
+> in one day (see §1) exposed that adapter processes are the least governed
+> object in the stack and that the session rail cannot answer "which of these
+> are actually alive". Predecessors: C5's channel lifecycle notes and the W7
+> "failed establishment kills the adapter" fix — this wave generalizes them
+> from "close paths are correct" to "processes are ACCOUNTED for".
 
 ## Problem inventory (each with evidence)
 
@@ -85,33 +87,59 @@ issued:
 Tests (cli): sweep reaps a fake pgid recorded in the ledger; teardown removes
 the file; a ledger entry with a dead pgid is dropped without signaling.
 
-## B. Channel snapshot push (server → web) — kills D2
+## B. Channel snapshot push + tab bar + one-click cleanup (server → web) — kills D2
+
+> **SHIPPED 2026-09-14** — server+web only (daemon untouched). What follows
+> is the as-built record; the tab bar and the cleanup button were added on
+> user request during the design review.
 
 The server emits `chat:channels` to the owner's `user:<id>` /app room
 whenever the channel table changes for them (open, ready, closed, evicted,
-phase flip) — a full per-user snapshot (small: ≤ dozen channels):
+busy flip) — a full per-user snapshot (small: ≤ dozen channels):
 
 ```
-{ channels: [{ agentInstanceId, sessionId (wire), nativeSessionId?,
-               phase: 'starting'|'ready', busy, startedAt }] }
+{ channels: [{ sessionId (wire), agentInstanceId, machineId, target,
+               phase: 'starting'|'ready', busy, deferred,
+               nativeSessionId?, openedAt }] }
 ```
 
-- Emitted from `ChatService` at every `closeInternal` / ready / open, and
-  once on `/app` connect (so a freshly opened page is immediately truthful).
-- Schema `chatChannelsPushSchema` in shared; additive, old clients ignore.
-- Web: `AgentSession` keeps a module-scope map from the pushes and merges
-  `open`/`openChannelId`/`phase` into rail rows at render time, OVERRIDING
-  the snapshot fetched at listing time. The listing's own stamps remain as
-  the initial paint. Rows render four explicit states: 恢复 (no channel) /
-  连接中 (starting) / 已打开·本页 / 已打开·其他窗口 (ready, wire id ≠ the
-  page's channel; for a deferred `closeWhenIdle` channel the row additionally
-  shows 后台收尾中 from `busy`).
-- Polling stays OFF for channel state (push covers it). The native-list
-  refresh points stay as today (mount / own ready / own closed / manual).
+- Emitted from `ChatService` at open / ready / every `closeInternal` / the
+  `session_status` busy flip, and once on `/app` connect. A page that mounted
+  LATER (SPA navigation — the socket survives it, so the connect-time push
+  predates the mount) catches up via `chat:channels.sync`, whose ACK carries
+  the same snapshot (rig-found: without it the tab bar rendered empty until
+  the next table change).
+- Schemas `chatChannelViewSchema` / `chatChannelsPushSchema` /
+  `chatChannelsSyncRequestSchema` / `chatChannelsCloseAllRequestSchema` in
+  shared; all additive, old clients ignore.
+- **Tab bar** (`components/chat/channel-tabs.tsx` + `useChatChannels`):
+  rendered at the top of BOTH chat pages (cards + session), hidden when the
+  user has no live channels. One tab per channel: target badge (CC/CODE/DSH
+  mono), native-id label, spinner while starting, a pulsing dot while busy,
+  收尾中 when deferred. Click ACTIVATES: same agent → in-page channel switch
+  with `keepPrevious` (the previous channel stays live in its tab); other
+  agent → SPA route + `?ch=<wireId>` rejoin (dead-on-arrival falls back
+  through the existing resume path). Tab × closes that one channel.
+- **Page exit no longer auto-closes the channel.** The W6 unmount-close
+  existed because nothing else would free an abandoned channel; with the tab
+  bar the live set is visible, individually closable, and bounded (machine
+  budget + eviction + viewer-gone on real socket loss). A FULL page reload
+  still drops idle channels (socket dies → onViewerGone) — by design.
+- **一键清理**: `chat:channels.closeAll` (owner-only). Idle channels close
+  now; busy ones flip to `closeWhenIdle` and close when the turn ends (an
+  abandoned generation still finishes and persists natively). The ACK
+  carries `{closed, deferred}` for the toast. Confirm-first.
+- Rail rows overlay the push truth by native id OVER the listing's
+  moment-in-time `open` stamps (the listing is still the row source —
+  titles/cwd/updatedAt cost a daemon round-trip; the overlay only keeps
+  `open`/`openChannelId` current between refreshes).
 
-Tests (server): snapshot emitted on open/ready/close; owner scoping (other
-users' channels never leak into a snapshot). Web: merge logic unit-tested via
-the existing fold-style reducer pattern if extracted, else component test.
+Tests: server — snapshot on open/ready/close, fresh-connect push,
+`channels.sync` ack, closeAll idle/deferred split (24+1 cases in
+`server/test/chat.test.ts`); shared — schema round-trips. Rig E2E:
+two concurrent channels across agents (CC + CODE tabs), tab-click switch
+with rejoin, cleanup zeroing the table with adapters reaped (SIGTERM grace,
+no orphans).
 
 ## C. Adapter report — kills D3
 
@@ -200,3 +228,23 @@ latency, not correctness.
 Each slice is independently shippable; S1 and S2 together eliminate the
 orphan class and the stale-已打开 class — the two things actually observed
 on the rig.
+
+## Post-ship notes (B, 2026-09-14)
+
+- **The SPA-mount catch-up was missing on the first pass** (rig-found): the
+  connect-time push predates SPA navigation, so a page mounted on an existing
+  socket saw an empty tab bar until the next table change. `chat:channels.sync`
+  (ack = snapshot) on hook mount is the fix.
+- **The E2E accidentally demonstrated D5 live**: a transient daemon `/ctl`
+  flap (transport close → reconnect) reaped both test channels mid-session —
+  exactly the blip-kills-all-channels defect the grace-window slice (E)
+  addresses. The claude tab recovered transparently through the rejoin's
+  SESSION_NOT_FOUND → fresh-resume fallback, which is the designed behavior.
+- **The tab bar's busy dot is deliberately muted** (pulsing current-color
+  opacity, not `--signal`): the session page already spends the single
+  signal accent on the live-turn indicator — a second signal-colored liveness
+  dot per tab would double-spend it.
+- The `deferred` flag (收尾中) rides the snapshot, not the rail: a channel
+  whose viewer left mid-turn shows as a tab finishing in the background —
+  the rail row beneath it stays plain 已打开 (the overlay keys on presence,
+  not viewer identity).
