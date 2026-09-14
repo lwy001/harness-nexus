@@ -16,6 +16,7 @@ import {
 import { jobProgressEventSchema, jobResultEventSchema, type JobView } from '@harness-nexus/shared';
 import {
   chatChannelsCloseAllRequestSchema,
+  chatChannelsSyncRequestSchema,
   chatHistoryEventSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
@@ -616,6 +617,19 @@ export async function registerRealtime(
         const result = await realtime.chat.closeAll(socket.data.userId as string);
         ack?.(result);
       })();
+    });
+
+    // 9 W11 B — a freshly MOUNTED tab bar asks for the current snapshot: the
+    // connect-time push predates SPA navigations (the socket survives them),
+    // so a page that mounted later would otherwise wait for the next table
+    // change to learn the truth.
+    socket.on('chat:channels.sync', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatChannelsSyncRequestSchema.safeParse(payload ?? {});
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      ack?.(realtime.chat.snapshotFor(socket.data.userId as string));
     });
 
     // A viewer socket died (tab closed / full page refresh — SPA navigation
