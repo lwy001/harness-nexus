@@ -12,7 +12,8 @@ const en = {
   addDesc: 'The route is stored here; the key stays in the referenced credential.',
   editTitle: 'Edit provider',
   apiLabel: 'API kind',
-  apiHint: 'Which protocol the endpoint speaks — filters which Agents can use it.',
+  apiHint:
+    'The kind must match the Agent — Claude Code: anthropic · Codex: openai-responses · DeepSeek: anthropic / openai-chat.',
   baseUrlLabel: 'Base URL (optional)',
   baseUrlPlaceholder: 'official endpoint',
   credentialLabel: 'Credential (distributable)',
@@ -50,7 +51,8 @@ const zh: typeof en = {
   addDesc: '路由存储于此；密钥仍存放在所引用的凭据中。',
   editTitle: '编辑供应商',
   apiLabel: 'API 类型',
-  apiHint: '端点使用的协议——决定哪些 Agent 可以选用它。',
+  apiHint:
+    '类型需与 Agent 匹配 —— Claude Code：anthropic · Codex：openai-responses · DeepSeek：anthropic / openai-chat。',
   baseUrlLabel: 'Base URL（可选）',
   baseUrlPlaceholder: '官方端点',
   credentialLabel: '凭据（可分发）',

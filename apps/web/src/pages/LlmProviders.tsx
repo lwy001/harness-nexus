@@ -314,7 +314,10 @@ function ProviderForm({
       description={t('llmProviders.addDesc')}
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Two-column grid — row heights stay even (no in-cell hints); the
+            credential select spans the full last row in create mode so long
+            mono names never truncate. */}
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="llmp-name">{t('common.name')}</Label>
             <Input
@@ -341,7 +344,6 @@ function ProviderForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-muted-foreground text-xs">{t('llmProviders.apiHint')}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="llmp-url">{t('llmProviders.baseUrlLabel')}</Label>
@@ -355,21 +357,6 @@ function ProviderForm({
               spellCheck={false}
               inputMode="url"
             />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="llmp-cred">{t('llmProviders.credentialLabel')}</Label>
-            <Select value={credentialName} onValueChange={setCredentialName}>
-              <SelectTrigger id="llmp-cred" className="font-mono text-xs">
-                <SelectValue placeholder={t('llmProviders.pickCredential')} />
-              </SelectTrigger>
-              <SelectContent>
-                {(creds ?? []).map((c) => (
-                  <SelectItem key={c.id} value={c.name} className="font-mono text-xs">
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
           {existing === undefined ? (
             <div className="grid gap-2">
@@ -388,7 +375,23 @@ function ProviderForm({
               </Select>
             </div>
           ) : null}
+          <div className="grid gap-2 sm:col-span-2">
+            <Label htmlFor="llmp-cred">{t('llmProviders.credentialLabel')}</Label>
+            <Select value={credentialName} onValueChange={setCredentialName}>
+              <SelectTrigger id="llmp-cred" className="font-mono text-xs">
+                <SelectValue placeholder={t('llmProviders.pickCredential')} />
+              </SelectTrigger>
+              <SelectContent>
+                {(creds ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.name} className="font-mono text-xs">
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+        <p className="text-muted-foreground text-xs">{t('llmProviders.apiHint')}</p>
         {creds !== null && creds.length === 0 ? (
           <p className="text-muted-foreground text-xs">{t('llmProviders.noCredentials')}</p>
         ) : null}
