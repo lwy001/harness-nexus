@@ -19,6 +19,15 @@ interface PendingRequest {
 export type PermissionOutcome =
   { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
 
+/**
+ * A JSON-RPC request id, echoed VERBATIM when answering an agent-initiated
+ * request. Adapters disagree on the shape: the Zed wrappers count ints, but
+ * codex-acp sends UUIDs — so a `Number()` coercion turns its id into NaN and
+ * the encoded reply carries `"id":null`, which the agent cannot match (the
+ * permission then waits forever and the turn hangs).
+ */
+export type JsonRpcId = string | number | null;
+
 export interface AcpAgentInfo {
   name?: string | undefined;
   version?: string | undefined;
@@ -79,7 +88,7 @@ export class AcpAgentConnection {
   private pending = new Map<number, PendingRequest>();
   private stderrTail: string[] = [];
   private onNotification: ((method: string, params: Record<string, unknown>) => void) | null = null;
-  private onPermission: ((jsonrpcId: number, params: Record<string, unknown>) => void) | null =
+  private onPermission: ((jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void) | null =
     null;
   private exited = false;
 
@@ -181,7 +190,7 @@ export class AcpAgentConnection {
   }
 
   /** Answer the agent's `session/request_permission` (optionId verbatim). */
-  respondPermission(jsonrpcId: number, outcome: PermissionOutcome): void {
+  respondPermission(jsonrpcId: JsonRpcId, outcome: PermissionOutcome): void {
     this.send({ jsonrpc: '2.0', id: jsonrpcId, result: { outcome } });
   }
 
@@ -190,7 +199,7 @@ export class AcpAgentConnection {
   }
 
   setPermissionHandler(
-    handler: (jsonrpcId: number, params: Record<string, unknown>) => void,
+    handler: (jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void,
   ): void {
     this.onPermission = handler;
   }
@@ -245,7 +254,7 @@ export class AcpAgentConnection {
     }
 
     if (msg.method === 'session/request_permission' && msg.id !== undefined) {
-      this.onPermission?.(Number(msg.id), msg.params ?? {});
+      this.onPermission?.(msg.id, msg.params ?? {});
       return;
     }
     if (msg.method !== undefined) {

@@ -394,6 +394,73 @@ describe('session round-trip vs the fixture agent', () => {
     expect(lateAck).toHaveBeenCalledWith({ error: 'unknown-session' });
   }, 15000);
 
+  it('a permission request with a UUID-STRING id resolves (codex-acp dialect)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-str',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-str',
+      prompt: [{ type: 'text', text: 'please ask-permission string-id now' }],
+    });
+    const perm = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'permission_request'),
+    );
+    if (perm.kind !== 'permission_request') throw new Error('not a permission event');
+
+    socket.receive(
+      'chat:permission.respond',
+      { sessionId: 'sess-str', requestId: perm.requestId, optionId: 'allow_always' },
+    );
+    // The fixture only replies once it sees a response whose `id` matches the
+    // UUID it asked with — the old `Number(msg.id)` coercion sent id:null, so
+    // this delta never arrived and the real codex turn hung forever.
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta === 'permission granted: allow_always'),
+    );
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'turn_result' && e.stopReason === 'end_turn'),
+    );
+    socket.receive('chat:session.close', { sessionId: 'sess-str', reason: 'user' });
+  }, 15000);
+
+  it('drops codex-acp\u2019s unknown-model notice instead of streaming it as text', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-notice',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-notice',
+      prompt: [{ type: 'text', text: 'please metadata-notice then echo' }],
+    });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta.startsWith('echo:')),
+    );
+    const deltas = socket.chatEvents().filter((e) => e.kind === 'message_delta');
+    expect(deltas.some((d) => String(d.delta).includes('Model metadata for'))).toBe(false);
+    socket.receive('chat:session.close', { sessionId: 'sess-notice', reason: 'user' });
+  }, 15000);
+
   it('a prompt REJECTED with a protocol error ends the turn but keeps the channel', async () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
