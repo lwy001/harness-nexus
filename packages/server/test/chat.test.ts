@@ -1015,3 +1015,32 @@ describe('live-channel snapshot + close-all (9 W11 B)', () => {
     }
   }, 15000);
 });
+
+describe('chat:channels.sync (9 W11 B mount catch-up)', () => {
+  it('acks the current snapshot to a freshly mounted viewer', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const sessionId = res.sessionId!;
+      await startP;
+      void d.emit('chat:session.ready', { sessionId, agentName: 'fixture-agent' });
+
+      // A viewer connecting AFTER the open (the SPA-navigation case: the
+      // connect-time push predates this socket) asks and gets the truth.
+      const b2 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      try {
+        await once(b2, 'connect');
+        const snap = await emitAck(b2, 'chat:channels.sync', {});
+        const channels = (snap as { channels: { sessionId: string; phase: string }[] }).channels;
+        expect(channels.some((c) => c.sessionId === sessionId && c.phase === 'ready')).toBe(true);
+      } finally {
+        b2.disconnect();
+      }
+      await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+});

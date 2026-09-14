@@ -747,6 +747,13 @@ export const chatChannelsPushSchema = z.object({
  */
 export const chatChannelsCloseAllRequestSchema = z.object({}).strict();
 
+/**
+ * browser → server: ask for the current snapshot (9 W11 B). A tab bar that
+ * mounted after an SPA navigation missed the connect-time push — this is its
+ * catch-up. The ACK carries `chatChannelsPushSchema`.
+ */
+export const chatChannelsSyncRequestSchema = z.object({}).strict();
+
 export type ChatChannelView = z.infer<typeof chatChannelViewSchema>;
 export type ChatChannelsPush = z.infer<typeof chatChannelsPushSchema>;
 

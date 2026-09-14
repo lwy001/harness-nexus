@@ -6,6 +6,11 @@ import { appSocket, type ChatChannelView, type ChatChannelsPush } from '@/realti
  * `chat:channels` pushes (initial truth arrives on /app connect; every table
  * change re-pushes). Mount wherever channel truth is rendered (the tab bar on
  * both chat pages) — multiple mounts share the one /app socket harmlessly.
+ *
+ * MOUNT also syncs: the connect-time push predates this mount whenever the
+ * SPA navigated (the socket survives navigation), so the hook asks for the
+ * current snapshot once via `chat:channels.sync` instead of waiting for the
+ * next table change to learn the truth.
  */
 export function useChatChannels(): ChatChannelView[] {
   const [channels, setChannels] = useState<ChatChannelView[]>([]);
@@ -16,6 +21,9 @@ export function useChatChannels(): ChatChannelView[] {
       setChannels(push.channels);
     };
     socket.on('chat:channels', onPush);
+    socket.emit('chat:channels.sync', {}, (snap: ChatChannelsPush) => {
+      if (snap && Array.isArray(snap.channels)) setChannels(snap.channels);
+    });
     return () => {
       socket.off('chat:channels', onPush);
     };
