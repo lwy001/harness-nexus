@@ -712,6 +712,44 @@ export const chatSessionClosedPushSchema = z.object({
   reason: z.string().min(1).max(256),
 });
 
+/**
+ * 9 W11 B — one live channel in the per-user `chat:channels` SNAPSHOT push.
+ * The snapshot is the tab bar's source of truth: it fires on every channel
+ * table change (open / ready / closed / busy flip / deferred) and once per
+ * `/app` connect, so the browser never polls for channel state.
+ */
+export const chatChannelViewSchema = z.object({
+  /** The CHANNEL (wire) id — `chat:session.open {sessionId}` rejoins it. */
+  sessionId: z.string().min(1).max(64),
+  agentInstanceId: z.string().min(1).max(64),
+  machineId: z.string().min(1).max(64),
+  /** Agent target (`claude-code` / `codex` / `deepseek` / …) — the tab badge. */
+  target: z.string().min(1).max(32),
+  phase: z.enum(['starting', 'ready']),
+  /** A turn is generating on this channel right now. */
+  busy: z.boolean(),
+  /** Viewers left mid-turn — the channel closes itself when the turn ends. */
+  deferred: z.boolean(),
+  nativeSessionId: z.string().min(1).max(128).optional(),
+  /** Epoch ms — the eviction order (oldest first). */
+  openedAt: z.number().int().positive(),
+});
+
+/** server → browser (`user:<id>` room): the user's FULL live-channel snapshot. */
+export const chatChannelsPushSchema = z.object({
+  channels: z.array(chatChannelViewSchema).max(64),
+});
+
+/**
+ * browser → server: close every live channel of the CALLER (9 W11 B — the
+ * tab bar's 一键清理). Idle channels close immediately; busy ones flip to
+ * deferred and close when the current turn ends.
+ */
+export const chatChannelsCloseAllRequestSchema = z.object({}).strict();
+
+export type ChatChannelView = z.infer<typeof chatChannelViewSchema>;
+export type ChatChannelsPush = z.infer<typeof chatChannelsPushSchema>;
+
 export type CtlHandshakeAuth = z.infer<typeof ctlHandshakeAuthSchema>;
 export type AppHandshakeAuth = z.infer<typeof appHandshakeAuthSchema>;
 export type MachineHello = z.infer<typeof machineHelloSchema>;

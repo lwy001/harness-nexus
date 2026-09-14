@@ -924,3 +924,94 @@ describe('session config (9 W9 A)', () => {
     }
   });
 });
+
+describe('live-channel snapshot + close-all (9 W11 B)', () => {
+  interface SnapChannel {
+    sessionId: string;
+    phase: 'starting' | 'ready';
+    busy: boolean;
+    deferred: boolean;
+    target?: string;
+    nativeSessionId?: string;
+  }
+  type Snap = { channels: SnapChannel[] };
+
+  /** Attach a snapshot collector to a browser socket. */
+  function collectSnaps(sock: Socket): { snaps: Snap[]; last: () => Snap | undefined } {
+    const snaps: Snap[] = [];
+    sock.on('chat:channels', (s: Snap) => snaps.push(s));
+    return { snaps, last: () => snaps[snaps.length - 1] };
+  }
+
+  it('pushes the snapshot on open, ready, and close — and on fresh /app connect', async () => {
+    const d = await connectDaemon(['chat']);
+    const { last } = collectSnaps(browser);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const sessionId = res.sessionId!;
+      await startP;
+      await waitFor(() => last()?.channels.some((c) => c.sessionId === sessionId));
+      expect(last()?.channels.find((c) => c.sessionId === sessionId)?.phase).toBe('starting');
+      expect(last()?.channels.find((c) => c.sessionId === sessionId)?.target).toBe('hermes');
+
+      void d.emit('chat:session.ready', { sessionId, agentName: 'fixture-agent' });
+      await waitFor(
+        () => last()?.channels.find((c) => c.sessionId === sessionId)?.phase === 'ready',
+      );
+
+      // A freshly connected /app socket gets the snapshot unprompted.
+      const b2 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      try {
+        const first = await once(b2, 'chat:channels');
+        expect((first as Snap).channels.some((c) => c.sessionId === sessionId)).toBe(true);
+      } finally {
+        b2.disconnect();
+      }
+
+      await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+      await waitFor(() => !last()?.channels.some((c) => c.sessionId === sessionId));
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('close-all closes idle channels now and defers busy ones until their turn ends', async () => {
+    const d = await connectDaemon(['chat']);
+    const { last } = collectSnaps(browser);
+    try {
+      const s1 = (await openSession(browser, agentId)).sessionId!;
+      const s2 = (await openSession(browser, agentId)).sessionId!;
+      void d.emit('chat:session.ready', { sessionId: s1, agentName: 'fixture-agent' });
+      void d.emit('chat:session.ready', { sessionId: s2, agentName: 'fixture-agent' });
+      await waitFor(
+        () =>
+          last()?.channels.filter((c) => [s1, s2].includes(c.sessionId)).length === 2 &&
+          last()!.channels.every((c) => c.phase === 'ready'),
+      );
+
+      // s1 goes mid-turn; s2 stays idle.
+      void d.emit('chat:event', {
+        sessionId: s1,
+        event: { kind: 'session_status', state: 'active' },
+      });
+      await waitFor(() => last()?.channels.find((c) => c.sessionId === s1)?.busy === true);
+
+      const ack = await emitAck(browser, 'chat:channels.closeAll', {});
+      expect(ack).toEqual({ closed: 1, deferred: 1 });
+      await waitFor(() => !last()?.channels.some((c) => c.sessionId === s2));
+      expect(last()?.channels.find((c) => c.sessionId === s1)?.deferred).toBe(true);
+
+      // The deferred channel survives until its turn ends, then closes.
+      void d.emit('chat:event', {
+        sessionId: s1,
+        event: { kind: 'session_status', state: 'idle' },
+      });
+      await waitFor(() => last()?.channels.length === 0);
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+});

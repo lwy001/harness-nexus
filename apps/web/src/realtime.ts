@@ -168,6 +168,30 @@ export interface ChatSessionClosedPush {
   reason: string;
 }
 
+// ---- 9 W11 B — live-channel snapshot (mirrors shared/realtime.ts) ----
+
+/** One live channel in the per-user `chat:channels` snapshot push. */
+export interface ChatChannelView {
+  /** The CHANNEL (wire) id — `chat:session.open {sessionId}` rejoins it. */
+  sessionId: string;
+  agentInstanceId: string;
+  machineId: string;
+  /** Agent target (`claude-code` / `codex` / `deepseek` / …) — the tab badge. */
+  target: string;
+  phase: 'starting' | 'ready';
+  /** A turn is generating on this channel right now. */
+  busy: boolean;
+  /** Viewers left mid-turn — the channel closes itself when the turn ends. */
+  deferred: boolean;
+  nativeSessionId?: string;
+  /** Epoch ms — the eviction order (oldest first). */
+  openedAt: number;
+}
+
+export interface ChatChannelsPush {
+  channels: ChatChannelView[];
+}
+
 // ---- 9 W7 — native session history (mirrors shared/realtime.ts) ----
 
 /** One prompt block the browser may send / one history user item carries. */

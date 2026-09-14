@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { ArrowRightIcon, BotIcon, LaptopIcon, MessageSquareIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { useI18n, dateLocale, type Lang } from '@/i18n';
 import { AppShell } from '@/components/app-shell';
-import { appSocket, type MachineStatusEvent } from '@/realtime';
+import { appSocket, emitWithAck, type MachineStatusEvent } from '@/realtime';
+import { ChannelTabs } from '@/components/chat/channel-tabs.js';
+import { useChatChannels } from '@/components/chat/use-chat-channels.js';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -74,8 +77,31 @@ export function ChatPage() {
   );
   const totalAgents = groups.reduce((s, g) => s + g.agents.length, 0);
 
+  // 9 W11 B — live channels as tabs (jump back into one from the cards page).
+  const channels = useChatChannels();
+  const navigate = useNavigate();
+  async function cleanupChannels(): Promise<void> {
+    if (!confirm(t('chat.tabsCleanupConfirm'))) return;
+    const res = await emitWithAck<{ closed?: number; deferred?: number }>(
+      'chat:channels.closeAll',
+      {},
+    );
+    toast.success(
+      t('chat.tabsCleanupDone', { closed: res.closed ?? 0, deferred: res.deferred ?? 0 }),
+    );
+  }
+
   return (
     <AppShell>
+      <ChannelTabs
+        channels={channels}
+        activeSessionId=""
+        onActivate={(ch) => navigate(`/chat/agents/${ch.agentInstanceId}?ch=${ch.sessionId}`)}
+        onClose={(ch) =>
+          void emitWithAck('chat:session.close', { sessionId: ch.sessionId, reason: 'user' })
+        }
+        onCleanup={() => void cleanupChannels()}
+      />
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight text-wrap-balance">
           {t('chat.title')}
