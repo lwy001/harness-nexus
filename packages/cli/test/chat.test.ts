@@ -416,10 +416,11 @@ describe('session round-trip vs the fixture agent', () => {
     );
     if (perm.kind !== 'permission_request') throw new Error('not a permission event');
 
-    socket.receive(
-      'chat:permission.respond',
-      { sessionId: 'sess-str', requestId: perm.requestId, optionId: 'allow_always' },
-    );
+    socket.receive('chat:permission.respond', {
+      sessionId: 'sess-str',
+      requestId: perm.requestId,
+      optionId: 'allow_always',
+    });
     // The fixture only replies once it sees a response whose `id` matches the
     // UUID it asked with — the old `Number(msg.id)` coercion sent id:null, so
     // this delta never arrived and the real codex turn hung forever.
@@ -452,9 +453,7 @@ describe('session round-trip vs the fixture agent', () => {
       prompt: [{ type: 'text', text: 'please metadata-notice then echo' }],
     });
     await waitFor(() =>
-      socket
-        .chatEvents()
-        .find((e) => e.kind === 'message_delta' && e.delta.startsWith('echo:')),
+      socket.chatEvents().find((e) => e.kind === 'message_delta' && e.delta.startsWith('echo:')),
     );
     const deltas = socket.chatEvents().filter((e) => e.kind === 'message_delta');
     expect(deltas.some((d) => String(d.delta).includes('Model metadata for'))).toBe(false);
