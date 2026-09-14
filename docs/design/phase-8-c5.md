@@ -427,3 +427,27 @@ resume replays full history (`U, message_delta, turn_result…`); one dsh new
 session + one turn lists exactly ONE row (the orphan dir stays on disk but is
 filtered). Tests: viewer-gone idle + mid-turn (server), synthesized rows
 (sessions-route), `deriveSessionCaps` shapes (cli).
+
+## Post-ship fix — permission replies must echo the agent's request id (2026-09-14)
+
+Rig finding (codex): the user answered two permission cards and the turn
+never resumed. **codex-acp asks with UUID STRING request ids**, and the
+daemon's inbound-id handling coerced them through `Number()` — so the reply
+was encoded with `"id":null` (`JSON.stringify(NaN)` → `null`), the adapter
+could not match it to its pending request, and the escalation waited forever
+(our 75s backstop sent another `id:null` reply, equally unmatched). The claude
+and dsh wrappers — and our fixture agent, which counted ints — all use integer
+ids, which is why C5's permission tests were green while a real codex session
+hung on the first write/escalation it requested.
+
+Fix: agent-initiated request ids flow through **verbatim** as
+`JsonRpcId = string | number | null` (`acp/agent-connection.ts` →
+`chat.ts` `session.permissions` → `respondPermission`); only OUR OWN outgoing
+request ids (numeric counters) keep the `Number()` matching. Fixture gained an
+`ask-permission string-id` arm (UUID id) and a regression test that fails on
+the old coercion.
+
+Rig-verified end to end through `/app` + `/ctl` + the daemon: a
+permission-heavy codex turn ("上海明天天气" in a read-only sandbox — 13
+escalations) answers every card and settles with `turn_end`, where it used to
+freeze after the second.
