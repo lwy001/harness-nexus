@@ -15,6 +15,7 @@ import {
 } from '@harness-nexus/shared';
 import { jobProgressEventSchema, jobResultEventSchema, type JobView } from '@harness-nexus/shared';
 import {
+  chatChannelsCloseAllRequestSchema,
   chatHistoryEventSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
@@ -112,6 +113,9 @@ export async function registerRealtime(
         },
         toChannel: (sessionId, event, payload) => {
           appNs.to(`chan:${sessionId}`).emit(event, payload);
+        },
+        toUser: (userId, event, payload) => {
+          appNs.to(`user:${userId}`).emit(event, payload);
         },
         joinChannel: (socketId, sessionId) => {
           const socket = appNs.sockets.get(socketId);
@@ -490,6 +494,9 @@ export async function registerRealtime(
   app.io.of('/app').on('connection', (socket: Socket) => {
     void socket.join(`user:${socket.data.userId as string}`);
     if (socket.data.role === 'admin') void socket.join('admins');
+    // 9 W11 B — fresh /app sockets get the live-channel snapshot immediately
+    // (the tab bar's initial paint; later changes arrive as pushes).
+    realtime.chat.sendSnapshot(socket.data.userId as string);
 
     // C5 — interactive chat handlers. Every handler validates its payload and
     // re-verifies ownership against `socket.data.userId` (envelope identity
@@ -593,6 +600,21 @@ export async function registerRealtime(
           parsed.data.reason,
         );
         ack?.(result.ok ? { closed: true } : { error: result.code });
+      })();
+    });
+
+    // 9 W11 B — the tab bar's 一键清理: close every live channel of the
+    // caller. Busy channels defer (finish the turn, then close); idle ones
+    // close now. Ack carries the counts for the toast.
+    socket.on('chat:channels.closeAll', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatChannelsCloseAllRequestSchema.safeParse(payload ?? {});
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      void (async () => {
+        const result = await realtime.chat.closeAll(socket.data.userId as string);
+        ack?.(result);
       })();
     });
 

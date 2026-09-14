@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  chatChannelViewSchema,
+  chatChannelsCloseAllRequestSchema,
+  chatChannelsPushSchema,
   appHandshakeAuthSchema,
   chatConfigSetRequestSchema,
   chatMessageSendRequestSchema,
@@ -397,5 +400,36 @@ describe('nativeSessionViewSchema — timestamp dialects (rig-found 2026-09-14)'
     expect(nativeSessionViewSchema.safeParse({ ...row, updatedAt: 'yesterday' }).success).toBe(
       false,
     );
+  });
+});
+
+describe('live-channel snapshot schemas (9 W11 B)', () => {
+  const channel = {
+    sessionId: 'sess-1',
+    agentInstanceId: 'agent-1',
+    machineId: 'mach-1',
+    target: 'codex',
+    phase: 'ready',
+    busy: true,
+    deferred: false,
+    nativeSessionId: '01a09f3a-7fae',
+    openedAt: 1789378000000,
+  };
+  it('accepts a well-formed channel view and push', () => {
+    expect(chatChannelViewSchema.safeParse(channel).success).toBe(true);
+    expect(chatChannelsPushSchema.safeParse({ channels: [channel] }).success).toBe(true);
+    expect(chatChannelsPushSchema.safeParse({ channels: [] }).success).toBe(true);
+  });
+  it('rejects an unknown phase and a non-numeric openedAt', () => {
+    expect(chatChannelViewSchema.safeParse({ ...channel, phase: 'connected' }).success).toBe(false);
+    expect(chatChannelViewSchema.safeParse({ ...channel, openedAt: 'now' }).success).toBe(false);
+  });
+  it('nativeSessionId is optional (a starting channel has none yet)', () => {
+    const { nativeSessionId: _drop, ...without } = channel;
+    expect(chatChannelViewSchema.safeParse(without).success).toBe(true);
+  });
+  it('closeAll takes an empty object and nothing else', () => {
+    expect(chatChannelsCloseAllRequestSchema.safeParse({}).success).toBe(true);
+    expect(chatChannelsCloseAllRequestSchema.safeParse({ force: true }).success).toBe(false);
   });
 });

@@ -1,6 +1,11 @@
 import { resolve as resolvePath } from 'node:path';
 import type { UnitOfWork } from '@harness-nexus/core';
-import type { ChatStreamEvent, PromptBlock, PromptCapabilities } from '@harness-nexus/shared';
+import type {
+  ChatChannelView,
+  ChatStreamEvent,
+  PromptBlock,
+  PromptCapabilities,
+} from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
@@ -26,6 +31,8 @@ export interface ChatIO {
   toCtl(machineId: string, event: string, payload: unknown): void;
   /** Send an event to every viewer of one channel (`chan:<sessionId>` on /app). */
   toChannel(sessionId: string, event: string, payload: unknown): void;
+  /** Send an event to every /app socket of one user (`user:<id>` room). */
+  toUser(userId: string, event: string, payload: unknown): void;
   /** Join a browser socket to a channel room (called when the agent is ready). */
   joinChannel(socketId: string, sessionId: string): void;
   /** Is that /app socket still connected? (Opener may vanish before ready.) */
@@ -69,6 +76,8 @@ interface LiveSession {
   machineId: string;
   agentInstanceId: string;
   ownerId: string;
+  /** Agent target — carried into the W11 channel snapshot (tab badge). */
+  target: string;
   phase: 'starting' | 'ready';
   /** Working directory the channel was opened at (synthesized listing rows). */
   cwd: string;
@@ -206,6 +215,7 @@ export class ChatService {
       machineId: machine.id,
       agentInstanceId: agent.id,
       ownerId,
+      target: agent.target,
       phase: 'starting',
       cwd,
       busy: false,
@@ -227,7 +237,65 @@ export class ChatService {
       cwd,
       ...(resume !== undefined ? { resume } : {}),
     });
+    this.pushSnapshot(ownerId);
     return { ok: true, sessionId, joined: false, phase: 'starting' };
+  }
+
+  /**
+   * 9 W11 B — the user's live-channel snapshot (the tab bar's source of
+   * truth). Pushed on every table change and once per `/app` connect, so the
+   * browser never polls for channel state. Owner-scoped by construction:
+   * chat channels are owner-only, an admin sees only their own.
+   */
+  snapshotFor(ownerId: string): { channels: ChatChannelView[] } {
+    return {
+      channels: [...this.live.values()]
+        .filter((s) => s.ownerId === ownerId)
+        .sort((a, b) => a.openedAt - b.openedAt)
+        .map((s) => ({
+          sessionId: s.sessionId,
+          agentInstanceId: s.agentInstanceId,
+          machineId: s.machineId,
+          target: s.target,
+          phase: s.phase,
+          busy: s.busy,
+          deferred: s.closeWhenIdle,
+          ...(s.nativeSessionId !== undefined ? { nativeSessionId: s.nativeSessionId } : {}),
+          openedAt: s.openedAt,
+        })),
+    };
+  }
+
+  /** Initial truth for a freshly connected /app socket. */
+  sendSnapshot(userId: string): void {
+    this.deps.io.toUser(userId, 'chat:channels', this.snapshotFor(userId));
+  }
+
+  private pushSnapshot(ownerId: string): void {
+    this.sendSnapshot(ownerId);
+  }
+
+  /**
+   * 9 W11 B — the tab bar's 一键清理: close every live channel of the caller.
+   * Idle channels close immediately (daemon kills the adapter); a channel
+   * MID-TURN flips to deferred and closes itself when the turn ends, so an
+   * abandoned generation still finishes and persists natively.
+   */
+  async closeAll(ownerId: string): Promise<{ closed: number; deferred: number }> {
+    let closed = 0;
+    let deferred = 0;
+    for (const session of [...this.live.values()]) {
+      if (session.ownerId !== ownerId) continue;
+      if (session.busy) {
+        session.closeWhenIdle = true;
+        deferred += 1;
+        continue;
+      }
+      await this.closeInternal(session, 'user', { notifyDaemon: true });
+      closed += 1;
+    }
+    if (closed > 0 || deferred > 0) this.pushSnapshot(ownerId);
+    return { closed, deferred };
   }
 
   /** Daemon's `chat:session.ready` — spawn+initialize+session/new done (or failed). */
@@ -260,6 +328,7 @@ export class ChatService {
     session.agentVersion = evt.agentVersion;
     session.nativeSessionId = evt.nativeSessionId;
     session.promptCapabilities = evt.promptCapabilities;
+    this.pushSnapshot(session.ownerId);
 
     // The opener joined at open(); if they disconnected before the agent came
     // up, nobody is watching — close instead of running an agent subprocess
@@ -316,6 +385,7 @@ export class ChatService {
     } else if (event.kind === 'session_status') {
       const wasBusy = session.busy;
       session.busy = event.state === 'active';
+      if (wasBusy !== session.busy) this.pushSnapshot(session.ownerId);
       // Viewers left while this turn ran — once it ends, the channel closes
       // (relay the idle event first; the room may still have a rejoiner).
       if (wasBusy && !session.busy && session.closeWhenIdle) {
@@ -541,5 +611,6 @@ export class ChatService {
         ...(reason !== '' ? { reason } : {}),
       });
     }
+    this.pushSnapshot(session.ownerId);
   }
 }

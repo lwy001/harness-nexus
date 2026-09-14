@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeftIcon,
@@ -17,6 +17,7 @@ import { AppShell } from '@/components/app-shell';
 import {
   appSocket,
   emitWithAck,
+  type ChatChannelView,
   type ChatEventEnvelope,
   type ChatHistoryEvent,
   type ChatSessionClosedPush,
@@ -33,6 +34,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/chat/chat-stream.js';
+import { ChannelTabs } from '@/components/chat/channel-tabs.js';
+import { useChatChannels } from '@/components/chat/use-chat-channels.js';
 import { Composer, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
 import { FilePicker } from '@/components/chat/file-picker.js';
@@ -113,6 +116,8 @@ function relativeTime(iso: string | null | undefined, locale: string): string {
 
 export function AgentSessionPage() {
   const { agentId = '' } = useParams();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { logout } = useAuth();
   const { t, lang } = useI18n();
   const [agent, setAgent] = useState<AgentInstanceView | null>(null);
@@ -132,13 +137,15 @@ export function AgentSessionPage() {
   /** From the ready push's promptCapabilities — gates image attach. */
   const [imageSupported, setImageSupported] = useState(false);
   const [conversation, dispatch] = useReducer(fold, undefined, createFoldState);
+  /** 9 W11 B — the tab strip's live-channel truth (snapshot pushes). */
+  const channels = useChatChannels();
   /** Phase carried by an open ack (consumed by the sessionId effect). */
   const pendingPhaseRef = useRef<'ready' | null>(null);
   /**
-   * The live channel id. Row hops and page exits must CLOSE it: server
-   * teardown keys on the browser socket, which an SPA navigation never
-   * drops, so an abandoned channel would sit against the machine's
-   * channel cap until three hops make every further open reject.
+   * The live channel id, for row hops WITHIN the page (leave-before-enter)
+   * and the lost-ready-push recovery. Since W11 the page exit no longer
+   * closes the channel: the tab bar makes live channels visible and
+   * closable (×, 一键清理), and viewer-gone + the machine budget bound them.
    */
   const liveChannelRef = useRef('');
   const phaseRef = useRef(phase);
@@ -180,17 +187,17 @@ export function AgentSessionPage() {
     void refreshSessions();
   }, [refreshSessions]);
 
-  // Leaving the page (or switching agents) disconnects the live channel —
-  // the SPA socket survives navigation, so nothing else would free it.
+  // 9 W11 B — arriving via a CHANNEL TAB of another agent: `?ch=<wireId>`
+  // rejoins that channel once the agent data loaded (the tab bar stays
+  // source-of-truth: if the channel died meanwhile, the rejoin bounces and
+  // the rail shows its native session for a fresh resume).
+  const chParam = searchParams.get('ch');
   useEffect(() => {
-    return () => {
-      const live = liveChannelRef.current;
-      liveChannelRef.current = '';
-      if (live !== '') {
-        appSocket().emit('chat:session.close', { sessionId: live, reason: 'user' });
-      }
-    };
-  }, [agentId]);
+    if (chParam === null || agentId === '' || agent === null) return;
+    setSearchParams({}, { replace: true });
+    void openChannel(chParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chParam, agentId, agent]);
 
   // Reset the pane whenever the channel changes.
   useEffect(() => {
@@ -262,18 +269,20 @@ export function AgentSessionPage() {
     rejoinId?: string,
     directory?: string,
     resume?: { sessionId: string; cwd: string },
+    opts?: { keepPrevious?: boolean },
   ): Promise<void> {
     if (agentId === '') return;
     setError(null);
     // Leave before entering: the channel we are abandoning is disconnected
-    // FIRST, so its slot against `CHAT_MAX_SESSIONS_PER_MACHINE` is free by the
-    // time the new open is judged. Closing only after a successful open meant a
+    // FIRST, so its slot against `CHAT_MAX_SESSIONS_PER_MACHINE` is free by
+    // the time the new open is judged. Closing only after a successful open meant a
     // rejected open (the cap already full) left the old channel live and the
     // page wedged — every further click rejected, nothing ever freed.
     // A rejoin of the SAME channel (the lost-ready-push recovery below) must
-    // not close the thing it is about to rejoin.
+    // not close the thing it is about to rejoin. `keepPrevious` is the 9 W11
+    // tab-switch arm: the previous channel STAYS live in a background tab.
     const previous = liveChannelRef.current;
-    if (previous !== '' && previous !== rejoinId) {
+    if (!opts?.keepPrevious && previous !== '' && previous !== rejoinId) {
       liveChannelRef.current = '';
       void emitWithAck('chat:session.close', { sessionId: previous, reason: 'user' });
     }
@@ -459,10 +468,56 @@ export function AgentSessionPage() {
     void refreshSessions();
   }
 
+  // ---- 9 W11 B — live-channel tab handlers ----
+
+  /** Tab click: same agent → in-page switch keeping the previous channel
+   *  alive; another agent → route there and rejoin via `?ch=`. */
+  function activateChannel(channel: ChatChannelView): void {
+    if (channel.sessionId === sessionId) return;
+    if (channel.agentInstanceId === agentId) {
+      void openChannel(channel.sessionId, undefined, undefined, { keepPrevious: true });
+    } else {
+      navigate(`/chat/agents/${channel.agentInstanceId}?ch=${channel.sessionId}`);
+    }
+  }
+
+  /** Tab × — close that one channel (the page reacts via chat:session.closed
+   *  when it is the current one; a background tab just leaves the snapshot). */
+  function closeChannelTab(channel: ChatChannelView): void {
+    void emitWithAck('chat:session.close', {
+      sessionId: channel.sessionId,
+      reason: 'user',
+    });
+  }
+
+  /** 一键清理 — busy channels defer (finish the turn), idle ones close now. */
+  async function cleanupChannels(): Promise<void> {
+    if (!confirm(t('chat.tabsCleanupConfirm'))) return;
+    const res = await emitWithAck<{ closed?: number; deferred?: number }>(
+      'chat:channels.closeAll',
+      {},
+    );
+    toast.success(
+      t('chat.tabsCleanupDone', { closed: res.closed ?? 0, deferred: res.deferred ?? 0 }),
+    );
+  }
+
   const groups = useMemo(
     () => (rail.state === 'ready' ? groupSessions(rail.sessions) : []),
     [rail],
   );
+  /**
+   * 9 W11 B — live-channel truth OVERLAID onto rail rows by native id: the
+   * listing's `open` stamps are a moment-in-time snapshot, the pushes are
+   * current. Rows between listing refreshes stay truthful.
+   */
+  const channelByNative = useMemo(() => {
+    const m = new Map<string, ChatChannelView>();
+    for (const ch of channels) {
+      if (ch.nativeSessionId !== undefined) m.set(ch.nativeSessionId, ch);
+    }
+    return m;
+  }, [channels]);
   const currentCwd =
     rail.state === 'ready'
       ? (rail.sessions.find((s) => s.sessionId === nativeSessionId)?.cwd ?? undefined)
@@ -483,218 +538,234 @@ export function AgentSessionPage() {
 
   return (
     <AppShell variant="full">
-      <div className="flex h-full min-h-0">
-        {/* Left rail: new session + the agent's native sessions, grouped by cwd */}
-        <aside className="bg-sidebar/40 hidden w-72 shrink-0 flex-col border-r md:flex">
-          <div className="flex items-center gap-2 border-b px-3 py-2.5">
-            <Button asChild variant="ghost" size="sm" className="gap-1.5 px-2">
-              <Link to="/chat">
-                <ArrowLeftIcon className="size-3.5" />
-                <span className="text-xs">{t('chat.backToAgents')}</span>
-              </Link>
-            </Button>
-            <span className="min-w-0 flex-1" />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              title={t('common.refresh')}
-              onClick={() => void refreshSessions()}
-            >
-              <RefreshCwIcon className="size-3.5" />
-            </Button>
-          </div>
-          <div className="border-b p-3">
-            <Button
-              className="w-full"
-              size="sm"
-              onClick={() => setPickerOpen(true)}
-              disabled={machine === null || !machine.online || !machine.remoteChatEnabled}
-            >
-              <PlusIcon className="size-4" />
-              {t('chat.newSession')}
-            </Button>
-            <p className="text-muted-foreground mt-1.5 text-center text-[11px]">
-              {t('chat.disconnectHint')}
-            </p>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {rail.state === 'loading' ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">{t('common.loading')}</p>
-            ) : rail.state === 'offline' ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.sessionsOffline')}</p>
-            ) : rail.state === 'daemon-old' ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">
-                {t('chat.sessionsDaemonOld')}
-              </p>
-            ) : rail.state === 'error' ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">{rail.message}</p>
-            ) : !rail.supported ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">
-                {t('chat.sessionsUnsupported')}
-              </p>
-            ) : groups.length === 0 ? (
-              <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.noSessions')}</p>
-            ) : (
-              groups.map((group) => (
-                <div key={group.cwd} className="mb-3">
-                  <div
-                    className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
-                    title={group.cwd}
-                  >
-                    <FolderIcon className="size-3 shrink-0" />
-                    <span className="truncate">{cwdBasename(group.cwd)}</span>
-                  </div>
-                  {group.sessions.map((s) => {
-                    const active = s.sessionId === nativeSessionId;
-                    const stale = s.staleReason !== undefined;
-                    // A live channel is attached: clicking REJOINS it (a fresh
-                    // resume would spawn a second channel for the same agent
-                    // session — dsh refuses that outright).
-                    const open = s.open === true && s.openChannelId !== undefined;
-                    return (
-                      <button
-                        key={s.sessionId}
-                        type="button"
-                        disabled={stale && !active}
-                        onClick={() =>
-                          active || stale
-                            ? undefined
-                            : open
-                              ? void openChannel(s.openChannelId, undefined, {
-                                  sessionId: s.sessionId,
-                                  cwd: s.cwd,
-                                })
-                              : void openChannel(undefined, undefined, {
-                                  sessionId: s.sessionId,
-                                  cwd: s.cwd,
-                                })
-                        }
-                        className={cn(
-                          'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
-                          active ? 'bg-accent' : stale ? 'cursor-default' : 'hover:bg-accent/60',
-                          stale && !active && 'opacity-50',
-                        )}
-                        title={
-                          stale
-                            ? t('chat.staleModel', { model: s.model ?? '?' })
-                            : open && !active
-                              ? t('chat.channelOpenHint')
-                              : (s.title ?? s.cwd)
-                        }
-                      >
-                        <span className="flex w-full items-center justify-between gap-2">
-                          <span className="truncate">{s.title ?? t('chat.untitled')}</span>
-                          <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                            {relativeTime(s.updatedAt, dateLocale(lang))}
-                          </span>
-                        </span>
-                        <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
-                          {active ? (
-                            <>
-                              <span className="bg-signal inline-block size-1.5 rounded-full" />
-                              {t('chat.working')}
-                            </>
-                          ) : stale ? (
-                            t('chat.staleModel', { model: s.model ?? '?' })
-                          ) : open ? (
-                            <>
-                              <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
-                              {t('chat.channelOpen')}
-                            </>
-                          ) : (
-                            <>
-                              <PlayIcon className="size-2.5" />
-                              {t('chat.resumeSession')}
-                            </>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))
-            )}
-          </div>
-        </aside>
-
-        {/* Right: toolbar + stream + composer */}
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-            <BotIcon className="text-muted-foreground size-4 shrink-0" />
-            <span className="truncate text-sm font-medium">{agent?.name ?? t('chat.title')}</span>
-            {agent !== null ? (
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {agent.target}
-              </Badge>
-            ) : null}
-            {phase === 'connecting' ? (
-              <span className="text-muted-foreground text-xs">{t('chat.connecting')}</span>
-            ) : null}
-            {phase === 'ready' && conversation.turnActive ? (
-              <span className="text-signal flex items-center gap-1.5 text-xs">
-                <span className="bg-signal inline-block size-1.5 animate-pulse rounded-full" />
-                {t('chat.working')}
-              </span>
-            ) : null}
-            {phase === 'closed' ? (
-              <span className="text-muted-foreground truncate text-xs">
-                {error !== null ? t('chat.closedWithError', { error }) : t('chat.closed')}
-              </span>
-            ) : null}
-            <span className="min-w-0 flex-1" />
-            {phase === 'ready' || phase === 'connecting' ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void disconnectChannel()}
-                title={t('chat.disconnectHint')}
-              >
-                <XIcon className="size-3.5" />
-                <span className="hidden sm:inline">{t('chat.disconnect')}</span>
+      <div className="flex h-full min-h-0 flex-col">
+        <ChannelTabs
+          channels={channels}
+          activeSessionId={sessionId}
+          onActivate={activateChannel}
+          onClose={closeChannelTab}
+          onCleanup={() => void cleanupChannels()}
+        />
+        <div className="flex h-full min-h-0">
+          {/* Left rail: new session + the agent's native sessions, grouped by cwd */}
+          <aside className="bg-sidebar/40 hidden w-72 shrink-0 flex-col border-r md:flex">
+            <div className="flex items-center gap-2 border-b px-3 py-2.5">
+              <Button asChild variant="ghost" size="sm" className="gap-1.5 px-2">
+                <Link to="/chat">
+                  <ArrowLeftIcon className="size-3.5" />
+                  <span className="text-xs">{t('chat.backToAgents')}</span>
+                </Link>
               </Button>
-            ) : null}
-          </div>
-
-          {error !== null && phase !== 'closed' ? (
-            <p className="text-destructive border-destructive/30 bg-destructive/5 border-b px-4 py-2 text-xs">
-              {error}
-            </p>
-          ) : null}
-
-          <ChatStream
-            state={conversation}
-            cwd={currentCwd}
-            onPermissionRespond={(requestId, optionId) =>
-              void respondPermission(requestId, optionId)
-            }
-          />
-
-          <div className="shrink-0 p-3">
-            <div className="mx-auto w-full max-w-3xl">
-              <Composer
-                value={draft}
-                onChange={changeDraft}
-                phase={phase}
-                turnActive={conversation.turnActive}
-                usage={conversation.usage}
-                onSend={() => void send()}
-                onCancel={() => void cancelTurn()}
-                attachments={attachments}
-                fileRefs={fileRefs}
-                onRemoveAttachment={(id) =>
-                  setAttachments((prev) => prev.filter((a) => a.id !== id))
-                }
-                onRemoveFileRef={(uri) => setFileRefs((prev) => prev.filter((f) => f.uri !== uri))}
-                onPickImages={(files) => void addImages(files)}
-                onOpenFilePicker={() => setFilePickerOpen(true)}
-                imageSupported={imageSupported}
-                config={conversation.config satisfies ComposerConfig}
-                onConfigSet={(set) => void configSet(set)}
-              />
+              <span className="min-w-0 flex-1" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                title={t('common.refresh')}
+                onClick={() => void refreshSessions()}
+              >
+                <RefreshCwIcon className="size-3.5" />
+              </Button>
             </div>
-          </div>
-        </section>
+            <div className="border-b p-3">
+              <Button
+                className="w-full"
+                size="sm"
+                onClick={() => setPickerOpen(true)}
+                disabled={machine === null || !machine.online || !machine.remoteChatEnabled}
+              >
+                <PlusIcon className="size-4" />
+                {t('chat.newSession')}
+              </Button>
+              <p className="text-muted-foreground mt-1.5 text-center text-[11px]">
+                {t('chat.disconnectHint')}
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {rail.state === 'loading' ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">{t('common.loading')}</p>
+              ) : rail.state === 'offline' ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">
+                  {t('chat.sessionsOffline')}
+                </p>
+              ) : rail.state === 'daemon-old' ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">
+                  {t('chat.sessionsDaemonOld')}
+                </p>
+              ) : rail.state === 'error' ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">{rail.message}</p>
+              ) : !rail.supported ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">
+                  {t('chat.sessionsUnsupported')}
+                </p>
+              ) : groups.length === 0 ? (
+                <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.noSessions')}</p>
+              ) : (
+                groups.map((group) => (
+                  <div key={group.cwd} className="mb-3">
+                    <div
+                      className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
+                      title={group.cwd}
+                    >
+                      <FolderIcon className="size-3 shrink-0" />
+                      <span className="truncate">{cwdBasename(group.cwd)}</span>
+                    </div>
+                    {group.sessions.map((s) => {
+                      const active = s.sessionId === nativeSessionId;
+                      const stale = s.staleReason !== undefined;
+                      // A live channel is attached (W11: the PUSH overlay wins,
+                      // the listing stamps are just the initial paint): clicking
+                      // REJOINS it — a fresh resume would spawn a second channel
+                      // for the same agent session (dsh refuses that outright).
+                      const attached = channelByNative.get(s.sessionId);
+                      const openChannelId = attached?.sessionId ?? s.openChannelId;
+                      const open = attached !== undefined || openChannelId !== undefined;
+                      return (
+                        <button
+                          key={s.sessionId}
+                          type="button"
+                          disabled={stale && !active}
+                          onClick={() =>
+                            active || stale
+                              ? undefined
+                              : open
+                                ? void openChannel(openChannelId, undefined, {
+                                    sessionId: s.sessionId,
+                                    cwd: s.cwd,
+                                  })
+                                : void openChannel(undefined, undefined, {
+                                    sessionId: s.sessionId,
+                                    cwd: s.cwd,
+                                  })
+                          }
+                          className={cn(
+                            'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
+                            active ? 'bg-accent' : stale ? 'cursor-default' : 'hover:bg-accent/60',
+                            stale && !active && 'opacity-50',
+                          )}
+                          title={
+                            stale
+                              ? t('chat.staleModel', { model: s.model ?? '?' })
+                              : open && !active
+                                ? t('chat.channelOpenHint')
+                                : (s.title ?? s.cwd)
+                          }
+                        >
+                          <span className="flex w-full items-center justify-between gap-2">
+                            <span className="truncate">{s.title ?? t('chat.untitled')}</span>
+                            <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
+                              {relativeTime(s.updatedAt, dateLocale(lang))}
+                            </span>
+                          </span>
+                          <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
+                            {active ? (
+                              <>
+                                <span className="bg-signal inline-block size-1.5 rounded-full" />
+                                {t('chat.working')}
+                              </>
+                            ) : stale ? (
+                              t('chat.staleModel', { model: s.model ?? '?' })
+                            ) : open ? (
+                              <>
+                                <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
+                                {t('chat.channelOpen')}
+                              </>
+                            ) : (
+                              <>
+                                <PlayIcon className="size-2.5" />
+                                {t('chat.resumeSession')}
+                              </>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+
+          {/* Right: toolbar + stream + composer */}
+          <section className="flex min-w-0 flex-1 flex-col">
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+              <BotIcon className="text-muted-foreground size-4 shrink-0" />
+              <span className="truncate text-sm font-medium">{agent?.name ?? t('chat.title')}</span>
+              {agent !== null ? (
+                <Badge variant="secondary" className="font-mono text-[10px]">
+                  {agent.target}
+                </Badge>
+              ) : null}
+              {phase === 'connecting' ? (
+                <span className="text-muted-foreground text-xs">{t('chat.connecting')}</span>
+              ) : null}
+              {phase === 'ready' && conversation.turnActive ? (
+                <span className="text-signal flex items-center gap-1.5 text-xs">
+                  <span className="bg-signal inline-block size-1.5 animate-pulse rounded-full" />
+                  {t('chat.working')}
+                </span>
+              ) : null}
+              {phase === 'closed' ? (
+                <span className="text-muted-foreground truncate text-xs">
+                  {error !== null ? t('chat.closedWithError', { error }) : t('chat.closed')}
+                </span>
+              ) : null}
+              <span className="min-w-0 flex-1" />
+              {phase === 'ready' || phase === 'connecting' ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void disconnectChannel()}
+                  title={t('chat.disconnectHint')}
+                >
+                  <XIcon className="size-3.5" />
+                  <span className="hidden sm:inline">{t('chat.disconnect')}</span>
+                </Button>
+              ) : null}
+            </div>
+
+            {error !== null && phase !== 'closed' ? (
+              <p className="text-destructive border-destructive/30 bg-destructive/5 border-b px-4 py-2 text-xs">
+                {error}
+              </p>
+            ) : null}
+
+            <ChatStream
+              state={conversation}
+              cwd={currentCwd}
+              onPermissionRespond={(requestId, optionId) =>
+                void respondPermission(requestId, optionId)
+              }
+            />
+
+            <div className="shrink-0 p-3">
+              <div className="mx-auto w-full max-w-3xl">
+                <Composer
+                  value={draft}
+                  onChange={changeDraft}
+                  phase={phase}
+                  turnActive={conversation.turnActive}
+                  usage={conversation.usage}
+                  onSend={() => void send()}
+                  onCancel={() => void cancelTurn()}
+                  attachments={attachments}
+                  fileRefs={fileRefs}
+                  onRemoveAttachment={(id) =>
+                    setAttachments((prev) => prev.filter((a) => a.id !== id))
+                  }
+                  onRemoveFileRef={(uri) =>
+                    setFileRefs((prev) => prev.filter((f) => f.uri !== uri))
+                  }
+                  onPickImages={(files) => void addImages(files)}
+                  onOpenFilePicker={() => setFilePickerOpen(true)}
+                  imageSupported={imageSupported}
+                  config={conversation.config satisfies ComposerConfig}
+                  onConfigSet={(set) => void configSet(set)}
+                />
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
 
       {machine !== null ? (

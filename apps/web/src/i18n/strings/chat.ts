@@ -74,6 +74,14 @@ const en = {
   channelOpen: 'open — click to rejoin',
   channelOpenHint: 'This session has a live channel — click to rejoin it.',
   evicted: 'This channel was closed to make room for a newer one — reopen the session to continue.',
+  // ---- 9 W11 B: live-channel tabs ----
+  tabCloseAria: 'Close channel {id}',
+  tabDeferred: 'finishing',
+  tabsCleanup: 'Close all',
+  tabsCleanupTitle: 'Close every live channel (idle now; mid-turn channels finish first)',
+  tabsCleanupConfirm:
+    'Close all live channels? Idle channels close immediately; channels mid-turn finish the current turn, then close. The conversations stay with the agents.',
+  tabsCleanupDone: '{closed} closed · {deferred} finishing after their turns',
   // ---- 9 W9: sender controls ----
   addMenuAria: 'Attach image or reference a file',
   attachImage: 'Attach image',
@@ -175,6 +183,14 @@ const zh: typeof en = {
   channelOpen: '已打开 — 点击重连',
   channelOpenHint: '此会话已有连线中的通道——点击可回到该对话。',
   evicted: '此通道已为更新的会话让位而被关闭——重新打开该会话即可继续。',
+  // ---- 9 W11 B: live-channel tabs ----
+  tabCloseAria: '关闭通道 {id}',
+  tabDeferred: '收尾中',
+  tabsCleanup: '一键清理',
+  tabsCleanupTitle: '关闭全部活动通道（空闲的立即关闭；输出中的先完成当前回合）',
+  tabsCleanupConfirm:
+    '关闭全部活动通道？空闲通道立即关闭；正在输出的通道会在本轮结束后关闭。对话记录保留在 Agent 内，不受影响。',
+  tabsCleanupDone: '已关闭 {closed} 个 · {deferred} 个将在本轮结束后关闭',
   // ---- 9 W9: sender controls ----
   addMenuAria: '添加图片或引用文件',
   attachImage: '添加图片',
