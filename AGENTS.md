@@ -1065,6 +1065,44 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
   `providerGone` note). Strings in `strings/llmProviders.ts` +
   `machineDetail.*` W10 keys (en/zh).
 
+## Adapter lifecycle & session truth (Phase 9 W11)
+
+Full design in `docs/design/phase-9-w11-adapter-lifecycle.md` (problem
+inventory D1–D5 with evidence, slices A–F). Summary for daily work —
+**slice B is SHIPPED (server+web, daemon untouched); A/C/D/E designed**:
+
+- **`chat:channels` is a per-user SNAPSHOT push** (owner's `user:<id>` /app
+  room), emitted by `ChatService` on open / ready / every `closeInternal` /
+  the `session_status` busy flip, plus once per `/app` connect. A page that
+  mounted later (SPA navigation — the socket survives it) catches up via
+  `chat:channels.sync` whose ACK carries the same snapshot. Channel view:
+  `{sessionId, agentInstanceId, machineId, target, phase, busy, deferred,
+nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
+- **The tab bar** (`components/chat/channel-tabs.tsx` + `useChatChannels`
+  hook) renders at the top of BOTH chat pages, hidden with zero live
+  channels. Tab click activates (same agent → in-page `openChannel` with
+  `keepPrevious` so the previous channel STAYS live; other agent → route +
+  `?ch=` rejoin — AgentSession consumes the param once after the agent
+  loads). Tab × closes one channel; busy dot is deliberately muted (the
+  live-turn indicator keeps the view's single `--signal` spend).
+- **Page exit no longer auto-closes the channel** (the W6 unmount-close is
+  GONE): live channels are visible tabs, individually closable, and bounded
+  by the machine budget + eviction + viewer-gone on real socket loss. A full
+  page reload still drops idle channels (socket dies → `onViewerGone`).
+- **一键清理** = `chat:channels.closeAll` (browser → server, owner-only):
+  idle channels close now, busy ones flip `closeWhenIdle` (finish the turn,
+  then close — an abandoned generation still persists natively); ACK carries
+  `{closed, deferred}` for the toast; confirm-first in the UI.
+- Rail rows overlay the push truth by native id over the listing's
+  moment-in-time `open` stamps — the listing is still the row source
+  (titles/cwd cost a daemon round-trip); only `open`/`openChannelId` stay
+  live between refreshes.
+- **Still open in W11** (see the design doc): A (daemon pid ledger + boot
+  sweep — the orphaned-adapter class), C (`GET /api/machines/:id/adapters`
+  - MachineDetail panel), D (sessions:list TTL cache), E (/ctl disconnect
+    grace window — a transient daemon flap still reaps every channel on the
+    machine, demonstrated live during the B E2E).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `docs/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
