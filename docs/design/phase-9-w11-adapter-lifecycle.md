@@ -256,3 +256,26 @@ on the rig.
   whose viewer left mid-turn shows as a tab finishing in the background —
   the rail row beneath it stays plain 已打开 (the overlay keys on presence,
   not viewer identity).
+
+## Post-ship fix — channel liveness is USER-scoped (2026-09-14, same day)
+
+User-found with two browser windows on one account: window A's full-page
+refresh closed every channel, yanking the tabs out of window B. Root cause:
+the tab bar is USER-scoped (every window shows every live channel), but
+liveness was still ROOM-scoped (C5 round 2's `onViewerGone` closed channels
+whose channel-room went empty) — a window merely displaying the tabs was not
+a viewer, so the opening window carried the channels alone.
+
+`onViewerGone` now closes idle channels only when the user's LAST `/app
+socket disconnects (busy ones still defer); the ready-path opener-dead check
+follows the same rule (any window of the user counts as watching). Because a
+starting channel can now survive its opener's refresh mid-spawn, rejoining a
+`starting`channel re-attaches (ack`phase: 'starting'`, join, wait for the
+real ready push) instead of bouncing `SESSION_NOT_FOUND`into a duplicate
+fresh resume.`ChatIO.channelSockets`was replaced by`userSockets`.
+
+This supersedes C5's "Viewer-scoped channels" room-membership rule — the
+per-channel room still governs EVENT delivery (a window only receives a
+channel's stream after opening/rejoining it there), but it no longer governs
+liveness. Two viewer-gone tests were re-based accordingly; two regression
+tests cover the two-window survival and the starting rejoin.

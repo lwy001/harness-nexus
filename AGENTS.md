@@ -1095,8 +1095,11 @@ nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
   eviction, daemon loss).
 - **Page exit no longer auto-closes the channel** (the W6 unmount-close is
   GONE): live channels are visible tabs, individually closable, and bounded
-  by the machine budget + eviction + viewer-gone on real socket loss. A full
-  page reload still drops idle channels (socket dies → `onViewerGone`).
+  by the machine budget + eviction + viewer-gone. Liveness is USER-scoped
+  (user-found two-window fix): a full page reload drops idle channels only
+  when it was the user's LAST connected window — any other window (even one
+  just showing the tab bar) keeps them; a still-STARTING channel survives its
+  opener's refresh and can be rejoined mid-spawn.
 - **一键清理** = `chat:channels.closeAll` (browser → server, owner-only):
   idle channels close now, busy ones flip `closeWhenIdle` (finish the turn,
   then close — an abandoned generation still persists natively); ACK carries
@@ -1298,10 +1301,13 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   the offline transition: a newly connected daemon owns zero channels by
   construction, and a fast daemon restart could skip the offline reap — that is
   what wedged a machine until the server itself restarted.
-  **Viewer-scoped channels (round 2, same doc § "Viewer-scoped channels"):**
-  a /app socket disconnect closes the user's channels whose room is empty
-  (`onViewerGone`; a mid-turn channel defers via `closeWhenIdle` so an
-  abandoned generation still finishes). Listing rows are SYNTHESIZED for live
+  **Viewer-scoped channels (round 2, same doc § "Viewer-scoped channels";
+  liveness revised 9 W11 to be USER-scoped):** a /app socket disconnect
+  closes the user's idle channels only when it was their LAST connected
+  window (`onViewerGone` checks `userSockets` — any window showing the tab
+  bar keeps them alive; a mid-turn channel defers via `closeWhenIdle` so an
+  abandoned generation still finishes; the per-channel room still governs
+  which window receives the stream). Listing rows are SYNTHESIZED for live
   channels with no native row yet (claude-code writes a transcript only on the
   first message). The claude resume dialect needs BOTH `loadSession` locations
   (`deriveSessionCaps`: result root = Zed adapters, nested in
