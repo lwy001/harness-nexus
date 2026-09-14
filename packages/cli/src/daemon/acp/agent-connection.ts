@@ -260,9 +260,12 @@ export class AcpAgentConnection {
       this.pending.delete(Number(msg.id));
       clearTimeout(pending.timer);
       if (msg.error !== undefined) {
-        // Error `data` (e.g. dsh's `details: "no adapter registered for …"`)
-        // rides along — the callers key retry/surface logic off it.
-        const details = (msg.error as { data?: { details?: string } }).data?.details;
+        // Error `data` rides along — the callers key retry/surface logic off
+        // it. The detail FIELD differs per adapter dialect: dsh uses
+        // `data.details`, codex-acp uses `data.message` (its top-level
+        // message is a useless "Internal error").
+        const data = (msg.error as { data?: { details?: string; message?: string } }).data;
+        const details = [data?.message, data?.details].filter(Boolean).join(': ');
         pending.reject(
           new Error(`${msg.error.message ?? 'ACP request failed'}${details ? `: ${details}` : ''}`),
         );

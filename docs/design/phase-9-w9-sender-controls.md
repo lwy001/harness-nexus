@@ -212,3 +212,20 @@ png|jpeg|webp|gif }`; send-path schemas refine ≤4 images and ≤6MB total
 deploy --prod` + strip the one absolute self-symlink
   `node_modules/.pnpm/node_modules/@harness-nexus/cli` before `docker cp`).
   Daemon restart reaps channels; post-run adapter scan: zero processes.
+
+## Post-ship fix — `hnx/prompt-error` now carries adapter `data.message` (2026-09-14)
+
+Rig finding (codex): when a turn fails at the TRANSPORT layer (gateway
+unreachable, TLS verification failure), codex-acp answers `session/prompt`
+with `-32603 "Internal error"` and hides the real reason in
+`error.data.message` (`"stream disconnected before completion: error sending
+request for url (…)"`). The daemon's JSON-RPC error mapping only read
+`data.details` (dsh's dialect — see its `"no adapter registered…"` rejections),
+so the system note was a bare, useless `Internal error`. The mapping
+(`agent-connection.ts`) now joins BOTH dialect fields (`data.message`, then
+`data.details`) onto the top-level message; the fixture gained a
+`please error with detail` arm and `chat.test.ts` a regression test asserting
+the full enriched string. Unrelated-but-same-session rig note: that failure
+was the machine container missing `ca-certificates` (codex-acp is the only
+NATIVE adapter — system openssl + system CA store; Node adapters bundle their
+own CAs and stayed green, which is what made it look gateway-side).
