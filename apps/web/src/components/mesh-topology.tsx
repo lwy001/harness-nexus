@@ -4,22 +4,23 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n';
 
 /**
- * Dashboard signature: a mesh topology of configured upstreams converging on
- * the Harness Nexus node.
+ * Dashboard signature: the CONSTELLATION. Upstream MCP servers fan in from
+ * the left, the Harness Nexus hub sits at the center, and the machine FLEET
+ * fans out on the right — the picture is the product: upstreams converge on
+ * the nexus, and the nexus reaches out to manage the machines' Agents.
  *
- * Each node's dot reflects its real connection state from the live registry
- * (Phase 2.2): `connected` shows the live `--ok` accent, `error`/`connecting`
- * show warn, and `disconnected`/unknown show muted. The legend documents the
- * states so the diagram never lies.
- *
- * Nodes are laid out on the left half of an SVG, fanning into a central hub on
- * the right. Up to 6 named upstreams are drawn directly; beyond that, the
- * overflow is summarized so the diagram never lies by omission.
+ * Every dot reflects a REAL state: upstream dots come from the live registry
+ * (`connected` → `--ok`, `connecting` muted, `error` → `--warn`); machine
+ * dots come from presence (`online` → `--ok`, offline muted) and flip live
+ * on `machine:status` pushes. The legend documents the states so the diagram
+ * never lies, and overflow is summarized on both sides so it never lies by
+ * omission either.
  */
 
 import type { McpServerStatus } from '@harness-nexus/sdk';
 
 type Upstream = { id: string; name: string };
+export type FleetNode = { id: string; name: string; online: boolean; agentCount: number };
 
 /** Map a live status to a Dot variant for rendering. */
 function dotVariantFor(
@@ -35,31 +36,43 @@ function dotVariantFor(
   return 'configured';
 }
 
-const MAX_NAMED = 6;
+const MAX_NAMED_UPSTREAMS = 4;
+const MAX_NAMED_MACHINES = 5;
 // Geometric constants hoisted out of render (static across renders).
-const W = 640;
-const H = 280;
-const HUB_X = 470;
-const HUB_Y = H / 2;
+const W = 760;
+const HUB_X = W / 2;
+const UPSTREAM_X = 70;
+const MACHINE_X = W - 78;
+/** Canvas height follows the tallest fan — sparse fleets get a compact card
+ *  instead of a single row floating in 300px of dead whitespace. */
+const canvasH = (upCount: number, machineCount: number): number =>
+  Math.min(300, Math.max(176, 88 + Math.max(upCount, machineCount) * 48));
 
 export function MeshTopology({
   servers,
   loading,
   statuses,
+  machines,
 }: {
   servers: Upstream[];
   loading: boolean;
   statuses?: McpServerStatus[];
+  machines?: FleetNode[];
 }) {
   const { t } = useI18n();
-  const shown = servers.slice(0, MAX_NAMED);
-  const overflow = Math.max(0, servers.length - MAX_NAMED);
+  const shownUp = servers.slice(0, MAX_NAMED_UPSTREAMS);
+  const overflowUp = Math.max(0, servers.length - MAX_NAMED_UPSTREAMS);
+  const fleet = machines ?? [];
+  const shownMachines = fleet.slice(0, MAX_NAMED_MACHINES);
+  const overflowMachines = Math.max(0, fleet.length - MAX_NAMED_MACHINES);
   const hasLive = !!statuses;
+  const H = canvasH(shownUp.length, shownMachines.length);
+  const HUB_Y = H / 2;
 
   if (loading) {
     return (
       <div
-        className="border-muted-foreground/20 bg-muted/30 flex h-[280px] items-center justify-center rounded-xl border border-dashed"
+        className="border-muted-foreground/20 bg-muted/30 flex h-[240px] items-center justify-center rounded-xl border border-dashed"
         role="status"
         aria-live="polite"
       >
@@ -70,7 +83,7 @@ export function MeshTopology({
 
   if (servers.length === 0) {
     return (
-      <div className="border-muted-foreground/20 bg-muted/30 flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
+      <div className="border-muted-foreground/20 bg-muted/30 flex h-[240px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
         <ServerIcon className="text-muted-foreground size-6" />
         <div>
           <p className="text-foreground text-sm font-medium">{t('dashboard.noServers')}</p>
@@ -85,15 +98,20 @@ export function MeshTopology({
     );
   }
 
-  const count = shown.length;
-  // Spread nodes evenly across the vertical span, inset from the edges.
-  const top = 36;
-  const bottom = H - 36;
-  const span = count > 1 ? (bottom - top) / (count - 1) : 0;
+  // Spread each fan evenly across the vertical span, inset from the edges.
+  const spread = (count: number): ((i: number) => number) => {
+    const top = 34;
+    const bottom = H - 34;
+    if (count <= 1) return () => HUB_Y;
+    const step = (bottom - top) / (count - 1);
+    return (i: number) => top + i * step;
+  };
+  const upY = spread(shownUp.length);
+  const machineY = spread(shownMachines.length);
 
   return (
     <div className="border-border bg-card overflow-hidden rounded-xl border">
-      <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
+      <div className="border-border flex items-center justify-between gap-4 border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-foreground text-sm font-medium">{t('dashboard.yourMesh')}</span>
           <span className="text-muted-foreground text-xs nums">
@@ -102,8 +120,8 @@ export function MeshTopology({
             })}
           </span>
         </div>
-        {/* Legend — documents the live connection states. */}
-        <div className="flex items-center gap-3 text-xs">
+        {/* Legend — documents the live states on both sides of the hub. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           {hasLive ? (
             <>
               <span className="text-muted-foreground flex items-center gap-1.5">
@@ -118,59 +136,63 @@ export function MeshTopology({
               <Dot variant="configured" /> {t('dashboard.legendConfigured')}
             </span>
           )}
+          <span className="bg-border mx-1 inline-block h-3 w-px" aria-hidden="true" />
+          <span className="text-muted-foreground flex items-center gap-1.5">
+            <Dot variant="online" /> {t('dashboard.legendOnline')}
+          </span>
+          <span className="text-muted-foreground flex items-center gap-1.5">
+            <Dot variant="configured" /> {t('dashboard.legendOffline')}
+          </span>
         </div>
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="h-[238px] w-full"
+        className="w-full"
+        style={{ aspectRatio: `${W} / ${H}` }}
         role="img"
-        aria-label={t('dashboard.meshAria', { count: servers.length })}
+        aria-label={t('dashboard.meshAria', {
+          count: servers.length + fleet.length,
+        })}
       >
         {/* signal lines: upstreams -> nexus */}
         <g stroke="currentColor" strokeWidth="1.5" className="text-signal/45">
-          {shown.map((s, i) => {
-            const y = count === 1 ? HUB_Y : top + i * span;
-            return <line key={`l-${s.id}`} x1={70} y1={y} x2={HUB_X - 14} y2={HUB_Y} />;
-          })}
+          {shownUp.map((s, i) => (
+            <line key={`l-${s.id}`} x1={UPSTREAM_X} y1={upY(i)} x2={HUB_X - 16} y2={HUB_Y} />
+          ))}
         </g>
 
-        {/* upstream nodes */}
-        {shown.map((s, i) => {
-          const y = count === 1 ? HUB_Y : top + i * span;
+        {/* upstream nodes — label sits right of the dot */}
+        {shownUp.map((s, i) => {
+          const y = upY(i);
           const variant = dotVariantFor(s.id, statuses);
           return (
             <g key={s.id}>
-              <circle cx={70} cy={y} r={5} className={nodeFill(variant)} />
+              <circle cx={UPSTREAM_X} cy={y} r={5} className={nodeFill(variant)} />
               <text
-                x={86}
+                x={UPSTREAM_X + 16}
                 y={y + 1}
                 className="fill-foreground"
                 fontSize="13"
                 fontFamily="var(--font-mono)"
                 dominantBaseline="middle"
               >
-                {truncate(s.name, 22)}
+                {truncate(s.name, 20)}
               </text>
             </g>
           );
         })}
 
-        {overflow > 0 && (
+        {overflowUp > 0 && (
           <text
-            x={86}
-            y={bottom + 22}
+            x={UPSTREAM_X + 16}
+            y={H - 14}
             className="fill-muted-foreground"
             fontSize="12"
             fontFamily="var(--font-mono)"
           >
-            {t('dashboard.moreCount', { count: overflow })}
+            {t('dashboard.moreCount', { count: overflowUp })}
           </text>
         )}
-
-        {/* re-exposed fan-out (the one aggregated connection) */}
-        <g stroke="currentColor" strokeWidth="1.5" className="text-signal/45">
-          <line x1={HUB_X + 14} y1={HUB_Y} x2={W - 50} y2={HUB_Y} />
-        </g>
 
         {/* the nexus node */}
         <circle cx={HUB_X} cy={HUB_Y} r={14} className="fill-signal" />
@@ -186,17 +208,77 @@ export function MeshTopology({
           Harness Nexus
         </text>
 
-        {/* downstream consumer dot */}
-        <circle cx={W - 50} cy={HUB_Y} r={5} className="fill-muted-foreground/70" />
-        <text
-          x={W - 50}
-          y={HUB_Y - 16}
-          className="fill-muted-foreground"
-          fontSize="11"
-          textAnchor="middle"
-        >
-          {t('dashboard.tools')}
-        </text>
+        {/* signal lines: nexus -> machines */}
+        <g stroke="currentColor" strokeWidth="1.5" className="text-signal/45">
+          {shownMachines.map((m, i) => (
+            <line key={`lm-${m.id}`} x1={HUB_X + 16} y1={HUB_Y} x2={MACHINE_X} y2={machineY(i)} />
+          ))}
+        </g>
+
+        {/* machine nodes — label sits LEFT of the dot, agent count under it */}
+        {shownMachines.map((m, i) => {
+          const y = machineY(i);
+          return (
+            <g key={m.id}>
+              <circle
+                cx={MACHINE_X}
+                cy={y}
+                r={5}
+                className={m.online ? 'fill-ok' : 'fill-muted-foreground/70'}
+              />
+              <text
+                x={MACHINE_X - 16}
+                y={y - 4}
+                className="fill-foreground"
+                fontSize="13"
+                fontFamily="var(--font-mono)"
+                textAnchor="end"
+                dominantBaseline="middle"
+              >
+                {truncate(m.name, 18)}
+              </text>
+              <text
+                x={MACHINE_X - 16}
+                y={y + 13}
+                className="fill-muted-foreground"
+                fontSize="11"
+                fontFamily="var(--font-mono)"
+                textAnchor="end"
+                dominantBaseline="middle"
+              >
+                {t(m.agentCount === 1 ? 'dashboard.agentOne' : 'dashboard.agentMany', {
+                  count: m.agentCount,
+                })}
+              </text>
+            </g>
+          );
+        })}
+
+        {overflowMachines > 0 && (
+          <text
+            x={MACHINE_X - 16}
+            y={H - 14}
+            className="fill-muted-foreground"
+            fontSize="12"
+            fontFamily="var(--font-mono)"
+            textAnchor="end"
+          >
+            {t('dashboard.moreMachines', { count: overflowMachines })}
+          </text>
+        )}
+
+        {fleet.length === 0 && (
+          <text
+            x={MACHINE_X - 10}
+            y={HUB_Y + 1}
+            className="fill-muted-foreground"
+            fontSize="12"
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            {t('dashboard.noMachinesNode')}
+          </text>
+        )}
       </svg>
     </div>
   );

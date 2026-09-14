@@ -3,64 +3,100 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  UsersIcon,
-  SettingsIcon,
-  KeyRoundIcon,
-  ServerIcon,
-  LayersIcon,
   ArrowRightIcon,
+  BoxesIcon,
+  KeyRoundIcon,
+  LaptopIcon,
+  LayersIcon,
+  PlugZapIcon,
+  SettingsIcon,
+  UsersIcon,
 } from 'lucide-react';
 import { useAuth, withAuthGuard } from '@/auth';
 import { api } from '@/api';
 import { useI18n } from '@/i18n';
+import { appSocket, type MachineStatusEvent } from '@/realtime';
 import {
   HarnessNexusError,
+  type AgentInstanceView,
   type CredentialView,
+  type LlmProviderView,
+  type MachineView,
   type McpServer,
   type McpServerStatus,
   type Profile,
+  type Resource,
 } from '@harness-nexus/sdk';
 import { AppShell } from '@/components/app-shell';
-import { MeshTopology } from '@/components/mesh-topology';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { MeshTopology, type FleetNode } from '@/components/mesh-topology';
+import { Button } from '@/components/ui/button';
 
+/**
+ * Overview — the fleet posture page. The constellation hero draws the whole
+ * product (upstreams → nexus → machines, every dot a real state), the
+ * figures strip answers "what's alive", and the two columns below are the
+ * working entries: the fleet list (machine → manage, agent chip → chat) and
+ * the assets panel. Machine presence flips LIVE on `machine:status` pushes.
+ */
 export function DashboardPage() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
 
+  const [machines, setMachines] = useState<MachineView[] | null>(null);
+  const [agentsByMachine, setAgentsByMachine] = useState<Map<string, AgentInstanceView[]> | null>(
+    null,
+  );
   const [servers, setServers] = useState<McpServer[] | null>(null);
+  // null = fetch failed/unavailable — the MCP figure degrades to the bare total.
   const [statuses, setStatuses] = useState<McpServerStatus[] | null>(null);
-  const [creds, setCreds] = useState<CredentialView[] | null>(null);
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
+  const [resources, setResources] = useState<Resource[] | null>(null);
+  const [creds, setCreds] = useState<CredentialView[] | null>(null);
+  const [providers, setProviders] = useState<LlmProviderView[] | null>(null);
 
-  // Parallel fetch — the lists are independent, so don't serialize them.
+  // Parallel fetch — every list is independent, so don't serialize them.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
-        const [s, st, c, p] = await Promise.all([
+        const [m, s, st, p, r, c, lp] = await Promise.all([
+          withAuthGuard(() => api.listMachines(), logout),
           withAuthGuard(() => api.listMcpServers(), logout),
-          withAuthGuard(
-            () => api.listMcpServerStatuses().catch(() => [] as McpServerStatus[]),
-            logout,
-          ),
-          withAuthGuard(() => api.listCredentials(), logout),
+          withAuthGuard(() => api.listMcpServerStatuses().catch(() => null), logout) as Promise<
+            McpServerStatus[] | null
+          >,
           withAuthGuard(() => api.listProfiles(), logout),
+          withAuthGuard(() => api.listResources(), logout),
+          withAuthGuard(() => api.listCredentials(), logout),
+          withAuthGuard(() => api.listLlmProviders(), logout),
         ]);
         if (cancelled) return;
+        setMachines(m);
         setServers(s);
         setStatuses(st);
-        setCreds(c);
         setProfiles(p);
+        setResources(r);
+        setCreds(c);
+        setProviders(lp);
+        // Agents per machine — independent lists, parallel (the Chat page's
+        // pattern); a failing per-machine list degrades to "no agents" only.
+        const entries = await Promise.all(
+          m.map(async (x) => [x.id, await api.listMachineAgents(x.id).catch(() => [])] as const),
+        );
+        if (cancelled) return;
+        setAgentsByMachine(new Map(entries));
       } catch (e) {
         if (cancelled) return;
         toast.error(e instanceof HarnessNexusError ? e.message : t('dashboard.loadFailed'));
+        setMachines([]);
+        setAgentsByMachine(new Map());
         setServers([]);
-        setStatuses([]);
-        setCreds([]);
+        setStatuses(null);
         setProfiles([]);
+        setResources([]);
+        setCreds([]);
+        setProviders([]);
       }
     })();
     return () => {
@@ -68,17 +104,52 @@ export function DashboardPage() {
     };
   }, [logout]);
 
+  // Live presence: flip machine dots/rows in place on machine:status pushes.
+  useEffect(() => {
+    const socket = appSocket();
+    const onStatus = (e: MachineStatusEvent): void => {
+      setMachines(
+        (prev) =>
+          prev?.map((m) =>
+            m.id === e.machineId
+              ? {
+                  ...m,
+                  online: e.online,
+                  lastSeenAt: e.lastSeenAt,
+                  ...(e.daemonVersion !== undefined ? { daemonVersion: e.daemonVersion } : {}),
+                }
+              : m,
+          ) ?? prev,
+      );
+    };
+    socket.on('machine:status', onStatus);
+    return () => {
+      socket.off('machine:status', onStatus);
+    };
+  }, []);
+
   if (!user) return null;
 
-  const serverCount = servers?.length ?? 0;
-  const credCount = creds?.length ?? 0;
-  const profileCount = profiles?.length ?? 0;
+  const onlineCount = (machines ?? []).filter((m) => m.online).length;
+  const agentTotal = (agentsByMachine ? [...agentsByMachine.values()] : []).reduce(
+    (n, list) => n + list.length,
+    0,
+  );
+  const connectedUpstreams =
+    statuses !== null ? statuses.filter((s) => s.status === 'connected').length : null;
+
+  const fleetNodes: FleetNode[] = (machines ?? []).map((m) => ({
+    id: m.id,
+    name: m.name,
+    online: m.online,
+    agentCount: agentsByMachine?.get(m.id)?.length ?? 0,
+  }));
 
   return (
     <AppShell>
-      {/* Hero — the signature. The mesh is the most characteristic thing in
-          this product's world, so it leads instead of a "Welcome" headline. */}
-      <section className="mb-8">
+      {/* Hero — the signature. The constellation IS the product: upstreams
+          converge on the nexus, the nexus reaches out to the fleet. */}
+      <section className="mb-6">
         <div className="mb-3">
           <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.title')}</h1>
           <p className="text-muted-foreground mt-1 text-sm">{t('dashboard.subtitle')}</p>
@@ -87,77 +158,133 @@ export function DashboardPage() {
           servers={servers ?? []}
           loading={servers === null}
           statuses={statuses ?? undefined}
+          machines={fleetNodes}
         />
       </section>
 
-      {/* Compact summary — replaces the old dead-link cards with live counts. */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <SummaryLink
+      {/* Posture figures — a quiet typographic strip, each figure routes on.
+          No rules: the hero card above already ends in a border. */}
+      <section className="mb-8 grid grid-cols-2 gap-x-6 gap-y-4 py-4 sm:grid-cols-4">
+        <FigureLink
+          to="/machines"
+          label={t('dashboard.machinesOnline')}
+          value={`${onlineCount}/${machines?.length ?? 0}`}
+          loading={machines === null}
+        />
+        <FigureLink
+          to="/chat"
+          label={t('dashboard.agentsFigure')}
+          value={String(agentTotal)}
+          loading={agentsByMachine === null}
+        />
+        <FigureLink
           to="/mcp-servers"
-          icon={<ServerIcon className="size-4" />}
-          label={t('dashboard.servers')}
-          count={serverCount}
+          label={t('dashboard.mcpConnected')}
+          value={
+            connectedUpstreams !== null
+              ? `${connectedUpstreams}/${servers?.length ?? 0}`
+              : String(servers?.length ?? 0)
+          }
           loading={servers === null}
-          hint={t('dashboard.serversHint')}
         />
-        <SummaryLink
-          to="/profiles"
-          icon={<LayersIcon className="size-4" />}
-          label={t('dashboard.profiles')}
-          count={profileCount}
-          loading={profiles === null}
-          hint={t('dashboard.profilesHint')}
+        <FigureLink
+          to="/llm-providers"
+          label={t('dashboard.providersFigure')}
+          value={String(providers?.length ?? 0)}
+          loading={providers === null}
         />
-        <SummaryLink
-          to="/credentials"
-          icon={<KeyRoundIcon className="size-4" />}
-          label={t('dashboard.credentials')}
-          count={credCount}
-          loading={creds === null}
-          hint={t('dashboard.credentialsHint')}
-        />
-        {isAdmin ? (
-          <>
-            <SummaryLink
-              to="/admin/users"
-              icon={<UsersIcon className="size-4" />}
-              label={t('dashboard.users')}
-              hint={t('dashboard.usersHint')}
-              actionLabel={t('dashboard.manage')}
-            />
-            <SummaryLink
-              to="/admin/settings"
-              icon={<SettingsIcon className="size-4" />}
-              label={t('dashboard.settings')}
-              hint={t('dashboard.settingsHint')}
-              actionLabel={t('dashboard.open')}
-            />
-          </>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                {t('dashboard.account')}
-                <Badge variant="secondary" className="text-[10px]">
-                  {user.role}
-                </Badge>
-              </CardTitle>
-              <CardDescription>{t('dashboard.accountDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="text-muted-foreground flex flex-col gap-1 text-sm">
-              <div className="min-w-0">
-                <span>{t('dashboard.username')} </span>
-                <span className="text-foreground font-medium">{user.username}</span>
+      </section>
+
+      {/* Working entries — the fleet (left, wide) and the assets (right). */}
+      <section className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <div>
+          <div className="mb-2">
+            <h2 className="text-base font-semibold">{t('dashboard.fleetHeading')}</h2>
+            <p className="text-muted-foreground text-xs">{t('dashboard.fleetHint')}</p>
+          </div>
+          {machines === null ? (
+            <p className="text-muted-foreground py-6 text-center text-sm" role="status">
+              {t('common.loading')}
+            </p>
+          ) : machines.length === 0 ? (
+            <div className="border-muted-foreground/20 bg-muted/30 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-8 text-center">
+              <LaptopIcon className="text-muted-foreground size-6" />
+              <div>
+                <p className="text-foreground text-sm font-medium">{t('dashboard.noMachines')}</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {t('dashboard.noMachinesHint')}
+                </p>
               </div>
-              {user.email && (
-                <div className="min-w-0">
-                  <span>{t('dashboard.email')} </span>
-                  <span className="text-foreground font-medium">{user.email}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              <Button asChild size="sm" className="mt-1">
+                <Link to="/machines">
+                  <LaptopIcon className="size-4" /> {t('dashboard.noMachinesAction')}
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="border-border divide-border rounded-xl border">
+              {machines.slice(0, 8).map((m) => (
+                <FleetRow key={m.id} machine={m} agents={agentsByMachine?.get(m.id) ?? []} />
+              ))}
+              {machines.length > 8 ? (
+                <Link
+                  to="/machines"
+                  className="text-muted-foreground hover:text-signal flex items-center justify-end gap-1 px-4 py-2 text-xs transition-colors"
+                >
+                  {t('dashboard.moreMachinesLink')}
+                  <ArrowRightIcon className="size-3.5" />
+                </Link>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="mb-2">
+            <h2 className="text-base font-semibold">{t('dashboard.assetsHeading')}</h2>
+            <p className="text-muted-foreground text-xs">{t('dashboard.assetsHint')}</p>
+          </div>
+          <div className="border-border divide-border rounded-xl border">
+            <AssetRow
+              to="/profiles"
+              icon={<LayersIcon className="size-4" />}
+              label={t('dashboard.assetProfiles')}
+              count={profiles?.length}
+            />
+            <AssetRow
+              to="/resources"
+              icon={<BoxesIcon className="size-4" />}
+              label={t('dashboard.assetResources')}
+              count={resources?.length}
+            />
+            <AssetRow
+              to="/credentials"
+              icon={<KeyRoundIcon className="size-4" />}
+              label={t('dashboard.assetCredentials')}
+              count={creds?.length}
+            />
+            <AssetRow
+              to="/llm-providers"
+              icon={<PlugZapIcon className="size-4" />}
+              label={t('dashboard.assetProviders')}
+              count={providers?.length}
+            />
+            {isAdmin ? (
+              <>
+                <AssetRow
+                  to="/admin/users"
+                  icon={<UsersIcon className="size-4" />}
+                  label={t('dashboard.users')}
+                />
+                <AssetRow
+                  to="/admin/settings"
+                  icon={<SettingsIcon className="size-4" />}
+                  label={t('dashboard.settings')}
+                />
+              </>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       <p className="text-muted-foreground mt-6 text-xs">
@@ -168,50 +295,111 @@ export function DashboardPage() {
   );
 }
 
-function SummaryLink({
+/** One posture figure — label above, big mono number below, whole cell routes. */
+function FigureLink({
+  to,
+  label,
+  value,
+  loading,
+}: {
+  to: string;
+  label: string;
+  value: string;
+  loading: boolean;
+}) {
+  return (
+    <Link to={to} className="group flex flex-col gap-1">
+      <span className="text-muted-foreground text-xs transition-colors group-hover:text-signal">
+        {label}
+      </span>
+      <span className="text-foreground text-2xl font-semibold tabular-nums">
+        {loading ? '—' : value}
+      </span>
+    </Link>
+  );
+}
+
+/**
+ * One fleet row: presence dot + machine name (→ machine detail) on the left,
+ * agent chips (→ that agent's chat session) on the right. Nested links are
+ * siblings, never nested — the name is the row link, chips stand alone.
+ */
+function FleetRow({ machine, agents }: { machine: MachineView; agents: AgentInstanceView[] }) {
+  const { t } = useI18n();
+  const shown = agents.slice(0, 3);
+  const overflow = agents.length - shown.length;
+  return (
+    <div className="hover:bg-muted/40 flex items-center gap-3 px-4 py-2.5 transition-colors">
+      <span
+        className={`inline-block size-2 shrink-0 rounded-full ${machine.online ? 'bg-ok' : 'bg-muted-foreground/70'}`}
+        aria-label={machine.online ? t('dashboard.legendOnline') : t('dashboard.legendOffline')}
+      />
+      <Link
+        to={`/machines/${machine.id}`}
+        className="group/min min-w-0 flex-1"
+        title={machine.name}
+      >
+        <span className="block truncate text-sm font-medium group-hover/min:text-signal transition-colors">
+          {machine.name}
+        </span>
+        <span className="text-muted-foreground block truncate font-mono text-xs tabular-nums">
+          {machine.daemonVersion ?? '—'}
+        </span>
+      </Link>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {agents.length === 0 ? (
+          <span className="text-muted-foreground text-xs">{t('dashboard.noAgents')}</span>
+        ) : (
+          <>
+            {shown.map((a) => (
+              <Link
+                key={a.id}
+                to={`/chat/agents/${a.id}`}
+                title={`${a.name} · ${a.source}`}
+                className="border-border bg-muted/40 hover:border-signal/50 rounded border px-1.5 py-0.5 font-mono text-xs transition-colors"
+              >
+                {a.target}
+              </Link>
+            ))}
+            {overflow > 0 ? (
+              <Link
+                to={`/machines/${machine.id}`}
+                className="text-muted-foreground px-1 font-mono text-xs tabular-nums"
+              >
+                {t('dashboard.moreAgents', { count: overflow })}
+              </Link>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One asset row — icon + label + mono count, arrow on hover. */
+function AssetRow({
   to,
   icon,
   label,
   count,
-  loading,
-  hint,
-  actionLabel,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   count?: number;
-  loading?: boolean;
-  hint: string;
-  actionLabel?: string;
 }) {
-  const { t } = useI18n();
   return (
-    <Link to={to} className="group">
-      <Card className="transition-colors group-hover:border-signal/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <span className="text-muted-foreground">{icon}</span>
-            {label}
-            <ArrowRightIcon className="text-muted-foreground/50 ml-auto size-4 transition-transform group-hover:translate-x-0.5" />
-          </CardTitle>
-          <CardDescription>{hint}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {count !== undefined ? (
-            <div className="flex items-baseline gap-2">
-              <span className="text-foreground text-2xl font-semibold tabular-nums">
-                {loading ? '—' : count}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {count === 1 ? t('dashboard.itemsOne') : t('dashboard.itemsMany')}
-              </span>
-            </div>
-          ) : (
-            <span className="text-signal text-sm font-medium">{actionLabel}</span>
-          )}
-        </CardContent>
-      </Card>
+    <Link
+      to={to}
+      className="hover:bg-muted/40 flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors"
+    >
+      <span className="text-muted-foreground">{icon}</span>
+      <span className="flex-1 truncate">{label}</span>
+      {count !== undefined ? (
+        <span className="text-muted-foreground font-mono text-xs tabular-nums">{count}</span>
+      ) : (
+        <ArrowRightIcon className="text-muted-foreground/50 size-4" />
+      )}
     </Link>
   );
 }
