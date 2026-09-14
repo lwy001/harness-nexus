@@ -37,8 +37,8 @@ export interface ChatIO {
   joinChannel(socketId: string, sessionId: string): void;
   /** Is that /app socket still connected? (Opener may vanish before ready.) */
   isAppSocketLive(socketId: string): boolean;
-  /** Ids of the /app sockets currently viewing a channel room. */
-  channelSockets(sessionId: string): Promise<string[]>;
+  /** Ids of the user's currently connected /app sockets (the `user:<id>` room). */
+  userSockets(userId: string): Promise<string[]>;
 }
 
 export interface ChatServiceDeps {
@@ -142,8 +142,15 @@ export class ChatService {
   ): Promise<ChatOpenResult> {
     if (rejoinSessionId !== undefined) {
       const existing = this.live.get(rejoinSessionId);
-      if (!existing || existing.ownerId !== ownerId || existing.phase === 'starting') {
+      if (!existing || existing.ownerId !== ownerId) {
         return { ok: false, code: 'SESSION_NOT_FOUND' };
+      }
+      if (existing.phase === 'starting') {
+        // 9 W11: with user-scoped liveness a channel SURVIVES its opener's
+        // page refresh mid-spawn (another window may be watching the tab) —
+        // reattach silently: join + ack 'starting'. The real ready push
+        // lands in the room when the agent comes up; no history to resync.
+        return { ok: true, sessionId: existing.sessionId, joined: true, phase: 'starting' };
       }
       // A re-join may be a page refresh whose listeners were attached after
       // the original ready push — re-push so every viewer settles.
@@ -330,11 +337,12 @@ export class ChatService {
     session.promptCapabilities = evt.promptCapabilities;
     this.pushSnapshot(session.ownerId);
 
-    // The opener joined at open(); if they disconnected before the agent came
-    // up, nobody is watching — close instead of running an agent subprocess
-    // unattended.
-    const opener = session.openerSocketId;
-    if (opener === null || !this.deps.io.isAppSocketLive(opener)) {
+    // The opener joined at open(); if the USER has no connected window left
+    // by the time the agent comes up, nobody is watching — close instead of
+    // running an agent subprocess unattended. (9 W11: user-scoped — the
+    // opener's page may have refreshed while another window of the same user
+    // still shows the tab bar; that window keeps the channel alive.)
+    if ((await this.deps.io.userSockets(session.ownerId)).length === 0) {
       await this.closeInternal(session, 'connection-lost', { notifyDaemon: true });
       return;
     }
@@ -558,19 +566,22 @@ export class ChatService {
   }
 
   /**
-   * A /app socket disconnected. Channels are view-scoped: when the LAST viewer
-   * of a channel leaves (tab closed or a full page refresh — the SPA socket
-   * survives ordinary navigation), the channel closes so its adapter dies
-   * instead of piling up on the machine and slowing every later spawn (the
-   * pile-up was what pushed claude-code opens past the ready watchdog —
-   * "sessions open empty"). A channel MID-TURN is not killed: it flips
+   * A /app socket disconnected. Channel liveness is USER-scoped (9 W11,
+   * revising C5's room-scoped rule): the tab bar shows every live channel of
+   * the user in EVERY window, so a window that merely displays the tabs is a
+   * legitimate keeper — one window's refresh must not kill the channels
+   * another window still shows. Idle channels close only when the user's LAST
+   * /app socket dies; a channel MID-TURN is never killed outright: it flips
    * `closeWhenIdle` and closes when the turn ends, so an abandoned generation
-   * still finishes and persists into the agent's native store.
+   * still finishes and persists into the agent's native store. (Before the
+   * tab bar, "last viewer" meant "last socket in the channel's room" — a
+   * second window watching the tabs did not count, and its tabs could be
+   * yanked away by another window's refresh.)
    */
   async onViewerGone(userId: string): Promise<void> {
+    if ((await this.deps.io.userSockets(userId)).length > 0) return;
     for (const session of [...this.live.values()]) {
       if (session.ownerId !== userId) continue;
-      if ((await this.deps.io.channelSockets(session.sessionId)).length > 0) continue;
       if (session.busy) {
         session.closeWhenIdle = true;
         continue;
