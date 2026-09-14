@@ -31,7 +31,7 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from '@harness-nexus/shared';
-import { AcpAgentConnection } from './acp/agent-connection.js';
+import { AcpAgentConnection, type JsonRpcId } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import {
   createDshLiveMapper,
@@ -94,7 +94,7 @@ interface DaemonSession {
   conn: AcpAgentConnection;
   busy: boolean;
   /** In-flight permission requests by our wire requestId. */
-  permissions: Map<string, { jsonrpcId: number; timer: NodeJS.Timeout }>;
+  permissions: Map<string, { jsonrpcId: JsonRpcId; timer: NodeJS.Timeout }>;
   /**
    * 9 W9 A — the merged session-config snapshot (modes + select options).
    * Source of truth for the composer's selectors; every change emits a FULL
@@ -145,6 +145,12 @@ const HISTORY_MAX = 2000;
 
 /** How long after arming the tap plugin may take to say hello (design: 3s). */
 const TAP_HANDSHAKE_MS = 3000;
+
+/**
+ * codex-acp's unknown-model notice (see `mapAcpUpdate`'s agent_message_chunk
+ * arm). Anchored on the stable prefix; the model id varies.
+ */
+const CODEX_MODEL_METADATA_NOTICE = /^Model metadata for `[^`]*` not found\./;
 
 /** Node fs surface for TranscriptTail. */
 const nodeTailFs: TailFs = {
@@ -1021,8 +1027,17 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
       const options = takeConfigOptions(update.configOptions);
       return options === null ? null : { kind: 'session_config', configOptions: options };
     }
-    case 'agent_message_chunk':
-      return { kind: 'message_delta', delta: chunkText(update) };
+    case 'agent_message_chunk': {
+      const delta = chunkText(update);
+      // codex-acp announces an unknown gateway model id by streaming a
+      // diagnostic AS AN ASSISTANT CHUNK, so it lands mid-transcript as if the
+      // model had said it. It is not model output; drop it. (The underlying
+      // condition — codex's built-in registry not knowing the custom model id —
+      // is what makes it fall back to a default context window; a root-level
+      // `model_context_window` in config.toml overrides that window, verified
+      // against codex-acp 0.16, but does not silence this notice.)
+      return CODEX_MODEL_METADATA_NOTICE.test(delta) ? null : { kind: 'message_delta', delta };
+    }
     case 'agent_thought_chunk':
       return { kind: 'thought_delta', delta: chunkText(update) };
     case 'tool_call':

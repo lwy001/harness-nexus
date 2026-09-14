@@ -378,7 +378,10 @@ function runPrompt(id, text, deferred = false) {
   }
 
   if (text.includes('ask-permission')) {
-    const permId = nextId++;
+    // 'ask-permission string-id' → a UUID request id (codex-acp's dialect).
+    // The daemon must echo it VERBATIM: a Number() coercion sends id:null and
+    // the response never matches, so the turn hangs forever.
+    const permId = text.includes('string-id') ? randomUUID() : nextId++;
     const toolCallId = `tool-${randomUUID().slice(0, 8)}`;
     send({
       jsonrpc: '2.0',
@@ -431,6 +434,23 @@ function runPrompt(id, text, deferred = false) {
   if (tapReady) {
     runTapSpeakerTurn(id, text, finish);
     return;
+  }
+
+  // codex-acp dialect: an unknown gateway model id is announced by streaming a
+  // DIAGNOSTIC as an assistant chunk. The daemon drops it (not model output).
+  if (text.includes('metadata-notice')) {
+    notify('session/update', {
+      sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        contentBlock: {
+          type: 'text',
+          text:
+            'Model metadata for `gw-model-x` not found. Defaulting to fallback metadata; ' +
+            'this can degrade performance and cause issues.',
+        },
+      },
+    });
   }
 
   notify('session/update', {
