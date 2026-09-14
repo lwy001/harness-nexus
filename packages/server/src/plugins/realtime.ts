@@ -123,8 +123,8 @@ export async function registerRealtime(
           if (socket) void socket.join(`chan:${sessionId}`);
         },
         isAppSocketLive: (socketId) => appNs.sockets.has(socketId),
-        channelSockets: async (sessionId) =>
-          (await appNs.in(`chan:${sessionId}`).fetchSockets()).map((s) => s.id),
+        userSockets: async (userId) =>
+          (await appNs.in(`user:${userId}`).fetchSockets()).map((s) => s.id),
       },
     },
     {

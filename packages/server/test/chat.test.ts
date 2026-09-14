@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { io, type Socket } from 'socket.io-client';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
@@ -638,10 +638,13 @@ describe('session lifecycle', () => {
   );
 
   it(
-    'the last viewer leaving (socket gone) closes an IDLE channel — the adapter dies',
+    'the last window leaving (socket gone) closes an IDLE channel — the adapter dies',
     { timeout: 10000 },
     async () => {
-      // A second viewer socket, so the file's shared `browser` stays alive.
+      // 9 W11 user-scoped liveness: park the suite's shared `browser` socket —
+      // "the last viewer" is now the user's last CONNECTED window, and the
+      // shared socket would keep the channel alive.
+      browser.disconnect();
       const viewer = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
       await once(viewer, 'connect');
       const startP = once(daemon, 'chat:session.start');
@@ -658,6 +661,8 @@ describe('session lifecycle', () => {
       viewer.close();
       const toDaemon = (await daemonCloseP) as { sessionId: string };
       expect(toDaemon.sessionId).toBe(start.sessionId);
+      browser = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(browser, 'connect');
     },
   );
 
@@ -665,6 +670,7 @@ describe('session lifecycle', () => {
     'the last viewer leaving MID-TURN closes the channel when the turn ends',
     { timeout: 15000 },
     async () => {
+      browser.disconnect();
       const viewer = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
       await once(viewer, 'connect');
       const startP = once(daemon, 'chat:session.start');
@@ -693,6 +699,8 @@ describe('session lifecycle', () => {
       });
       const toDaemon = (await daemonCloseP) as { sessionId: string };
       expect(toDaemon.sessionId).toBe(start.sessionId);
+      browser = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(browser, 'connect');
     },
   );
 
@@ -1037,6 +1045,89 @@ describe('chat:channels.sync (9 W11 B mount catch-up)', () => {
       } finally {
         b2.disconnect();
       }
+      await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+});
+
+describe('user-scoped channel liveness (9 W11)', () => {
+  // The machine enrolls with remoteChatEnabled=false; the gating test flips
+  // it, but each test here re-asserts it so the block is order-independent.
+  beforeEach(async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: { remoteChatEnabled: true },
+    });
+  });
+
+  it("one window's refresh does not kill channels another window still shows", async () => {
+    const d = await connectDaemon(['chat']);
+    // Park the suite's own socket — the whole point is controlling which of
+    // the USER's sockets remain.
+    browser.disconnect();
+    try {
+      const w1 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(w1, 'connect');
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(w1, agentId);
+      expect(res.error).toBeUndefined();
+      const sessionId = res.sessionId!;
+      await startP;
+      void d.emit('chat:session.ready', { sessionId, agentName: 'fixture-agent' });
+
+      // A second window of the SAME user (any chat page — it only shows tabs).
+      const w2 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(w2, 'connect');
+      await new Promise((r) => setTimeout(r, 200));
+
+      // w1 goes away entirely (full page refresh → socket disconnect).
+      w1.disconnect();
+      await new Promise((r) => setTimeout(r, 300));
+      let snap = (await emitAck(w2, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string }[];
+      };
+      expect(snap.channels.some((c) => c.sessionId === sessionId)).toBe(true);
+
+      // The LAST window leaving closes the idle channel.
+      w2.disconnect();
+      await new Promise((r) => setTimeout(r, 400));
+      const w3 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(w3, 'connect');
+      snap = (await emitAck(w3, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string }[];
+      };
+      expect(snap.channels.some((c) => c.sessionId === sessionId)).toBe(false);
+      w3.disconnect();
+    } finally {
+      browser = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+      await once(browser, 'connect');
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('rejoining a STARTING channel reattaches instead of bouncing', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      expect(res.error).toBeUndefined();
+      const sessionId = res.sessionId!;
+      await startP; // deliberately NO ready yet — still starting
+
+      const rejoin = await openSession(browser, agentId, sessionId);
+      expect(rejoin.error).toBeUndefined();
+      expect(rejoin.sessionId).toBe(sessionId);
+      expect(rejoin.phase).toBe('starting');
+
+      void d.emit('chat:session.ready', { sessionId, agentName: 'fixture-agent' });
+      const ready = await once(browser, 'chat:session.ready');
+      expect((ready as { sessionId: string }).sessionId).toBe(sessionId);
       await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
     } finally {
       d.disconnect();
