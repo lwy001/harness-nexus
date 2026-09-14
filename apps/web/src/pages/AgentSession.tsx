@@ -269,23 +269,16 @@ export function AgentSessionPage() {
     rejoinId?: string,
     directory?: string,
     resume?: { sessionId: string; cwd: string },
-    opts?: { keepPrevious?: boolean },
   ): Promise<void> {
     if (agentId === '') return;
     setError(null);
-    // Leave before entering: the channel we are abandoning is disconnected
-    // FIRST, so its slot against `CHAT_MAX_SESSIONS_PER_MACHINE` is free by
-    // the time the new open is judged. Closing only after a successful open meant a
-    // rejected open (the cap already full) left the old channel live and the
-    // page wedged — every further click rejected, nothing ever freed.
-    // A rejoin of the SAME channel (the lost-ready-push recovery below) must
-    // not close the thing it is about to rejoin. `keepPrevious` is the 9 W11
-    // tab-switch arm: the previous channel STAYS live in a background tab.
-    const previous = liveChannelRef.current;
-    if (!opts?.keepPrevious && previous !== '' && previous !== rejoinId) {
-      liveChannelRef.current = '';
-      void emitWithAck('chat:session.close', { sessionId: previous, reason: 'user' });
-    }
+    // 9 W11: an open NEVER closes other channels. The pre-tab
+    // leave-before-enter (free the CHAT_MAX_SESSIONS_PER_MACHINE slot before
+    // the new open is judged) is obsolete — the server EVICTS the oldest
+    // non-busy channel at the cap instead of rejecting, and every channel is
+    // a visible, closable tab. Closing happens only through explicit actions
+    // (tab ×, 断开, 一键清理) or the server's own lifecycle (viewer-gone,
+    // eviction, daemon loss).
     const ack = await emitWithAck<{
       sessionId?: string;
       phase?: 'starting' | 'ready';
@@ -305,13 +298,9 @@ export function AgentSessionPage() {
         await openChannel(undefined, undefined, resume);
         return;
       }
-      // Either we abandoned a live channel above, or the rejoin target is gone:
-      // both leave nothing live, so say so rather than keeping a composer that
-      // looks ready but would fail every send.
-      if (previous !== '') {
-        liveChannelRef.current = '';
-        setPhase('closed');
-      }
+      // The rejoin target is gone and nothing was replaced: surface the
+      // error, but the pane stays on the PREVIOUS channel — it was never
+      // closed (opens don't close), its listeners are still attached.
       setError(
         code === 'REMOTE_CHAT_DISABLED'
           ? t('chat.errRemoteChatDisabled')
@@ -475,7 +464,7 @@ export function AgentSessionPage() {
   function activateChannel(channel: ChatChannelView): void {
     if (channel.sessionId === sessionId) return;
     if (channel.agentInstanceId === agentId) {
-      void openChannel(channel.sessionId, undefined, undefined, { keepPrevious: true });
+      void openChannel(channel.sessionId);
     } else {
       navigate(`/chat/agents/${channel.agentInstanceId}?ch=${channel.sessionId}`);
     }
