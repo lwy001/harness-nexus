@@ -2,7 +2,10 @@
 
 > Status: **B (channel snapshot + tab bar + one-click cleanup) SHIPPED
 > 2026-09-14** (server+web only, daemon untouched — see §B and the post-ship
-> notes); A/C/D/E designed, not yet implemented. Trigger: three rig incidents
+> notes, including the same-day user-scoped-liveness fix); A/C/D/E designed,
+> not yet implemented, **re-prioritized by the §"Re-evaluation" after the B
+> post-ship fixes** (A ↑, E expanded with a reconnect-reconcile handshake,
+> new D6 idle-pressure decision point, D ↓). Trigger: three rig incidents
 > in one day (see §1) exposed that adapter processes are the least governed
 > object in the stack and that the session rail cannot answer "which of these
 > are actually alive". Predecessors: C5's channel lifecycle notes and the W7
@@ -45,6 +48,17 @@
   Socket.IO would have reconnected within ~1s; the server independently reaps
   its table on the offline transition. Surviving blips is cheap (grace
   window) and removes a whole class of "why did my channel close" surprises.
+  (Demonstrated live TWICE during the B E2E — see the post-ship notes.)
+- **D6 — Idle channels can now outlive any natural cleanup (NEW, raised by
+  the 2026-09-14 liveness change).** User-scoped liveness + the tab model
+  mean an idle channel stays alive while ANY window of the user is connected
+  — which, for a user who keeps the app open in a pinned tab, is
+  indefinitely. Every idle channel is a full adapter process (memory on the
+  machine, an open upstream session). The total budget (12/machine) caps the
+  worst case, and eviction prefers idle victims, so this is a pressure
+  question, not a leak — but the platform currently has no "you left 9 idle
+  agents running" story beyond the budget. See the re-evaluation section for
+  the decision point.
 
 ## Principles
 
@@ -131,8 +145,9 @@ busy flip) — a full per-user snapshot (small: ≤ dozen channels):
 - **Page exit no longer auto-closes the channel.** The W6 unmount-close
   existed because nothing else would free an abandoned channel; with the tab
   bar the live set is visible, individually closable, and bounded (machine
-  budget + eviction + viewer-gone on real socket loss). A FULL page reload
-  still drops idle channels (socket dies → onViewerGone) — by design.
+  budget + eviction + viewer-gone). A full page reload drops idle channels
+  only when it was the user's LAST connected window — see the user-scoped
+  liveness post-ship fix below.
 - **一键清理**: `chat:channels.closeAll` (owner-only). Idle channels close
   now; busy ones flip to `closeWhenIdle` and close when the turn ends (an
   abandoned generation still finishes and persists natively). The ACK
@@ -161,7 +176,10 @@ pgid, nativeSessionId?, startedAt, command }] }` straight from the live
   online + `chat` capability; 30s timeout → 504, same shape as the sessions
   route). SDK method + MachineDetail "适配器进程" panel: one row per adapter
   (target, native session, uptime, a kill button per row → reuses
-  `chat:session.close` semantics: teardown + ledger removal).
+  `chat:session.close` semantics: teardown + ledger removal). Since B, the
+  per-channel kill also exists as the tab-bar × for the owner; the panel's
+  kill remains the OPERATOR path (and the only one for a channel the tab
+  bar cannot reach).
 - The rail does NOT call this per row (it would respawn nothing but still
   cost a round-trip); the panel is on-demand from the machine page. The chat
   page's per-agent header may show a count badge fed from the same push in B
@@ -182,7 +200,7 @@ with B, the rail is correct between refreshes without paying anything.
 
 Tests (cli): hit serves cached rows without spawn; bypass respawns.
 
-## E. Disconnect grace window — kills D5
+## E. Disconnect grace window + reconnect reconcile — kills D5
 
 - Daemon: on `/ctl` `disconnect`, arm a `TEARDOWN_GRACE_MS` (default 8000)
   timer instead of tearing down immediately; `connect` cancels it. Mid-grace
@@ -194,11 +212,26 @@ Tests (cli): hit serves cached rows without spawn; bypass respawns.
   hard backstop — if the daemon really died, its grace timers died with it,
   the server reaps the table, and the ledger sweep (A) collects the
   processes on the next boot.
+- **Reconnect reconcile (added in the 2026-09-14 re-evaluation — the grace
+  window alone has a gap):** the post-W8 hardening reaps the server's
+  channel table on EVERY `/ctl` connection. A daemon that grace-KEPT its
+  sessions and reconnects after the server already marked the machine
+  offline therefore holds adapters no server row knows about — unjoinable
+  (`SESSION_NOT_FOUND`), invisible to the tab bar, and nothing ever closes
+  them. Fix: on `/ctl` connection (after `machine:hello`), the server sends
+  `chat:reconcile { sessionIds: [...] }` — its live rows for that machine —
+  and the daemon tears down any of its sessions NOT in the list. This also
+  covers the server-restart case (empty table → daemon empties its map) and
+  subsumes the current reap-on-reconnect as the row-side half of the same
+  handshake. (Not re-adopting rows from the daemon side deliberately:
+  rebuilding server state from the client inverts the ownership Principle 1.)
 - Deliberate close paths are unchanged (SIGTERM shutdown closes the socket
-  and does NOT wait the grace — `stop()` flushes teardown synchronously).
+  and does NOT wait the grace — `stop()` flushes teardown synchronously;
+  the grace timer must be cancelled/ignored on shutdown).
 
 Tests (cli): disconnect+reconnect within grace keeps sessions; past grace
-tears down. (server) unchanged behavior.
+tears down; reconcile drops unlisted sessions and keeps listed ones.
+(server) reconcile emission on /ctl connect.
 
 ## F. Spawn hardening (P2, optional) — trims the tree
 
@@ -223,19 +256,59 @@ latency, not correctness.
   the daemon owns processes; the server never trusts itself on this.
 - Cross-machine anything (each daemon is self-contained by design).
 
-## Plan (implementation order)
+## Plan (implementation order — re-prioritized 2026-09-14, see below)
 
 1. **S1 = A** (daemon-local, no wire change) — ledger + sweep + audit + tests.
-2. **S2 = B** (shared schema + server push + web merge) — the visible fix.
-3. **S3 = C** (coordinator + route + SDK + MachineDetail panel).
-4. **S4 = D** (listing cache) then **S5 = E** (grace window; touches both
-   sides — ship behind env kill-switches: `HN_TEARDOWN_GRACE_MS=0` restores
-   today's behavior).
-5. **F** optional follow-up.
+   HIGHEST: the tab model raised steady-state adapter counts, so the
+   orphan blast radius of a daemon hard-death grew with it.
+2. **S2 = B** — **SHIPPED** (snapshot push + tab bar + cleanup, plus the
+   mount-sync / opens-keep-channels / user-scoped-liveness fixes).
+3. **S3 = E** (grace window + reconnect reconcile; env kill-switch
+   `HN_TEARDOWN_GRACE_MS=0` restores today's behavior) — promoted ABOVE D:
+   demonstrated live twice, and it is now the last "my tab vanished"
+   surprise with a known cause.
+4. **S4 = C** (adapter report + MachineDetail panel) — unchanged value:
+   process truth is still invisible; the per-row kill is now redundant with
+   tab × for the OWNER but remains the operator path.
+5. **S5 = D** (listing TTL cache) — demoted: the push overlay made stale
+   LISTINGS matter less (only titles/updatedAt), so this is now a pure
+   cost optimization.
+6. **F** optional follow-up.
 
-Each slice is independently shippable; S1 and S2 together eliminate the
-orphan class and the stale-已打开 class — the two things actually observed
-on the rig.
+Each slice is independently shippable; S1 (orphans) and S3 (blip reap) are
+the two remaining defect classes actually observed on the rig.
+
+## Re-evaluation (2026-09-14, after the B post-ship fixes)
+
+What the four same-day fixes (tab bar, mount sync, opens-keep-channels,
+user-scoped liveness) changed about the REMAINING design:
+
+- **A ledger/sweep — priority UP, design unchanged.** Channels now persist
+  across page exits and window refreshes by design, so a machine routinely
+  holds more concurrent adapters than before; a daemon hard-death orphans
+  more of them at once. The ledger/boot-sweep design needs no revision (it
+  keys on pgids, orthogonal to channel lifetime).
+- **E grace window — scope EXPANDED (reconnect reconcile).** The grace
+  window alone leaves a leak: a daemon that grace-kept sessions and
+  reconnects after the server already reaped the table holds unjoinable,
+  invisible adapters forever. The reconcile handshake (server announces its
+  live rows on `/ctl` connect; the daemon drops everything unlisted) closes
+  it and also cleans up the server-restart case. See §E.
+- **D6 idle-channel pressure — NEW decision point.** Options: (a) do
+  nothing beyond the budget (12 adapters/machine max, idle-first eviction)
+  — honest, but a machine can sit at 12 idle agents; (b) an idle TTL
+  (`CHAT_IDLE_TTL_MS`, close idle channels after N minutes of no turn,
+  default OFF) — bounded memory, but closes a tab the user may still want;
+  (c) tab-bar idle-age display + a "close idle" variant of 一键清理 — keeps
+  every closure explicit, adds no server policy. **Recommendation: (c)
+  first (pure UI, no surprise closures), (b) as an operator knob shipped
+  default-off alongside it.** Revisit after real multi-session usage.
+- **D listing cache — priority DOWN** (the overlay made listing staleness
+  cosmetic), **C — unchanged**, **F — unchanged (P2)**.
+- No changes required in the SHIPPED B code from this re-evaluation; the
+  doc's B section and post-ship notes were corrected where the
+  user-scoped-liveness fix had obsoleted them (the "full page reload drops
+  idle channels" line).
 
 ## Post-ship notes (B, 2026-09-14)
 
@@ -266,13 +339,13 @@ liveness was still ROOM-scoped (C5 round 2's `onViewerGone` closed channels
 whose channel-room went empty) — a window merely displaying the tabs was not
 a viewer, so the opening window carried the channels alone.
 
-`onViewerGone` now closes idle channels only when the user's LAST `/app
+`onViewerGone` now closes idle channels only when the user's LAST `/app`
 socket disconnects (busy ones still defer); the ready-path opener-dead check
 follows the same rule (any window of the user counts as watching). Because a
 starting channel can now survive its opener's refresh mid-spawn, rejoining a
-`starting`channel re-attaches (ack`phase: 'starting'`, join, wait for the
-real ready push) instead of bouncing `SESSION_NOT_FOUND`into a duplicate
-fresh resume.`ChatIO.channelSockets`was replaced by`userSockets`.
+`starting` channel re-attaches (ack `phase: 'starting'`, join, wait for the
+real ready push) instead of bouncing `SESSION_NOT_FOUND` into a duplicate
+fresh resume. `ChatIO.channelSockets` was replaced by `userSockets`.
 
 This supersedes C5's "Viewer-scoped channels" room-membership rule — the
 per-channel room still governs EVENT delivery (a window only receives a
