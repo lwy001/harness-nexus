@@ -234,3 +234,24 @@ complete multi-model story this platform can express today.
   models — provider baseUrl should point at the CODING endpoint for
   coding-plan keys, and non-coding-plan models are rejected there with
   `UnsupportedModel`.
+
+## Post-ship note — codex warns about unknown model ids, and the window override (2026-09-14)
+
+Rig finding: a codex session streaming a chat turn opens with
+`Model metadata for \`deepseek-v4-flash\` not found. Defaulting to fallback
+metadata; this can degrade performance and cause issues.` **as an assistant
+message chunk** — codex-acp announces the condition in-band, so it landed
+mid-transcript as if the model had said it. The daemon now drops that exact
+notice (`mapAcpUpdate`, anchored on the stable prefix) since it is an adapter
+diagnostic, not output.
+
+The underlying condition is real: codex's built-in model registry does not
+know our gateway's custom model ids, so it falls back to a default context
+window (observed: 258400). Verified against codex-acp 0.16 that codex's
+ROOT-level `model_context_window` (plus `model_max_output_tokens`) DOES
+override the window it uses — 262144 configured → the adapter reported
+249036 (95% usable) — but it does NOT silence the notice. Writing those keys
+properly would therefore need a context-window field on the provider spec
+(W10's spec carries model IDS only, and the W3 writer's TOML root-key merge is
+already the right slot for it). Not scheduled; recorded here so the next wave
+does not re-derive it.
