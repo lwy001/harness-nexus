@@ -8,13 +8,13 @@
 
 Sources verified (all local / pinned):
 
-| Source | Version | Where |
-|---|---|---|
-| `@agentclientprotocol/claude-agent-acp` (CC wrapper) | **0.76.0** | rig machine npx cache (our shipped default) |
-| `@zed-industries/codex-acp` | **0.16.0** | npm tarball + GitHub `main` source |
-| dsh ACP adapter | **0.1.2-rc.1** | `~/acp-ref/dsh/packages/acp/acp/src/` (official monorepo checkout = rig version) |
-| `@agentclientprotocol/sdk` schema | wrapper 0.76's bundled SDK | npx cache `dist/schema/types.gen.d.ts` |
-| portal reference (UI logic) | snapshot 2026-09-10 | `~/acp-ref/portal/src/components/{ChatInput,SessionConfigBar}.tsx` + `hooks/useAcpConnection.ts` |
+| Source                                               | Version                    | Where                                                                                            |
+| ---------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `@agentclientprotocol/claude-agent-acp` (CC wrapper) | **0.76.0**                 | rig machine npx cache (our shipped default)                                                      |
+| `@zed-industries/codex-acp`                          | **0.16.0**                 | npm tarball + GitHub `main` source                                                               |
+| dsh ACP adapter                                      | **0.1.2-rc.1**             | `~/acp-ref/dsh/packages/acp/acp/src/` (official monorepo checkout = rig version)                 |
+| `@agentclientprotocol/sdk` schema                    | wrapper 0.76's bundled SDK | npx cache `dist/schema/types.gen.d.ts`                                                           |
+| portal reference (UI logic)                          | snapshot 2026-09-10        | `~/acp-ref/portal/src/components/{ChatInput,SessionConfigBar}.tsx` + `hooks/useAcpConnection.ts` |
 
 ## TL;DR
 
@@ -73,23 +73,23 @@ SessionConfigOption = {
   （wrapper 内部的 `updatedPermissions` 是 Claude SDK 内部事，不上 ACP 线）。
   我们 `acpPermissionOptionSchema` 的四种 kind 是对的，不用动。
 - `initialize` 响应的 `agentCapabilities.promptCapabilities.{image,audio,
-  embeddedContext}` 是**客户端判断附件按钮可不可用的依据**。
+embeddedContext}` 是**客户端判断附件按钮可不可用的依据**。
 
 ## 2. 适配器支持矩阵
 
-| 能力 | claude wrapper 0.76.0 | codex-acp 0.16.0 | dsh-acp 0.1.2-rc.1 |
-|---|---|---|---|
-| `modes` + `set_mode` | ✅ `default`(Manual)/`acceptEdits`/`plan`/`auto`（+`bypassPermissions` 仅当非 root 或 `IS_SANDBOX`；`dontAsk` 可解析但不进列表） | ✅ `read-only`/`auto`/`full-access`（approval+sandbox preset；untrusted 项目显示 read-only 以便信任升级） | ❌ **无**（权限模式不上 ACP） |
-| mode 也作为 configOption | ✅ id=`mode` | ✅ id=`mode`（名 "Approval Preset"） | ❌ |
-| model 选择 | ✅ id=`model`，来自 SDK model infos（含 context hint 归一化） | ✅ id=`model`，来自 models_manager presets（`show_in_picker` 过滤） | ✅ id=`model`，**provider 分组**（`group` 字段），value=JSON `[provider,model]` |
-| 思考级别 | ✅ id=`effort`，category `thought_level`，选项 = 当前模型 `supportedEffortLevels` + `default` 行；**持久化到 settings**（per-model `modelSettings`） | ✅ id=`reasoning_effort`，仅当 preset 支持 >1 档 | ✅ id=`reasoning_effort`，**按当前模型动态**（`llm.resolveModelInfo().reasoning.efforts`），`''` = Provider default |
-| 切换后推送 | ✅ `config_option_update` / `current_mode_update` | ✅ | ✅（另有 topology 变化自发推送） |
-| 换 model 的联动 | 重建 effort 选项；`auto` 模式在模型不支持时回落 `acceptEdits` 并提示 | — | **按 turn 钉死**：prompt 入场时 snapshot `selection`，切换只影响下一 turn |
-| 图片 prompt | ✅ base64 + **http(s) URL** 两种 | ✅ base64（转 data URL） | ✅ 仅 base64，png/jpeg/webp/gif，**canonical base64 严格校验**且要求当前路由支持图片（否则 invalid_params） |
-| `promptCapabilities` | `{image:true, embeddedContext:true}` 静态 | `{image:true, embeddedContext:true}` 静态 | `{image: 动态}`（按 provider+model 探测）+ `audio:false` |
-| resource_link（文件引用） | → `[@name](uri)` 文本链接（agent 自己用 Read 工具取） | → `[@name](uri)` 文本 | → `[resource_link name=… uri=…]` 文本标记（**最弱**：不会自动读） |
-| resource(text) 嵌入 | ✅ `<context ref=…>` 注入 | ✅ 同 | ❌ 不收 |
-| 音频 / resource(blob) | 忽略 | 忽略 | 拒绝/忽略 |
+| 能力                      | claude wrapper 0.76.0                                                                                                                                | codex-acp 0.16.0                                                                                          | dsh-acp 0.1.2-rc.1                                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `modes` + `set_mode`      | ✅ `default`(Manual)/`acceptEdits`/`plan`/`auto`（+`bypassPermissions` 仅当非 root 或 `IS_SANDBOX`；`dontAsk` 可解析但不进列表）                     | ✅ `read-only`/`auto`/`full-access`（approval+sandbox preset；untrusted 项目显示 read-only 以便信任升级） | ❌ **无**（权限模式不上 ACP）                                                                                       |
+| mode 也作为 configOption  | ✅ id=`mode`                                                                                                                                         | ✅ id=`mode`（名 "Approval Preset"）                                                                      | ❌                                                                                                                  |
+| model 选择                | ✅ id=`model`，来自 SDK model infos（含 context hint 归一化）                                                                                        | ✅ id=`model`，来自 models_manager presets（`show_in_picker` 过滤）                                       | ✅ id=`model`，**provider 分组**（`group` 字段），value=JSON `[provider,model]`                                     |
+| 思考级别                  | ✅ id=`effort`，category `thought_level`，选项 = 当前模型 `supportedEffortLevels` + `default` 行；**持久化到 settings**（per-model `modelSettings`） | ✅ id=`reasoning_effort`，仅当 preset 支持 >1 档                                                          | ✅ id=`reasoning_effort`，**按当前模型动态**（`llm.resolveModelInfo().reasoning.efforts`），`''` = Provider default |
+| 切换后推送                | ✅ `config_option_update` / `current_mode_update`                                                                                                    | ✅                                                                                                        | ✅（另有 topology 变化自发推送）                                                                                    |
+| 换 model 的联动           | 重建 effort 选项；`auto` 模式在模型不支持时回落 `acceptEdits` 并提示                                                                                 | —                                                                                                         | **按 turn 钉死**：prompt 入场时 snapshot `selection`，切换只影响下一 turn                                           |
+| 图片 prompt               | ✅ base64 + **http(s) URL** 两种                                                                                                                     | ✅ base64（转 data URL）                                                                                  | ✅ 仅 base64，png/jpeg/webp/gif，**canonical base64 严格校验**且要求当前路由支持图片（否则 invalid_params）         |
+| `promptCapabilities`      | `{image:true, embeddedContext:true}` 静态                                                                                                            | `{image:true, embeddedContext:true}` 静态                                                                 | `{image: 动态}`（按 provider+model 探测）+ `audio:false`                                                            |
+| resource_link（文件引用） | → `[@name](uri)` 文本链接（agent 自己用 Read 工具取）                                                                                                | → `[@name](uri)` 文本                                                                                     | → `[resource_link name=… uri=…]` 文本标记（**最弱**：不会自动读）                                                   |
+| resource(text) 嵌入       | ✅ `<context ref=…>` 注入                                                                                                                            | ✅ 同                                                                                                     | ❌ 不收                                                                                                             |
+| 音频 / resource(blob)     | 忽略                                                                                                                                                 | 忽略                                                                                                      | 拒绝/忽略                                                                                                           |
 
 模式语义备忘（UI 文案用）：
 
@@ -130,12 +130,12 @@ SessionConfigOption = {
 
 缺口（按层）：
 
-| 层 | 现状 | 需要 |
-|---|---|---|
-| shared | `promptBlockSchema` 无 `image` variant；`chatStreamEventSchema` 无 config 类事件；ready schema 无 caps | +image 块（带尺寸上限）；+`session_config` 事件（modes+configOptions 全量快照，last-wins）；+`chat:config.set` 请求（mode/option 二合一或两个）；ready +`promptCapabilities` |
+| 层     | 现状                                                                                                                                                          | 需要                                                                                                                                                                                                                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared | `promptBlockSchema` 无 `image` variant；`chatStreamEventSchema` 无 config 类事件；ready schema 无 caps                                                        | +image 块（带尺寸上限）；+`session_config` 事件（modes+configOptions 全量快照，last-wins）；+`chat:config.set` 请求（mode/option 二合一或两个）；ready +`promptCapabilities`                                                                                                                                    |
 | daemon | session/new/load/resume 响应只读 `sessionId`；`mapAcpUpdate` 对 `current_mode_update`/`config_option_update` 落到 `raw`；initialize 不捕获 promptCapabilities | 捕获 modes/configOptions → ready 事件带上 + 发一条 `session_config` 流事件（进 history ring，resync 免费回放）；两个 update 映射为 `session_config`（合并后全量推）；`chat:config.set` → `conn.request('session/set_mode'/'session/set_config_option')`；initialize 捕获 `agentCapabilities.promptCapabilities` |
-| server | 无对应 /app handler；`onStream` 校验白名单需要新事件 kind | `/app` `chat:config.set`（校验 + 转发 /ctl，owner 门禁同其它 chat handler）；新事件 kind 放行 |
-| web | fold 的 user 行是**纯文本**（`{row:'user', text}`，resource_link 折成 `[name]`）；composer 无附件/选择器控件 | fold user 行改 blocks 模型（文本 + 图片缩略图 chip + 文件 chip）；composer `+` 菜单（图片上传/文件引用）+ mode/model/effort 三个 select（数据驱动，idle 时才可切） |
+| server | 无对应 /app handler；`onStream` 校验白名单需要新事件 kind                                                                                                     | `/app` `chat:config.set`（校验 + 转发 /ctl，owner 门禁同其它 chat handler）；新事件 kind 放行                                                                                                                                                                                                                   |
+| web    | fold 的 user 行是**纯文本**（`{row:'user', text}`，resource_link 折成 `[name]`）；composer 无附件/选择器控件                                                  | fold user 行改 blocks 模型（文本 + 图片缩略图 chip + 文件 chip）；composer `+` 菜单（图片上传/文件引用）+ mode/model/effort 三个 select（数据驱动，idle 时才可切）                                                                                                                                              |
 
 ## 5. 方案（建议的 W9 切分）
 
@@ -176,13 +176,13 @@ wire（一次加齐）：
 ### B. 图片附件
 
 1. shared：`promptBlockSchema` + `{type:'image', data: base64(≤6MB),
-   mimeType: enum(png/jpeg/webp/gif)}`；`chatMessageSendRequestSchema` 的
+mimeType: enum(png/jpeg/webp/gif)}`；`chatMessageSendRequestSchema` 的
    总载荷上限校验（≤6MB/turn，≤4 图）。
 2. daemon：runPrompt 已原样转发 —— 仅需 schema 放行；dsh 拒绝时
    invalid_params 文案透传给 ack。
 3. web：
    - composer `+` 菜单 → 图片上传（file input accept 四种 mime）+ **粘贴**
-     + 拖拽（截图流的主路径是粘贴）。
+     - 拖拽（截图流的主路径是粘贴）。
    - **客户端先行压缩/限边**（canvas 长边 ≤1568px、质量 0.85 重编码）——
      把 wire 控制在数百 KB，而不是指望 8MB 缓冲；服务端仍设硬上限兜底。
    - draft 状态加附件 chips（缩略图 + 移除）；fold user 行改 blocks 模型渲染
