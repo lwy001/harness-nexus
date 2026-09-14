@@ -1010,12 +1010,12 @@ Summary for daily work:
 
 - **`LlmProvider`** (core domain + `UnitOfWork.llmProviders`, migration `0015`,
   sqlite/memory drivers) is a reusable LLM ROUTE — `{ name, api kind, baseUrl?,
-  credentialName, scope, ownerId }`. The API key is NEVER on the provider: it
+credentialName, scope, ownerId }`. The API key is NEVER on the provider: it
   lives in the encrypted Credential store, referenced by name (the W3 apply
   path's distributable gate is reused verbatim). Scope rules mirror
   credentials (global admin-mutate / personal owner-only, 404-hiding); name
   uniqueness per `(name, scope, owner)` is read-then-write → `409
-  PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
+PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
   scope field).
 - **Three api kinds** — `openai-chat` / `openai-responses` / `anthropic`
   (`providerApiKindSchema`) — FINER than the W3 spec flavor because codex is
@@ -1028,17 +1028,17 @@ Summary for daily work:
 - **获取模型 (model discovery)**: `POST /api/llm-providers/query-models` takes
   `{providerId}` OR explicit `{api, baseUrl?, credentialName}` (pre-save — the
   create dialog and the machine page's manual arm use it). The server resolves
-  + decrypts the credential and fetches the endpoint's model list
-  (`infra/provider-models.ts`; OpenAI `GET {base}/models` with bearer — a
-  non-`/v1` base tries `{base}/v1/models` then `{base}/models` on 404 —
-  Anthropic `GET {base}/v1/models?limit=1000` with `x-api-key` +
-  `anthropic-version`). This is the platform's SECOND deliberate outbound
-  HTTP surface (marketplace fetch is #1): GET-only, http(s) only,
-  `PROVIDER_MODELS_TIMEOUT_MS` (10s), 2 MiB body cap, results reduced to
-  ids/display names (≤1000, sorted, deduped). Failures map
-  `ProviderModelsError{kind}` → `502 PROVIDER_MODELS_FAILED` /
-  `504 PROVIDER_MODELS_TIMEOUT`; `fetchProviderModels` takes an injectable
-  `fetch` — tests NEVER touch the network.
+  - decrypts the credential and fetches the endpoint's model list
+    (`infra/provider-models.ts`; OpenAI `GET {base}/models` with bearer — a
+    non-`/v1` base tries `{base}/v1/models` then `{base}/models` on 404 —
+    Anthropic `GET {base}/v1/models?limit=1000` with `x-api-key` +
+    `anthropic-version`). This is the platform's SECOND deliberate outbound
+    HTTP surface (marketplace fetch is #1): GET-only, http(s) only,
+    `PROVIDER_MODELS_TIMEOUT_MS` (10s), 2 MiB body cap, results reduced to
+    ids/display names (≤1000, sorted, deduped). Failures map
+    `ProviderModelsError{kind}` → `502 PROVIDER_MODELS_FAILED` /
+    `504 PROVIDER_MODELS_TIMEOUT`; `fetchProviderModels` takes an injectable
+    `fetch` — tests NEVER touch the network.
 - **RuntimeConfigSpec additions (additive, optional)**: `providerId`
   (provenance — validated visible at PUT, echoed in the view so the machine
   form pre-selects; the spec stays a SNAPSHOT, deleting the provider never

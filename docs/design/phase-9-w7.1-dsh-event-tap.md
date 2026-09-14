@@ -33,13 +33,13 @@ overlay for extra plugins.
 1. `dsh --patch <path>` exists: "extra patch-list overlay applied after the
    profile layer (**repeatable**)" (`dsh --help`).
 2. Path-based plugin mounts: a patch yml of `- insert:\n  - id: hnx-tap\n
-   name: /abs/path/index.mjs` composes into `--profile acp --dump-config`
+name: /abs/path/index.mjs` composes into `--profile acp --dump-config`
    (87 → 88 entries). NOTE: patch entries are id-targeted — a bare
    `- id: <new>` errors with `entry "<id>" not found`; NEW rows require the
    `- insert:` directive.
 3. The plugin actually loads and runs at boot: a test plugin's `apply(ctx)`
    executed in a one-shot `dsh --profile headless --patch … "reply with just
-   the word ok"` run (task completed, dispose marker written).
+the word ok"` run (task completed, dispose marker written).
 4. The bus subscription works: the same plugin counted **22 `session/event`
    deliveries** during that one short task — the streaming raw material,
    in-process, zero latency.
@@ -114,7 +114,7 @@ the repo dev tree, the npm install, AND the container overlay.
   on the hello line (mismatch → destroy socket), buffered JSON-line parsing,
   `onEvent(sessionId, event)` callback, `close()`.
 - `chat.ts` (deepseek arm only): create listener BEFORE `AcpAgentConnection.
-  start` (the child needs the env); append `['--patch', <rendered yml>]` to
+start` (the child needs the env); append `['--patch', <rendered yml>]` to
   the resolved dsh argv (the fixture agent must tolerate the extra argv —
   verify; it likely ignores argv entirely); race handshake vs 3s timeout;
   on handshake: feed events through the SAME `createDshLiveMapper` instance
@@ -176,7 +176,7 @@ the repo dev tree, the npm install, AND the container overlay.
 ## Rollout (implementation order for the new session)
 
 1. Tap assets + build copy step + runtime path resolution (verify `dist/
-   daemon/dsh-tap/` survives npm pack and the container overlay).
+daemon/dsh-tap/` survives npm pack and the container overlay).
 2. `dsh-tap-listener.ts` + `chat.ts` spawn composition + fallback chain +
    settle-from-tap.
 3. Fixture tolerance for `--patch` argv + the two unit-test layers.
@@ -238,7 +238,7 @@ no server/web rebuild):**
   1ms, first delta 810ms** — per-LLM-chunk granularity.
 - **B (tail, `docker exec -d -e HN_DISABLE_DSH_TAP=1 … hnx daemon`):**
   PROBE PASS (24/0 on rerun; the first run hit 23/1 — `turn1: progressive
-  deltas (>=4)` saw 3 batches, the known tail batch-count variance the W7
+deltas (>=4)` saw 3 batches, the known tail batch-count variance the W7
   addendum documents; assertions there must stay span/slot-based). Turn 1:
   3–4 deltas, median gap 212ms–3.5s, first delta ~3s.
 - The write-behind window + 250ms poll interval are gone on the tap path,

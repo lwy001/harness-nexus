@@ -318,7 +318,7 @@ the observed symptom ("I click a session and the pane is empty"):
 
 3. **A daemon restart wedged chat on its machine until the server restarted.**
    The server closes a machine's channels when it goes offline, but that reap
-   is keyed on the offline→online *transition*, and a fast daemon restart
+   is keyed on the offline→online _transition_, and a fast daemon restart
    registers the new socket before the old disconnect is processed — so the
    machine never "went offline" and the dead connection's channels kept their
    slots forever. Fix: the `/ctl` connection handler reaps the machine's live
@@ -339,7 +339,7 @@ establishment aborts it and kills the adapter", via the fixture's new
 
 ## Channel budget redesign (post-W8, 2026-09)
 
-The hardening above made channel lifecycle *correct* but the budget itself was
+The hardening above made channel lifecycle _correct_ but the budget itself was
 hostile: a flat `CHAT_MAX_SESSIONS_PER_MACHINE = 3` that could only REJECT,
 with no way to see which sessions held slots. User-driven redesign (all three
 complaints addressed — invisibility, blocking without remedy, and a cap too
@@ -364,7 +364,7 @@ small):
    carry server-computed `open: boolean` + `openChannelId` (the live channel
    on that native session). The rail renders an `已打开 — 点击重连` marker on
    such rows and clicking REJOINS the channel (`chat:session.open
-   {sessionId: openChannelId}`, falling back to a fresh resume if the channel
+{sessionId: openChannelId}`, falling back to a fresh resume if the channel
    died between listing and click). Corollary: the daemon's dsh listing no
    longer HIDES sessions with live channels (the `liveNativeIds` exclusion and
    its `ChatRegistry` plumbing are deleted) — hiding was the old answer to

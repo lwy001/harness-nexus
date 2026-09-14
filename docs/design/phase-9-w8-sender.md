@@ -7,8 +7,9 @@
 > 权限模式 chip,右侧模型选择、推理力度下拉与圆形发送键),配色与风格
 > 遵循我们自己的 Signal 体系(不照抄参考图的蓝色系)。
 > Reference code index: `~/acp-ref/README.md` (the claude-acp-bridge snapshot
-> + adoption notes; the composer screenshot itself is not committed — the
-> feature list above is the spec).
+>
+> - adoption notes; the composer screenshot itself is not committed — the
+>   feature list above is the spec).
 
 ## Problem
 
@@ -75,12 +76,12 @@ honestly keeps W8 shippable with zero server/daemon changes:
 
 ### Deferred — each needs a wire/daemon arm first (design stubs here)
 
-| Reference control | Why deferred | What it needs |
-|---|---|---|
-| **"+" attach (images/files)** | `PromptBlock` is text-only by design (v1); the wire would drop attachments silently | `PromptBlock` image variant end-to-end (shared schema → `chatPromptEventSchema` → daemon → ACP `content` blocks). The new `@agentclientprotocol` wrapper already advertises `promptCapabilities.image: true`, so the adapter side is ready; ours is not. |
-| **Permission-mode chip** ("完全访问" 等) | The daemon always establishes sessions in ACP default permission mode; there is no mode arm on the wire | A `mode` field on `chat:session.open` + daemon→wrapper `permissionMode` mapping (`default`/`acceptEdits`/`bypassPermissions`) + a confirm-first chip UI (weakening the gate is a destructive-adjacent action). Natural home: alongside the C6 permission-policy work — the reference's policy-engine shape (see below) fits the same feature. |
-| **Model selector** | Model is machine-level today (W3 `RuntimeConfig`), and dsh PINS model per native session — a composer switcher would desync the rail | Per-channel model override on the wire (or a "change model = new session" UX). Interim candidate for W8.5: a read-only mono badge showing the machine's runtime-config model (one GET we already have). |
-| **Reasoning-effort selector** | No wire: CC reads `CLAUDE_CODE_EFFORT_LEVEL` env at boot; dsh has per-provider config only | Same arm as the model selector, plus per-harness effort semantics. Lowest priority. |
+| Reference control                        | Why deferred                                                                                                                         | What it needs                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **"+" attach (images/files)**            | `PromptBlock` is text-only by design (v1); the wire would drop attachments silently                                                  | `PromptBlock` image variant end-to-end (shared schema → `chatPromptEventSchema` → daemon → ACP `content` blocks). The new `@agentclientprotocol` wrapper already advertises `promptCapabilities.image: true`, so the adapter side is ready; ours is not.                                                                                      |
+| **Permission-mode chip** ("完全访问" 等) | The daemon always establishes sessions in ACP default permission mode; there is no mode arm on the wire                              | A `mode` field on `chat:session.open` + daemon→wrapper `permissionMode` mapping (`default`/`acceptEdits`/`bypassPermissions`) + a confirm-first chip UI (weakening the gate is a destructive-adjacent action). Natural home: alongside the C6 permission-policy work — the reference's policy-engine shape (see below) fits the same feature. |
+| **Model selector**                       | Model is machine-level today (W3 `RuntimeConfig`), and dsh PINS model per native session — a composer switcher would desync the rail | Per-channel model override on the wire (or a "change model = new session" UX). Interim candidate for W8.5: a read-only mono badge showing the machine's runtime-config model (one GET we already have).                                                                                                                                       |
+| **Reasoning-effort selector**            | No wire: CC reads `CLAUDE_CODE_EFFORT_LEVEL` env at boot; dsh has per-provider config only                                           | Same arm as the model selector, plus per-harness effort semantics. Lowest priority.                                                                                                                                                                                                                                                           |
 
 ## Component plan
 
