@@ -451,3 +451,10 @@ Rig-verified end to end through `/app` + `/ctl` + the daemon: a
 permission-heavy codex turn ("上海明天天气" in a read-only sandbox — 13
 escalations) answers every card and settles with `turn_end`, where it used to
 freeze after the second.
+
+> **2026-09-14 revision (9 W11):** the viewer-scoped rule above is
+> ROOM-scoped liveness — superseded. Channels now close only when the user's
+> LAST `/app` socket disconnects (any window showing the tab bar keeps them
+> alive); see `docs/design/phase-9-w11-adapter-lifecycle.md` § "Post-ship
+> fix — channel liveness is USER-scoped". The room still governs which
+> window receives a channel's event stream.
