@@ -17,6 +17,7 @@ import {
   machineHelloAckSchema,
   machineHelloSchema,
   machineStatusEventSchema,
+  nativeSessionViewSchema,
 } from '../src/realtime.js';
 
 describe('realtime handshake schemas', () => {
@@ -374,6 +375,26 @@ describe('prompt image blocks (9 W9 B)', () => {
     expect(chatPromptEventSchema.safeParse({ sessionId: 's1', prompt: five }).success).toBe(false);
     const twoBig = [image('a'.repeat(4 * 1024 * 1024)), image('a'.repeat(4 * 1024 * 1024))];
     expect(chatPromptEventSchema.safeParse({ sessionId: 's1', prompt: twoBig }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('nativeSessionViewSchema — timestamp dialects (rig-found 2026-09-14)', () => {
+  const row = { sessionId: 's1', cwd: '/root/p', title: 't' };
+  it('accepts Z-suffix and +00:00-offset updatedAt alike', () => {
+    expect(
+      nativeSessionViewSchema.safeParse({ ...row, updatedAt: '2026-09-14T07:32:10.868Z' }).success,
+    ).toBe(true);
+    // codex-acp (Rust chrono) speaks RFC3339 with an offset — strict datetime
+    // used to drop the whole listing and the route timed out silently.
+    expect(
+      nativeSessionViewSchema.safeParse({ ...row, updatedAt: '2026-09-14T07:32:10.868+00:00' })
+        .success,
+    ).toBe(true);
+  });
+  it('still rejects garbage timestamps', () => {
+    expect(nativeSessionViewSchema.safeParse({ ...row, updatedAt: 'yesterday' }).success).toBe(
       false,
     );
   });

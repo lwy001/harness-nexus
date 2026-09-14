@@ -651,7 +651,11 @@ export const nativeSessionViewSchema = z.object({
   sessionId: z.string().min(1).max(128),
   cwd: z.string().min(1).max(1024),
   title: z.string().max(256).nullable().optional(),
-  updatedAt: z.string().datetime().nullable().optional(),
+  // `offset: true` — codex-acp (Rust chrono) serializes RFC3339 with a
+  // `+00:00` offset, not the `Z` suffix; strict datetime REJECTED the whole
+  // listing payload and the route degraded to a silent 30s timeout
+  // ("Daemon did not answer the listing in time", rig-found 2026-09-14).
+  updatedAt: z.string().datetime({ offset: true }).nullable().optional(),
   /**
    * 9 W7 — the model route the session PINNED at creation (dsh transcripts
    * record it; adapters don't report it). Display + staleness input.
