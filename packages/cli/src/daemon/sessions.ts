@@ -140,13 +140,23 @@ async function listViaAdapter(
         ...(typeof r['title'] === 'string' && r['title'] !== ''
           ? { title: r['title'].slice(0, 256) }
           : {}),
-        ...(typeof r['updatedAt'] === 'string' && r['updatedAt'] !== ''
-          ? { updatedAt: r['updatedAt'] }
-          : {}),
+        // Adapters speak different timestamp dialects (codex-acp's chrono
+        // emits `+00:00` offsets). Normalize to ISO-Z when parseable and
+        // DROP the field when not — a malformed timestamp must never fail
+        // the whole listing downstream.
+        ...isoTimestamp(r['updatedAt']),
       });
     }
     return out;
   } finally {
     conn.kill();
   }
+}
+
+/** `{updatedAt}` only when the value parses as a real timestamp (ISO-Z normalized). */
+function isoTimestamp(value: unknown): { updatedAt?: string } {
+  if (typeof value !== 'string' || value === '') return {};
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return {};
+  return { updatedAt: new Date(ms).toISOString() };
 }

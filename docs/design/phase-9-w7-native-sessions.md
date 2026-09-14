@@ -312,3 +312,33 @@ events its own bridges consume (the reference implementation is the proof of
 concept); until then the file tail is the only external streaming surface and
 keeps working regardless — it depends only on the documented persistence
 format, not the adapter.
+
+## Post-ship fix — codex listing "timeout" was a timestamp dialect (2026-09-14)
+
+Rig symptom: opening the codex agent's session rail always ended in
+`504 SESSIONS_TIMEOUT` ("Daemon did not answer the listing in time") — while
+claude-code and deepseek listed fine, and a manual `initialize` +
+`session/list` probe against the same codex-acp answered in ~1.8s.
+
+Chain (instrumented with a wrapper adapter command): the daemon DID list in
+~1.7s and killed its short-lived adapter — but the server's
+`sessions:list:result` listener `safeParse`d the payload against
+`nativeSessionViewSchema`, whose `updatedAt` was a strict `z.string().datetime()`
+(**`Z`-suffix only**), and codex-acp (Rust chrono) emits RFC3339 with a
+`+00:00` offset. One field failed ⇒ the WHOLE event was rejected
+(`proto:invalid` ack) ⇒ the waiter resolved nothing ⇒ the route timed out
+exactly at `SESSIONS_TIMEOUT_MS`. claude's wrapper (JS) and the dsh file scan
+emit ISO-Z, so only codex tripped it.
+
+Fix (branch `fix/p9-w7-codex-timestamp-dialect`):
+
+- `shared/realtime.ts` — `updatedAt: z.string().datetime({ offset: true })`
+  (accept RFC3339 offsets). This alone unblocks OLD daemons (the rig runs
+  published 0.1.0-alpha.2) against a fixed server.
+- `daemon/sessions.ts` `listViaAdapter` — normalize `updatedAt` via
+  `Date.parse` to ISO-Z when parseable, DROP it when not (a malformed
+  timestamp must never fail the listing); new daemons emit one dialect.
+- Regression: `shared/test/realtime.test.ts` (dialect matrix) +
+  `server/test/sessions-route.test.ts` (fake daemon replying `+00:00` → 200).
+
+Rig after deploy: codex 1.8s · claude 2.3s · deepseek 0.02s, all 200.

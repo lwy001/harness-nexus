@@ -161,6 +161,35 @@ describe('GET /api/agent-instances/:id/sessions (9 W7)', () => {
     await new Promise((r) => setTimeout(r, 150));
   });
 
+  it('accepts an RFC3339 +00:00 updatedAt (codex-acp/chrono dialect, rig-found)', async () => {
+    // codex-acp serializes timestamps as `…+00:00`, not `…Z`. The strict
+    // datetime schema used to reject the WHOLE result payload, the waiter
+    // resolved nothing, and the route 504'd with "Daemon did not answer the
+    // listing in time" while the daemon had actually answered in ~2s.
+    await connectDaemon(['sessions'], () => ({
+      sessions: [
+        {
+          sessionId: 'native-codex-1',
+          cwd: '/root/projects/demo-api',
+          title: '你好',
+          updatedAt: '2026-09-14T07:32:10.868+00:00',
+        },
+      ],
+    }));
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/agent-instances/${agentId}/sessions`,
+      headers: auth(ownerJwt),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sessions[0]).toMatchObject({
+      sessionId: 'native-codex-1',
+      updatedAt: '2026-09-14T07:32:10.868+00:00',
+    });
+    daemon.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+  });
+
   it('marks rows whose native session holds a live channel (open/openChannelId)', async () => {
     await connectDaemon(['sessions', 'chat'], () => ({
       sessions: [
