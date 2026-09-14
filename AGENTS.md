@@ -1080,11 +1080,19 @@ inventory D1–D5 with evidence, slices A–F). Summary for daily work —
 nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
 - **The tab bar** (`components/chat/channel-tabs.tsx` + `useChatChannels`
   hook) renders at the top of BOTH chat pages, hidden with zero live
-  channels. Tab click activates (same agent → in-page `openChannel` with
-  `keepPrevious` so the previous channel STAYS live; other agent → route +
-  `?ch=` rejoin — AgentSession consumes the param once after the agent
-  loads). Tab × closes one channel; busy dot is deliberately muted (the
-  live-turn indicator keeps the view's single `--signal` spend).
+  channels. Tab click activates (same agent → in-page rejoin; other agent →
+  route + `?ch=` rejoin — AgentSession consumes the param once after the
+  agent loads). Tab × closes one channel; busy dot is deliberately muted
+  (the live-turn indicator keeps the view's single `--signal` spend).
+- **NO open path closes other channels** (user-found rig regression, fixed
+  same day): the pre-tab leave-before-enter — close the current channel
+  before opening the next, to free the machine budget slot — is RETIRED.
+  The server has evicted-at-cap since the post-W8 budget redesign, so the
+  client never needs to juggle slots; new sessions, rail resumes, tab
+  switches, and rejoin fallbacks all keep every other channel live, and a
+  FAILED open leaves the pane on the previous channel with the error banner.
+  Closing is explicit (tab ×, 断开, 一键清理) or server-driven (viewer-gone,
+  eviction, daemon loss).
 - **Page exit no longer auto-closes the channel** (the W6 unmount-close is
   GONE): live channels are visible tabs, individually closable, and bounded
   by the machine budget + eviction + viewer-gone on real socket loss. A full

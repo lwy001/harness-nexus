@@ -116,10 +116,18 @@ busy flip) — a full per-user snapshot (small: ≤ dozen channels):
   rendered at the top of BOTH chat pages (cards + session), hidden when the
   user has no live channels. One tab per channel: target badge (CC/CODE/DSH
   mono), native-id label, spinner while starting, a pulsing dot while busy,
-  收尾中 when deferred. Click ACTIVATES: same agent → in-page channel switch
-  with `keepPrevious` (the previous channel stays live in its tab); other
+  收尾中 when deferred. Click ACTIVATES: same agent → in-page rejoin; other
   agent → SPA route + `?ch=<wireId>` rejoin (dead-on-arrival falls back
   through the existing resume path). Tab × closes that one channel.
+- **NO open path closes other channels.** The pre-tab leave-before-enter
+  (free the budget slot before the next open is judged) is retired — the
+  server has evicted-at-cap since the post-W8 budget redesign, so slot
+  juggling is obsolete. New sessions, rail resumes, tab switches, and the
+  rejoin fallback all keep every other channel live; a FAILED open leaves
+  the pane on the previous channel with the error banner. (User-found rig
+  regression: the first pass only exempted tab clicks, so new-session and
+  rail-resume opens still closed the previous tab, and a dead rejoin target
+  took the old channel down through its fallback.)
 - **Page exit no longer auto-closes the channel.** The W6 unmount-close
   existed because nothing else would free an abandoned channel; with the tab
   bar the live set is visible, individually closable, and bounded (machine
