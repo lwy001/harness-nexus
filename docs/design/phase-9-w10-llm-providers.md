@@ -209,3 +209,28 @@ complete multi-model story this platform can express today.
 - `packages/cli/test/runtime-config.test.ts` — dsh writer emits the deduped
   multi-model `models:` list.
 - `scripts/smoke.mjs` — `[9 W10]` provider CRUD + provider-mode PUT.
+
+## 9. Post-ship rig notes (2026-09-14)
+
+- **codex-acp needs system `libssl.so.3`** — it is a native Rust binary; a
+  `node:20-bookworm-slim` machine container has only Node's bundled OpenSSL,
+  so every spawn died at the dynamic loader until `apt-get install libssl3`.
+  The claude wrapper (pure Node) is unaffected. Ops fix + recurrence note in
+  `docs/dev/test-rig.md` (machine-specific, git-ignored).
+- **apply-config does not reach ALREADY-OPEN channels** (rig-found): a codex
+  session opened under the OLD spec keeps its startup model — codex-acp
+  reads `config.toml` once at spawn. Symptom: user fixes the provider, sends
+  a message in the OLD session, the turn still fires the stale model id at
+  the new gateway → 404 → the turn dies ("发了个消息就崩了"). Correct flow:
+  apply the config, then open a NEW session. Related W9 boundary: codex's
+  in-session model selector lists its built-in presets (not the gateway's
+  catalog), so on a third-party gateway only the machine default is valid —
+  switching in-session to a preset reproduces the same 404. A future
+  improvement could mark/restart affected channels on apply-config, or pin
+  the applied model as the selector's current value.
+- **Volcengine Ark note**: the coding endpoint
+  (`…/api/coding/v3`) DOES speak the OpenAI Responses protocol (codex works
+  against it), while the general `/api/v3` surface 404s the coding-plan
+  models — provider baseUrl should point at the CODING endpoint for
+  coding-plan keys, and non-coding-plan models are rejected there with
+  `UnsupportedModel`.
