@@ -177,8 +177,8 @@ function respond(id, result) {
   send({ jsonrpc: '2.0', id, result });
 }
 
-function respondError(id, code, message) {
-  send({ jsonrpc: '2.0', id, error: { code, message } });
+function respondError(id, code, message, data) {
+  send({ jsonrpc: '2.0', id, error: data ? { code, message, data } : { code, message } });
 }
 
 function update(sessionId, sessionUpdate) {
@@ -349,6 +349,18 @@ function runPrompt(id, text, deferred = false) {
   const delay = Number(process.env.FIXTURE_DELAY_PROMPT_MS ?? '0');
   if (!deferred && delay > 0) {
     setTimeout(() => runPrompt(id, text, true), delay);
+    return;
+  }
+
+  if (text.includes('please error with detail')) {
+    // codex-acp's dialect: the real reason rides in `error.data.message`
+    // while the top-level message is a generic "Internal error".
+    promptIds.delete(id);
+    respondError(id, -32603, 'Internal error', {
+      message:
+        'stream disconnected before completion: error sending request for url (https://example.test/v3/responses)',
+      codex_error_info: 'other',
+    });
     return;
   }
 

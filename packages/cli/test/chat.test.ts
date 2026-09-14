@@ -438,6 +438,38 @@ describe('session round-trip vs the fixture agent', () => {
     expect(closeAck).toHaveBeenCalledWith({ closed: true });
   }, 15000);
 
+  it('a codex-style error carries its data.message detail into the note', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-err-detail',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-err-detail',
+      prompt: [{ type: 'text', text: 'please error with detail' }],
+    });
+    const errEvent = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'raw' && e.method === 'hnx/prompt-error'),
+    );
+    // codex-acp answers `-32603 "Internal error"` with the real reason in
+    // `data.message` — without this mapping the note is a bare "Internal error".
+    expect((errEvent.params as { message: string }).message).toBe(
+      'Internal error: stream disconnected before completion: error sending request for url (https://example.test/v3/responses)',
+    );
+    await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'turn_result' && e.stopReason === 'end_turn'),
+    );
+
+    socket.receive('chat:session.close', { sessionId: 'sess-err-detail', reason: 'user' });
+  }, 15000);
+
   it('start with an unavailable adapter reports spawn failure', async () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
