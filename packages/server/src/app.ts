@@ -179,6 +179,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     runtimeConfigViewTimeoutMs: config.runtimeConfigViewTimeoutMs,
     workspaceListTimeoutMs: config.workspaceListTimeoutMs,
     sessionsListTimeoutMs: config.sessionsListTimeoutMs,
+    adaptersReportTimeoutMs: config.adaptersReportTimeoutMs,
     jobAckTimeoutMs: config.jobAckTimeoutMs,
     jobSweepIntervalMs: config.jobSweepIntervalMs,
     jobMaxAttempts: config.jobMaxAttempts,

@@ -27,6 +27,7 @@ import {
   chatSessionReadyEventSchema,
   chatStreamEventEnvelopeSchema,
   chatTurnCancelEventSchema,
+  adaptersReportResultEventSchema,
   sessionsListResultEventSchema,
   workspaceListEventSchema,
 } from '@harness-nexus/shared';
@@ -36,6 +37,7 @@ import { InventoryCoordinator } from '../realtime/inventory.js';
 import { ConfigViewerCoordinator } from '../realtime/config-viewer.js';
 import { WorkspaceCoordinator } from '../realtime/workspace.js';
 import { SessionsCoordinator } from '../realtime/sessions.js';
+import { AdaptersReportCoordinator } from '../realtime/adapters.js';
 import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
 import { ReconnectGuard } from '../realtime/reconnect.js';
@@ -68,6 +70,8 @@ export interface RealtimeService {
   workspace: WorkspaceCoordinator;
   /** Native session-listing waiters (Phase 9 W7 chat rail). */
   sessions: SessionsCoordinator;
+  /** Adapter-report waiters (Phase 9 W11 C machine panel). */
+  adapters: AdaptersReportCoordinator;
   /** Push a machine's presence change to its owner (+ admins) on /app. */
   broadcastStatus(machine: Machine, online: boolean): void;
   /** Force-drop a machine's daemon sockets (revoke) and push offline if it was online. */
@@ -90,6 +94,7 @@ export async function registerRealtime(
     chatReadyTimeoutMs: number;
     chatReconnectGraceMs: number;
     sessionsListTimeoutMs: number;
+    adaptersReportTimeoutMs: number;
   },
 ): Promise<void> {
   await app.register(socketIOPlugin, {
@@ -105,6 +110,7 @@ export async function registerRealtime(
   const configView = new ConfigViewerCoordinator(opts.runtimeConfigViewTimeoutMs);
   const workspace = new WorkspaceCoordinator(opts.workspaceListTimeoutMs);
   const sessions = new SessionsCoordinator(opts.sessionsListTimeoutMs);
+  const adapters = new AdaptersReportCoordinator(opts.adaptersReportTimeoutMs);
   const runtimeInstances = new DetectedInstanceSync(app.uow);
   const chat = new ChatService(
     {
@@ -173,6 +179,7 @@ export async function registerRealtime(
     configView,
     workspace,
     sessions,
+    adapters,
     broadcastStatus(machine, online) {
       appNs
         .to([`user:${machine.ownerId}`, 'admins'])
@@ -224,10 +231,18 @@ export async function registerRealtime(
     const machineId = socket.data.machineId as string;
     void socket.join(`machine:${machineId}`);
 
+    // Presence registers SYNCHRONOUSLY, before the async lookup below: a
+    // socket that dies inside that await would otherwise never be counted
+    // off (its disconnect handler ran before connected() registered it, so
+    // disconnected() found nothing to decrement) and the machine showed
+    // online forever. Found via the 9 W11 C gates test (phantom presence).
+    const cameOnline = presence.connected(machineId, socket.id);
+
     void (async () => {
       const machine = await app.uow.machines.findById(machineId);
       if (!machine) {
-        // Deleted between handshake and connection — drop immediately.
+        // Deleted between handshake and connection — drop immediately (the
+        // disconnect handler flips presence back off; it is registered).
         socket.disconnect(true);
         return;
       }
@@ -241,7 +256,7 @@ export async function registerRealtime(
       // falls back to the delayed reap.
       reconnect.onCtlConnect(socket, machineId);
       const updated = await touchLastSeen(machine);
-      if (presence.connected(machineId, socket.id)) {
+      if (cameOnline) {
         realtime.broadcastStatus(updated, true);
         // The daemon is back — drain anything queued while it was offline.
         void realtime.jobs.dispatchPending(machineId);
@@ -366,6 +381,18 @@ export async function registerRealtime(
       ack?.(known ? { accepted: true } : { error: 'unknown-request' });
     });
 
+    // 9 W11 C — daemon reply for `adapters:report` (the machine panel).
+    socket.on('adapters:report:result', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = adaptersReportResultEventSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { requestId, ...evt } = parsed.data;
+      const known = adapters.onReport(requestId, evt);
+      ack?.(known ? { accepted: true } : { error: 'unknown-request' });
+    });
+
     // C4 — daemon job reporting. Progress accepts queued/dispatched/running;
     // result settles the job (terminal states ignore stale replay).
     socket.on('job:progress', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -445,6 +472,7 @@ export async function registerRealtime(
       configView.failMachine(wentOffline);
       workspace.failMachine(wentOffline);
       sessions.failMachine(wentOffline);
+      adapters.failMachine(wentOffline);
       realtime.jobs.recoverMachine(wentOffline);
       // Channels die with the daemon connection; the AGENT sessions survive
       // on the machine (9 W7) — viewers are notified via chat:session.closed.
