@@ -1069,7 +1069,7 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
 
 Full design in `docs/design/phase-9-w11-adapter-lifecycle.md` (problem
 inventory D1–D6 with evidence, slices A–F). Summary for daily work —
-**slices A and B are SHIPPED; C/D/E designed**:
+**slices A, B, and E are SHIPPED; C/D designed**:
 
 - **A — adapter pid ledger + boot sweep (daemon, `0.13.0-p9w11`).**
   `~/.hnx/adapters/<wireSessionId>.json` (`packages/cli/src/daemon/
@@ -1124,14 +1124,32 @@ nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
   idle channels close now, busy ones flip `closeWhenIdle` (finish the turn,
   then close — an abandoned generation still persists natively); ACK carries
   `{closed, deferred}` for the toast; confirm-first in the UI.
+- **E — disconnect grace + reconnect reconcile (daemon `0.14.0-p9w11` +
+  server `ReconnectGuard`, kills D5 "a blip kills every channel").** A
+  TRANSPORT blip on `/ctl` no longer reaps: the daemon arms
+  `HN_TEARDOWN_GRACE_MS` (default 8000) instead of tearing down
+  (`connect` cancels), and the server — whose presence had NO debounce, the
+  design's "already debounces" premise was wrong — delays its offline reap
+  by `CHAT_RECONNECT_GRACE_MS` (default 8000; both envs `0` = pre-W11).
+  On EVERY `/ctl` (re)connect the server sends `chat:reconcile
+{sessionIds}` (its live rows for the machine); the daemon tears down
+  sessions NOT listed, aborts unlisted IN-FLIGHT starts
+  (`inFlightStarts` → `closedBeforeReady`), and acks `{held}` = registered
+  sessions + listed in-flight starts; the server's `retainOnly` closes
+  ghost rows the daemon does not hold. A no/invalid ack (pre-W11 daemon)
+  falls back to the delayed reap (ack wait `min(5000, grace)`). Deliberate
+  closes bypass the grace on BOTH sides ('io client disconnect' daemon /
+  'client namespace disconnect' + 'io server disconnect' server). The old
+  blind reap-on-every-connect is GONE — reconcile-on-connect keeps its
+  ghost-flush property (fresh daemon acks `held: []`).
 - Rail rows overlay the push truth by native id over the listing's
   moment-in-time `open` stamps — the listing is still the row source
   (titles/cwd cost a daemon round-trip); only `open`/`openChannelId` stay
   live between refreshes.
 - **Still open in W11** (see the design doc): C (`GET /api/machines/:id/adapters`
-  - MachineDetail panel), D (sessions:list TTL cache), E (/ctl disconnect
-    grace window + reconnect reconcile — a transient daemon flap still reaps
-    every channel on the machine, demonstrated live during the B E2E).
+  - MachineDetail panel — process truth visibility), D (sessions:list TTL
+    cache — cost only), the D6 idle-pressure decision point (idle-age UI +
+    close-idle variant recommended).
 
 ## Authentication & authorization (permission interceptors)
 
