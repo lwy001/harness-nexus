@@ -414,6 +414,7 @@ describe('live-channel snapshot schemas (9 W11 B)', () => {
     deferred: false,
     nativeSessionId: '01a09f3a-7fae',
     openedAt: 1789378000000,
+    lastActiveAt: 1789378060000,
   };
   it('accepts a well-formed channel view and push', () => {
     expect(chatChannelViewSchema.safeParse(channel).success).toBe(true);
@@ -428,8 +429,9 @@ describe('live-channel snapshot schemas (9 W11 B)', () => {
     const { nativeSessionId: _drop, ...without } = channel;
     expect(chatChannelViewSchema.safeParse(without).success).toBe(true);
   });
-  it('closeAll takes an empty object and nothing else', () => {
+  it('closeAll takes an empty object, idleOnly, and nothing else', () => {
     expect(chatChannelsCloseAllRequestSchema.safeParse({}).success).toBe(true);
+    expect(chatChannelsCloseAllRequestSchema.safeParse({ idleOnly: true }).success).toBe(true);
     expect(chatChannelsCloseAllRequestSchema.safeParse({ force: true }).success).toBe(false);
   });
 });

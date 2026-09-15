@@ -1415,3 +1415,249 @@ describe('adapter report (9 W11 C)', () => {
     }
   }, 15000);
 });
+
+describe('idle pressure + open dedupe (9 W11 D6 + user-found fixes)', () => {
+  beforeEach(async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: { remoteChatEnabled: true },
+    });
+  });
+
+  it('a resume open while the SAME native session is establishing re-attaches it', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      let starts = 0;
+      d.on('chat:session.start', () => {
+        starts += 1;
+      });
+      const startP = once(d, 'chat:session.start');
+      const first = await openSessionResume(browser, agentId, {
+        sessionId: 'native-dup',
+        cwd: '/home/tester/work',
+      });
+      expect(first.error).toBeUndefined();
+      const start = (await startP) as { sessionId: string };
+      expect(starts).toBe(1);
+
+      // The rail double-click while the first is still establishing: the
+      // second open must JOIN the same channel, not spawn a second adapter.
+      const second = await openSessionResume(browser, agentId, {
+        sessionId: 'native-dup',
+        cwd: '/home/tester/work',
+      });
+      expect(second.error).toBeUndefined();
+      expect(second.sessionId).toBe(first.sessionId);
+      expect(second.phase).toBe('starting');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(starts).toBe(1); // exactly one adapter spawn reached the daemon
+
+      // Once ready (native id now known), a third resume still reattaches.
+      void d.emit('chat:session.ready', {
+        sessionId: start.sessionId,
+        agentName: 'fixture-agent',
+        nativeSessionId: 'native-dup',
+      });
+      await once(browser, 'chat:session.ready');
+      const third = await openSessionResume(browser, agentId, {
+        sessionId: 'native-dup',
+        cwd: '/home/tester/work',
+      });
+      expect(third.error).toBeUndefined();
+      expect(third.sessionId).toBe(first.sessionId);
+      await emitAck(browser, 'chat:session.close', { sessionId: first.sessionId! });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('closeAll idleOnly closes idle channels and leaves busy ones completely alone', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const s1P = once(d, 'chat:session.start');
+      const c1 = await openSession(browser, agentId);
+      const s1 = (await s1P) as { sessionId: string };
+      void d.emit('chat:session.ready', { sessionId: s1.sessionId, agentName: 'fixture-agent' });
+      await once(browser, 'chat:session.ready');
+      const s2P = once(d, 'chat:session.start');
+      const c2 = await openSession(browser, agentId);
+      const s2 = (await s2P) as { sessionId: string };
+      void d.emit('chat:session.ready', { sessionId: s2.sessionId, agentName: 'fixture-agent' });
+      await once(browser, 'chat:session.ready');
+      expect(c1.sessionId).toBeDefined();
+      expect(c2.sessionId).toBeDefined();
+
+      // s2 goes mid-turn.
+      void d.emit('chat:event', {
+        sessionId: s2.sessionId,
+        event: { kind: 'session_status', state: 'active' },
+      });
+
+      const idleRes = (await emitAck(browser, 'chat:channels.closeAll', {
+        idleOnly: true,
+      })) as { closed: number; deferred: number };
+      expect(idleRes).toEqual({ closed: 1, deferred: 0 });
+      // The busy channel is untouched — NOT even deferred.
+      let snap = (await emitAck(browser, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string; deferred: boolean }[];
+      };
+      const busyRow = snap.channels.find((c) => c.sessionId === s2.sessionId);
+      expect(busyRow).toBeDefined();
+      expect(busyRow!.deferred).toBe(false);
+
+      // The full close-all defers the busy one.
+      const allRes = (await emitAck(browser, 'chat:channels.closeAll', {})) as {
+        closed: number;
+        deferred: number;
+      };
+      expect(allRes).toEqual({ closed: 0, deferred: 1 });
+      snap = (await emitAck(browser, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string; deferred: boolean }[];
+      };
+      expect(snap.channels.find((c) => c.sessionId === s2.sessionId)?.deferred).toBe(true);
+
+      // Let it finish so the table clears for the next test.
+      void d.emit('chat:event', {
+        sessionId: s2.sessionId,
+        event: { kind: 'session_status', state: 'idle' },
+      });
+      await once(browser, 'chat:session.closed');
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('the snapshot carries lastActiveAt and the turn end advances it', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      const start = (await startP) as { sessionId: string };
+      const readyP = once(browser, 'chat:session.ready');
+      readyFor(d, start);
+      await readyP;
+
+      const before = (await emitAck(browser, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string; openedAt: number; lastActiveAt: number }[];
+      };
+      const row = before.channels.find((c) => c.sessionId === res.sessionId);
+      expect(row).toBeDefined();
+      expect(row!.lastActiveAt).toBe(row!.openedAt);
+
+      await new Promise((r) => setTimeout(r, 30));
+      void d.emit('chat:event', {
+        sessionId: start.sessionId,
+        event: { kind: 'session_status', state: 'active' },
+      });
+      void d.emit('chat:event', {
+        sessionId: start.sessionId,
+        event: { kind: 'session_status', state: 'idle' },
+      });
+      const after = (await emitAck(browser, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string; openedAt: number; lastActiveAt: number }[];
+      };
+      const row2 = after.channels.find((c) => c.sessionId === res.sessionId);
+      expect(row2!.lastActiveAt).toBeGreaterThan(row2!.openedAt);
+      await emitAck(browser, 'chat:session.close', { sessionId: res.sessionId! });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('CHAT_IDLE_TTL_MS (enabled) closes stale idle channels, never busy ones', async () => {
+    const app2 = await buildApp(testConfig({ chatIdleTtlMs: 150 }));
+    await app2.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app2.server.address() as { port: number };
+    const base2 = `http://127.0.0.1:${addr.port}`;
+    try {
+      const reg = await app2.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { username: 'idler', password: 'hunter2hunter2' },
+      });
+      const jwt2 = reg.json().token as string;
+      const enroll = await app2.inject({
+        method: 'POST',
+        url: '/api/machines',
+        headers: { authorization: `Bearer ${jwt2}` },
+        payload: { name: 'idle-box' },
+      });
+      const mid = enroll.json().machine.id as string;
+      const mtoken = enroll.json().token as string;
+      await app2.inject({
+        method: 'PATCH',
+        url: `/api/machines/${mid}`,
+        headers: { authorization: `Bearer ${jwt2}` },
+        payload: { remoteChatEnabled: true },
+      });
+      const now = new Date().toISOString();
+      await app2.uow.agentInstances.save({
+        id: 'agent-idle-1',
+        machineId: mid,
+        ownerId: (await app2.uow.users.findByUsername('idler'))!.id,
+        target: 'hermes',
+        profileId: 'p1',
+        profileVersion: '1.0.0',
+        name: 'idle agent',
+        directory: '/home/tester/.hermes',
+        jobId: 'j1',
+        createdAt: now,
+        updatedAt: now,
+      });
+      const b = io(`${base2}/app`, { auth: { token: jwt2 }, transports: ['websocket'] });
+      const d = io(`${base2}/ctl`, {
+        auth: { token: mtoken, machineId: mid },
+        transports: ['websocket'],
+      });
+      d.on('chat:reconcile', (_p: unknown, ack?: (r: unknown) => void) => ack?.({ held: [] }));
+      await Promise.all([once(b, 'connect'), once(d, 'connect')]);
+      await emitAck(d, 'machine:hello', {
+        daemonVersion: '0.15.0-test',
+        capabilities: ['chat'],
+      });
+      try {
+        const s1P = once(d, 'chat:session.start');
+        const ack1 = (await emitAck(b, 'chat:session.open', {
+          agentInstanceId: 'agent-idle-1',
+        })) as { sessionId?: string };
+        const s1 = (await s1P) as { sessionId: string };
+        void d.emit('chat:session.ready', { sessionId: s1.sessionId, agentName: 'fixture-agent' });
+        await once(b, 'chat:session.ready');
+        // Second channel goes BUSY — the sweep must never touch it.
+        const s2P = once(d, 'chat:session.start');
+        const ack2 = (await emitAck(b, 'chat:session.open', {
+          agentInstanceId: 'agent-idle-1',
+        })) as { sessionId?: string };
+        const s2 = (await s2P) as { sessionId: string };
+        void d.emit('chat:session.ready', { sessionId: s2.sessionId, agentName: 'fixture-agent' });
+        void d.emit('chat:event', {
+          sessionId: s2.sessionId,
+          event: { kind: 'session_status', state: 'active' },
+        });
+        expect(ack1.sessionId).toBeDefined();
+        expect(ack2.sessionId).toBeDefined();
+
+        const closedP = once(b, 'chat:session.closed', 6000);
+        const closed = (await closedP) as { sessionId: string; reason: string };
+        expect(closed.sessionId).toBe(s1.sessionId);
+        expect(closed.reason).toBe('idle-timeout');
+        await new Promise((r) => setTimeout(r, 400));
+        const snap = (await emitAck(b, 'chat:channels.sync', {})) as {
+          channels: { sessionId: string }[];
+        };
+        expect(snap.channels.some((c) => c.sessionId === s2.sessionId)).toBe(true);
+      } finally {
+        b.disconnect();
+        d.disconnect();
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } finally {
+      await app2.close();
+    }
+  }, 20000);
+});

@@ -782,6 +782,12 @@ export const chatChannelViewSchema = z.object({
   nativeSessionId: z.string().min(1).max(128).optional(),
   /** Epoch ms — the eviction order (oldest first). */
   openedAt: z.number().int().positive(),
+  /**
+   * 9 W11 D6 — epoch ms of the last turn's END (open time until the first
+   * turn ends). The tab's idle-age label (past 30 minutes) and the optional
+   * `CHAT_IDLE_TTL_MS` sweep both measure from here.
+   */
+  lastActiveAt: z.number().int().positive(),
 });
 
 /** server → browser (`user:<id>` room): the user's FULL live-channel snapshot. */
@@ -794,7 +800,15 @@ export const chatChannelsPushSchema = z.object({
  * tab bar's 一键清理). Idle channels close immediately; busy ones flip to
  * deferred and close when the current turn ends.
  */
-export const chatChannelsCloseAllRequestSchema = z.object({}).strict();
+export const chatChannelsCloseAllRequestSchema = z
+  .object({
+    /**
+     * 9 W11 D6 — 只清理闲置: busy channels are left completely alone (no
+     * defer-flip either); default false keeps the original close-all.
+     */
+    idleOnly: z.boolean().optional(),
+  })
+  .strict();
 
 /**
  * browser → server: ask for the current snapshot (9 W11 B). A tab bar that

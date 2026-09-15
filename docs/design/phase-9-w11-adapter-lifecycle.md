@@ -2,19 +2,23 @@
 
 > Status: **A (adapter pid ledger + boot sweep + audit), B (channel
 > snapshot + tab bar + one-click cleanup, 2026-09-14), E (disconnect grace
-> + reconnect reconcile), and C (adapter report + machine panel) ALL
-> SHIPPED 2026-09-14/15** (daemon `0.15.0-p9w11`; see the sections and
-> their as-built/post-ship notes, including B's same-day
-> user-scoped-liveness fix and E's no-debounce correction);
-> D designed, not yet implemented (cost-only), **re-prioritized by the
-> §"Re-evaluation" after the B post-ship fixes** (E expanded with a
-> reconnect-reconcile handshake, new D6 idle-pressure decision point,
-> D ↓). Trigger: three rig incidents
-> in one day (see §1) exposed that adapter processes are the least governed
-> object in the stack and that the session rail cannot answer "which of these
-> are actually alive". Predecessors: C5's channel lifecycle notes and the W7
-> "failed establishment kills the adapter" fix — this wave generalizes them
-> from "close paths are correct" to "processes are ACCOUNTED for".
+>
+> - reconnect reconcile), and C (adapter report + machine panel) ALL
+>   SHIPPED 2026-09-14/15** (daemon `0.15.0-p9w11`; see the sections and
+>   their as-built/post-ship notes, including B's same-day
+>   user-scoped-liveness fix and E's no-debounce correction);
+>   D (listing TTL cache) still open (cost-only); **D6 RESOLVED 2026-09-15**
+>   (idle-age tabs + 只清理闲置 + `CHAT_IDLE_TTL_MS` default-off, plus two
+>   user-found open/close bug fixes — see §"Re-evaluation" → "D6
+>   resolution"), **re-prioritized by the
+>   §"Re-evaluation" after the B post-ship fixes** (E expanded with a
+>   reconnect-reconcile handshake, new D6 idle-pressure decision point,
+>   D ↓). Trigger: three rig incidents
+>   in one day (see §1) exposed that adapter processes are the least governed
+>   object in the stack and that the session rail cannot answer "which of these
+>   are actually alive". Predecessors: C5's channel lifecycle notes and the W7
+>   "failed establishment kills the adapter" fix — this wave generalizes them
+>   from "close paths are correct" to "processes are ACCOUNTED for".
 
 ## Problem inventory (each with evidence)
 
@@ -251,7 +255,7 @@ pgid, nativeSessionId?, startedAt, command }] }` straight from the live
 ### As-built notes (2026-09-15)
 
 - Wire: `adapters:report {requestId}` → `adapters:report:result
-  {adapters | error}` (`adapterProcessViewSchema` in shared; `pgid` is
+{adapters | error}` (`adapterProcessViewSchema` in shared; `pgid` is
   `int().min(0)` — 0 = unknown, always real for a live session). The
   daemon answers INSTANTLY from the sessions map (no spawn); `DaemonSession`
   gained `command` + `startedAt` for it.
@@ -261,7 +265,7 @@ pgid, nativeSessionId?, startedAt, command }] }` straight from the live
   `ADAPTERS_TIMEOUT` — a pre-W11 daemon simply never answers, 30s default,
   `ADAPTERS_REPORT_TIMEOUT_MS`). The operator kill is
   `POST /api/machines/:id/adapters/:sessionId/close` → `ChatService
-  .forceCloseSession` (closeInternal + notifyDaemon; the ROUTE gates
+.forceCloseSession` (closeInternal + notifyDaemon; the ROUTE gates
   owner-or-admin — chat itself stays owner-only). 404 `ADAPTER_NOT_FOUND`
   for a dead id. SDK: `listMachineAdapters` / `closeMachineAdapter`.
 - The kill's "teardown + ledger removal" from the original text above is
@@ -457,6 +461,36 @@ user-scoped liveness) changed about the REMAINING design:
   doc's B section and post-ship notes were corrected where the
   user-scoped-liveness fix had obsoleted them (the "full page reload drops
   idle channels" line).
+
+### D6 resolution (2026-09-15, shipped same day) — (c) + (b), plus two user-found open/close bugs
+
+- **(c) Idle-age display (30-minute threshold) + 只清理闲置.** The channel
+  snapshot gained `lastActiveAt` (open time until the first turn's END;
+  advanced at every busy→idle flip). Tabs show a muted narrow relative age
+  ("32m"/"2h") once a channel has been idle 30 minutes (a 60s render tick
+  advances it — snapshot pushes only fire on table changes). The broom
+  became a dropdown: 关闭全部 (busy defer, the original behavior) and
+  只关闭闲置 (`chat:channels.closeAll {idleOnly:true}` — busy channels are
+  left COMPLETELY alone, not even deferred). Every closure stays explicit.
+- **(b) `CHAT_IDLE_TTL_MS` (default 0 = off).** When enabled, a 60s-cadence
+  sweep (scales: every TTL/2, clamped 1s–60s) closes `ready && !busy &&
+  !closeWhenIdle` channels whose `lastActiveAt` is older than the TTL, with
+  reason `idle-timeout` (notifyDaemon on — the daemon teardown + ledger
+  audit ride the ordinary path). The operator trade-off is documented in
+  config.ts: enabling may close a tab the user still wanted; the tab label
+  is the visible warning.
+- **User-found bug 1 — duplicate resume while establishing.** The rail's
+  已打开 stamps lag establishment (a starting channel has no native id to
+  overlay), so re-clicking a row mid-spawn opened a SECOND channel on the
+  same native session. `open()` now records `resumingNativeId` on the row
+  and a resume for an (agent, native session) that already has a channel —
+  starting OR ready — re-attaches it (the rejoin/`reattach` path); exactly
+  one adapter spawn ever reaches the daemon.
+- **User-found bug 2 — closing the CURRENT channel left a dead pane.**
+  Tab × and 断开 on the active channel now return the pane to its welcome
+  state (`sessionId=''` → the reset effect); server-side closures
+  (evicted / connection-lost / idle-timeout / …) keep the closed pane so
+  their reason is still explained.
 
 ## Post-ship notes (B, 2026-09-14)
 

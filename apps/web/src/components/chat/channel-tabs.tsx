@@ -1,5 +1,12 @@
-import { CircleXIcon, EraserIcon, Loader2Icon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronDownIcon, CircleXIcon, EraserIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button.js';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.js';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils.js';
 import type { ChatChannelView } from '@/realtime.js';
@@ -12,8 +19,12 @@ import type { ChatChannelView } from '@/realtime.js';
  *
  * Tab semantics: click ACTIVATES (same agent → in-page channel switch that
  * keeps the previous channel alive; other agent → route + `?ch=` rejoin);
- * × closes that one channel; the broom closes everything (busy ones defer).
+ * × closes that one channel; the broom menu closes everything (busy ones
+ * defer) or just the idle ones (9 W11 D6).
  */
+
+/** 9 W11 D6 — tabs idle for shorter than this show no age label (noise). */
+const IDLE_LABEL_THRESHOLD_MS = 30 * 60 * 1000;
 
 /** Short per-target badge text — the mono protocol string, never localized. */
 function targetBadge(target: string): string {
@@ -26,12 +37,22 @@ function tabLabel(channel: ChatChannelView): string {
   return channel.nativeSessionId?.slice(0, 8) ?? channel.sessionId.slice(0, 8);
 }
 
+/** Narrow relative age ("32m" / "2h") — compact enough for a tab. */
+function idleAgeLabel(lastActiveAt: number | undefined, now: number, locale: string): string {
+  const minutes = Math.max(0, Math.round((now - (lastActiveAt ?? 0)) / 60000));
+  const rtf = new Intl.RelativeTimeFormat(locale, { style: 'narrow', numeric: 'auto' });
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  return rtf.format(-Math.round(hours / 24), 'day');
+}
+
 interface ChannelTabsProps {
   channels: ChatChannelView[];
   activeSessionId: string;
   onActivate: (channel: ChatChannelView) => void;
   onClose: (channel: ChatChannelView) => void;
-  onCleanup: () => void;
+  onCleanup: (idleOnly: boolean) => void;
 }
 
 export function ChannelTabs({
@@ -41,7 +62,15 @@ export function ChannelTabs({
   onClose,
   onCleanup,
 }: ChannelTabsProps) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  // Idle-age labels advance with wall time; snapshot pushes only fire on
+  // table changes. One slow tick while tabs are shown is plenty.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (channels.length === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [channels.length]);
   if (channels.length === 0) return null;
 
   return (
@@ -49,6 +78,9 @@ export function ChannelTabs({
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {channels.map((ch) => {
           const active = ch.sessionId === activeSessionId;
+          const idleMs = now - (ch.lastActiveAt ?? ch.openedAt);
+          const showIdleAge =
+            ch.phase === 'ready' && !ch.busy && !ch.deferred && idleMs >= IDLE_LABEL_THRESHOLD_MS;
           return (
             <div
               key={ch.sessionId}
@@ -89,6 +121,14 @@ export function ChannelTabs({
                     {t('chat.tabDeferred')}
                   </span>
                 ) : null}
+                {showIdleAge ? (
+                  <span
+                    className="text-muted-foreground nums shrink-0 text-[10px] opacity-70"
+                    title={t('chat.tabIdleTitle')}
+                  >
+                    {idleAgeLabel(ch.lastActiveAt ?? ch.openedAt, now, lang)}
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"
@@ -103,17 +143,29 @@ export function ChannelTabs({
           );
         })}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground hover:text-foreground h-7 shrink-0 gap-1.5 px-2 text-xs"
-        onClick={onCleanup}
-        title={t('chat.tabsCleanupTitle')}
-      >
-        <EraserIcon className="size-3.5" />
-        {t('chat.tabsCleanup')}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground h-7 shrink-0 gap-1 px-2 text-xs"
+            title={t('chat.tabsCleanupTitle')}
+          >
+            <EraserIcon className="size-3.5" />
+            {t('chat.tabsCleanup')}
+            <ChevronDownIcon className="size-3 opacity-60" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onCleanup(false)}>
+            {t('chat.tabsCleanupAll')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onCleanup(true)}>
+            {t('chat.tabsCleanupIdle')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

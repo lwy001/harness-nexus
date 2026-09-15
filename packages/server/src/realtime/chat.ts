@@ -87,6 +87,18 @@ interface LiveSession {
   closeWhenIdle: boolean;
   /** When the channel was opened — the eviction order (oldest first). */
   openedAt: number;
+  /**
+   * 9 W11 D6 — when the channel last had a turn (open time until the first
+   * turn ends). The idle-age surface: the tab label past 30 minutes and the
+   * optional CHAT_IDLE_TTL_MS sweep both key off it.
+   */
+  lastActiveAt: number;
+  /**
+   * 9 W11 — the native session a RESUME open targets, recorded before the
+   * daemon answers (nativeSessionId is only known at ready). Doubles as the
+   * resume-dedupe key: one channel per (agent, native session).
+   */
+  resumingNativeId?: string;
   /** Reported agent identity — re-pushed to re-joining viewers. */
   agentName?: string | undefined;
   agentVersion?: string | undefined;
@@ -103,6 +115,8 @@ interface LiveSession {
 export class ChatService {
   private live = new Map<string, LiveSession>();
 
+  private idleSweepTimer: NodeJS.Timeout | null = null;
+
   constructor(
     private readonly deps: ChatServiceDeps,
     private readonly opts: {
@@ -110,11 +124,26 @@ export class ChatService {
       maxActiveSessionsPerMachine: number;
       permissionTimeoutMs: number;
       readyTimeoutMs: number;
+      /** 9 W11 D6 — 0 disables the idle TTL sweep (the default). */
+      idleTtlMs: number;
     },
-  ) {}
+  ) {
+    if (this.opts.idleTtlMs > 0) {
+      // Cadence scales with the TTL (check at least every half-TTL) but is
+      // bounded: 60s floor-to-ceiling for real TTLs, 1s minimum so a small
+      // test TTL does not wait a minute for its first tick.
+      const cadence = Math.max(1_000, Math.min(60_000, Math.ceil(this.opts.idleTtlMs / 2)));
+      this.idleSweepTimer = setInterval(() => this.sweepIdle(), cadence);
+      this.idleSweepTimer.unref();
+    }
+  }
 
   /** Graceful shutdown: notify viewers, tell the daemons to kill subprocesses. */
   async stop(): Promise<void> {
+    if (this.idleSweepTimer !== null) {
+      clearInterval(this.idleSweepTimer);
+      this.idleSweepTimer = null;
+    }
     for (const session of [...this.live.values()]) {
       await this.closeInternal(session, 'server-shutdown', { notifyDaemon: true });
     }
@@ -145,37 +174,23 @@ export class ChatService {
       if (!existing || existing.ownerId !== ownerId) {
         return { ok: false, code: 'SESSION_NOT_FOUND' };
       }
-      if (existing.phase === 'starting') {
-        // 9 W11: with user-scoped liveness a channel SURVIVES its opener's
-        // page refresh mid-spawn (another window may be watching the tab) —
-        // reattach silently: join + ack 'starting'. The real ready push
-        // lands in the room when the agent comes up; no history to resync.
-        return { ok: true, sessionId: existing.sessionId, joined: true, phase: 'starting' };
-      }
-      // A re-join may be a page refresh whose listeners were attached after
-      // the original ready push — re-push so every viewer settles.
-      this.deps.io.toChannel(existing.sessionId, 'chat:session.ready', {
-        sessionId: existing.sessionId,
-        ...(existing.agentName !== undefined ? { agentName: existing.agentName } : {}),
-        ...(existing.agentVersion !== undefined ? { agentVersion: existing.agentVersion } : {}),
-        ...(existing.nativeSessionId !== undefined
-          ? { nativeSessionId: existing.nativeSessionId }
-          : {}),
-        ...(existing.promptCapabilities !== undefined
-          ? { promptCapabilities: existing.promptCapabilities }
-          : {}),
-      });
-      // 9 W7 — the refreshed page lost its local fold; the daemon re-emits the
-      // channel's history into the room.
-      this.deps.io.toCtl(existing.machineId, 'chat:session.resync', {
-        sessionId: existing.sessionId,
-      });
-      return {
-        ok: true,
-        sessionId: existing.sessionId,
-        joined: true,
-        phase: existing.phase,
-      };
+      return this.reattach(existing);
+    }
+
+    // 9 W11 (user-found) — one channel per native session: a resume open
+    // while another channel for the same (agent, native session) exists —
+    // INCLUDING one still establishing — re-attaches it instead of spawning
+    // a second adapter on the same agent session. The rail's 已打开 stamps
+    // lag establishment (a starting channel has no native id to overlay),
+    // so a row re-click mid-spawn used to duplicate the channel.
+    if (resume !== undefined) {
+      const existing = [...this.live.values()].find(
+        (s) =>
+          s.ownerId === ownerId &&
+          s.agentInstanceId === agentInstanceId &&
+          (s.resumingNativeId === resume.sessionId || s.nativeSessionId === resume.sessionId),
+      );
+      if (existing !== undefined) return this.reattach(existing);
     }
 
     const agent = await this.deps.uow.agentInstances.findById(agentInstanceId);
@@ -228,6 +243,8 @@ export class ChatService {
       busy: false,
       closeWhenIdle: false,
       openedAt: Date.now(),
+      lastActiveAt: Date.now(),
+      ...(resume !== undefined ? { resumingNativeId: resume.sessionId } : {}),
       openerSocketId,
       readyTimer: null,
       permissionTimers: new Map(),
@@ -246,6 +263,40 @@ export class ChatService {
     });
     this.pushSnapshot(ownerId);
     return { ok: true, sessionId, joined: false, phase: 'starting' };
+  }
+
+  /**
+   * Attach the caller to a channel that already exists (explicit rejoin, or
+   * the resume-dedupe path). The PLUGIN joins the socket when
+   * `joined: true`; a starting channel needs no ready re-push (it never
+   * emitted one — the real push lands when the agent comes up).
+   */
+  private reattach(existing: LiveSession): ChatOpenResult {
+    if (existing.phase === 'starting') {
+      // 9 W11: with user-scoped liveness a channel SURVIVES its opener's
+      // page refresh mid-spawn (another window may be watching the tab) —
+      // reattach silently: join + ack 'starting'.
+      return { ok: true, sessionId: existing.sessionId, joined: true, phase: 'starting' };
+    }
+    // A re-join may be a page refresh whose listeners were attached after
+    // the original ready push — re-push so every viewer settles.
+    this.deps.io.toChannel(existing.sessionId, 'chat:session.ready', {
+      sessionId: existing.sessionId,
+      ...(existing.agentName !== undefined ? { agentName: existing.agentName } : {}),
+      ...(existing.agentVersion !== undefined ? { agentVersion: existing.agentVersion } : {}),
+      ...(existing.nativeSessionId !== undefined
+        ? { nativeSessionId: existing.nativeSessionId }
+        : {}),
+      ...(existing.promptCapabilities !== undefined
+        ? { promptCapabilities: existing.promptCapabilities }
+        : {}),
+    });
+    // 9 W7 — the refreshed page lost its local fold; the daemon re-emits the
+    // channel's history into the room.
+    this.deps.io.toCtl(existing.machineId, 'chat:session.resync', {
+      sessionId: existing.sessionId,
+    });
+    return { ok: true, sessionId: existing.sessionId, joined: true, phase: existing.phase };
   }
 
   /**
@@ -269,6 +320,7 @@ export class ChatService {
           deferred: s.closeWhenIdle,
           ...(s.nativeSessionId !== undefined ? { nativeSessionId: s.nativeSessionId } : {}),
           openedAt: s.openedAt,
+          lastActiveAt: s.lastActiveAt,
         })),
     };
   }
@@ -287,15 +339,21 @@ export class ChatService {
    * Idle channels close immediately (daemon kills the adapter); a channel
    * MID-TURN flips to deferred and closes itself when the turn ends, so an
    * abandoned generation still finishes and persists natively.
+   *
+   * 9 W11 D6 — `idleOnly` (只清理闲置): busy channels are left COMPLETELY
+   * alone (no defer-flip), so a generating turn never even schedules its
+   * channel's death.
    */
-  async closeAll(ownerId: string): Promise<{ closed: number; deferred: number }> {
+  async closeAll(ownerId: string, idleOnly = false): Promise<{ closed: number; deferred: number }> {
     let closed = 0;
     let deferred = 0;
     for (const session of [...this.live.values()]) {
       if (session.ownerId !== ownerId) continue;
       if (session.busy) {
-        session.closeWhenIdle = true;
-        deferred += 1;
+        if (!idleOnly) {
+          session.closeWhenIdle = true;
+          deferred += 1;
+        }
         continue;
       }
       await this.closeInternal(session, 'user', { notifyDaemon: true });
@@ -303,6 +361,22 @@ export class ChatService {
     }
     if (closed > 0 || deferred > 0) this.pushSnapshot(ownerId);
     return { closed, deferred };
+  }
+
+  /**
+   * 9 W11 D6 — the optional idle TTL sweep (`CHAT_IDLE_TTL_MS`, default 0 =
+   * off). Enabling it is an explicit operator trade-off: a channel the user
+   * has not prompted for TTL milliseconds closes (`idle-timeout`), tab
+   * included. Busy and deferred channels are never touched; the tab bar's
+   * idle-age label (same clock) is the visible warning.
+   */
+  private sweepIdle(): void {
+    if (this.opts.idleTtlMs <= 0) return;
+    for (const session of [...this.live.values()]) {
+      if (session.phase !== 'ready' || session.busy || session.closeWhenIdle) continue;
+      if (Date.now() - session.lastActiveAt < this.opts.idleTtlMs) continue;
+      void this.closeInternal(session, 'idle-timeout', { notifyDaemon: true });
+    }
   }
 
   /** Daemon's `chat:session.ready` — spawn+initialize+session/new done (or failed). */
@@ -393,6 +467,9 @@ export class ChatService {
     } else if (event.kind === 'session_status') {
       const wasBusy = session.busy;
       session.busy = event.state === 'active';
+      // 9 W11 D6 — the turn END is the idle clock's tick: the tab's idle-age
+      // label and the optional TTL sweep measure from here.
+      if (wasBusy && !session.busy) session.lastActiveAt = Date.now();
       if (wasBusy !== session.busy) this.pushSnapshot(session.ownerId);
       // Viewers left while this turn ran — once it ends, the channel closes
       // (relay the idle event first; the room may still have a rejoiner).
