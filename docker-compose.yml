@@ -6,16 +6,22 @@
 #
 # Usage:
 #   1. cp .env.example .env   then fill in JWT_SECRET (required) and others.
-#   2. docker compose up --build -d
+#   2. docker compose up --build -d        # build from source, OR
+#      docker compose pull && docker compose up -d   # run the published images
 #   3. Open http://<host>:15921
+#
+# Images are published to Docker Hub on every vX.Y.Z tag
+# (.github/workflows/docker.yml): sinrimin/harness-nexus-server / -web.
 
 services:
   # --- API + MCP server ------------------------------------------------------
-  # Same image built by the root Dockerfile (multi-stage, pnpm deploy).
-  # NOT published — only reachable from `web` via the compose network.
+  # Built by the root Dockerfile (multi-stage, pnpm deploy). No host ports —
+  # only reachable from `web` via the compose network. `build:` stays primary
+  # (deploys run from source); `image:` is the tag local builds get and what
+  # `docker compose pull` fetches from Docker Hub.
   server:
     build: .
-    # image: ghcr.io/sinrimin/harness-nexus:latest   # swap in once published
+    image: sinrimin/harness-nexus-server:latest
     container_name: harness-nexus-server
     expose:
       - '8080'
@@ -27,12 +33,13 @@ services:
 
   # --- web SPA (nginx) + reverse proxy ---------------------------------------
   # Build context is the repo root so pnpm can resolve the workspace; the
-  # Dockerfile lives under apps/web/Dockerfile.
+  # Dockerfile lives under apps/web/Dockerfile. Same build/image duality as
+  # `server` above.
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    # image: ghcr.io/sinrimin/harness-nexus-web:latest   # swap in once published
+    image: sinrimin/harness-nexus-web:latest
     container_name: harness-nexus-web
     ports:
       # Bind to localhost on a private port. The public HTTPS entry is the host

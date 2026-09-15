@@ -1,0 +1,114 @@
+# Docker Hub image publish — tag-driven, in lockstep with the npm release.
+#
+# Publishing TWO images on every pushed vX.Y.Z tag (the same trigger as
+# release.yml, so npm packages and images land together):
+#   sinrimin/harness-nexus-server  ← root Dockerfile (Fastify API + MCP proxy)
+#   sinrimin/harness-nexus-web     ← apps/web/Dockerfile (nginx SPA + reverse proxy)
+#
+# Credentials are ENVIRONMENT secrets on the `release` environment:
+#   DOCKERHUB_USERNAME + DOCKERHUB_TOKEN (Docker Hub personal access token,
+#   Read & Write, scoped to the two repos). The environment's deployment rule
+#   restricts usage to v* tags; add required reviewers to the environment when
+# collaborators join — this job declares `environment:` so pushes then pause
+# for approval before touching Docker Hub.
+#
+# Image tags: v0.1.0-alpha.4 → 0.1.0-alpha.4 + latest. Pre-1.0 the alphas ARE
+# latest (same policy as npm), so `latest=true` is forced — metadata-action's
+# default skips prereleases.
+#
+# linux/amd64 only for now: arm64 would mean QEMU-emulated TS compiles
+# (~30min+ per image). Add linux/arm64 to `platforms` + setup-qemu-action
+# when someone actually needs arm images.
+#
+# Re-pushing the same tag rebuilds and re-pushes the same image tags — unlike
+# npm, registry tags are mutable, so a retry just overwrites with identical
+# content. The tag-must-match-manifests guard below is copied from release.yml
+# so a mistyped tag fails BOTH workflows, never forks the version record.
+
+name: docker
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: docker # serialize — concurrent runs would race on the `latest` tag
+  cancel-in-progress: false
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag must match the manifests (same guard as release.yml)
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          ok=1
+          for d in core shared sdk-ts mcp-runtime cli; do
+            have=$(node -p "require('./packages/$d/package.json').version")
+            if [ "$have" != "$want" ]; then
+              echo "::error::packages/$d is $have but the tag wants $want — bump the manifests or re-tag"
+              ok=0
+            fi
+          done
+          [ "$ok" = 1 ]
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ---- server image (root Dockerfile) --------------------------------------
+      - uses: docker/metadata-action@v5
+        id: meta-server
+        with:
+          images: sinrimin/harness-nexus-server
+          tags: |
+            type=semver,pattern={{version}}
+          flavor: |
+            latest=true
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          # No provenance attestation: it adds an `unknown/unknown` arch entry
+          # to the manifest list that renders confusingly on Docker Hub.
+          provenance: false
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---- web image (apps/web/Dockerfile; context stays the repo root) -------
+      # Runs after the server build on purpose: both Dockerfiles share identical
+      # dependency layers, so buildx's in-job layer cache makes the second
+      # `pnpm install` nearly free.
+      - uses: docker/metadata-action@v5
+        id: meta-web
+        with:
+          images: sinrimin/harness-nexus-web
+          tags: |
+            type=semver,pattern={{version}}
+          flavor: |
+            latest=true
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
