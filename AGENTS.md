@@ -1440,7 +1440,7 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   rows with a warning and `connectServer` maps them to `409 not_dialable`
   (`server/test/registry-resilience.test.ts`).
   **Release infrastructure shipped (2026-09):** the five `@harness-nexus/*`
-  packages are on npm (`0.1.0-alpha.2`; `latest` = alpha by design — `npx`
+  packages are on npm (`0.1.0-alpha.4` — W7.1 through W11; `latest` = alpha by design — `npx`
   must work pre-1.0; `packages/cli/README.md` is the npm landing page), with
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
