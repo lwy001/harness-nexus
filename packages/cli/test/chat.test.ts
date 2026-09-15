@@ -1785,3 +1785,88 @@ describe('session config (9 W9 A)', () => {
     );
   }, 15000);
 });
+
+describe('adapter report (9 W11 C)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+
+  it('answers from the LIVE sessions map (pgid, native id, command, uptime base)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-rep',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    const ready = (await waitFor(
+      () =>
+        socket.emitted.find(
+          (e) =>
+            e.event === 'chat:session.ready' &&
+            (e.payload as { sessionId?: string }).sessionId === 'sess-rep',
+        )?.payload,
+    )) as { error?: string };
+    expect(ready.error).toBeUndefined();
+
+    const ack = vi.fn();
+    socket.receive('adapters:report', { requestId: 'req-1' }, ack);
+    expect(ack).toHaveBeenCalledWith({ accepted: true });
+    const result = socket.emitted.find((e) => e.event === 'adapters:report:result')?.payload as {
+      requestId: string;
+      adapters: {
+        wireSessionId: string;
+        target: string;
+        pgid: number;
+        nativeSessionId: string;
+        startedAt: number;
+        command: string;
+      }[];
+    };
+    expect(result.requestId).toBe('req-1');
+    expect(result.adapters).toHaveLength(1);
+    expect(result.adapters[0]).toMatchObject({
+      wireSessionId: 'sess-rep',
+      target: 'hermes',
+      command: 'node',
+      nativeSessionId: expect.any(String),
+      startedAt: expect.any(Number),
+    });
+    expect(result.adapters[0]!.pgid).toBeGreaterThan(0);
+
+    // Gone from the map → gone from the report (present-tense truth).
+    socket.receive('chat:session.close', { sessionId: 'sess-rep', reason: 'user' });
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
+    const ack2 = vi.fn();
+    socket.receive('adapters:report', { requestId: 'req-2' }, ack2);
+    const second = socket.emitted.filter((e) => e.event === 'adapters:report:result').at(-1)
+      ?.payload as { requestId: string; adapters: unknown[] };
+    expect(second.requestId).toBe('req-2');
+    expect(second.adapters).toHaveLength(0);
+  }, 15000);
+
+  it('rejects a malformed report request', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    const ack = vi.fn();
+    socket.receive('adapters:report', {}, ack);
+    expect(ack).toHaveBeenCalledWith({ error: 'proto:invalid' });
+    expect(socket.emitted.filter((e) => e.event === 'adapters:report:result')).toHaveLength(0);
+  });
+});
