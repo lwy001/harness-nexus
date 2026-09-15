@@ -186,6 +186,7 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
     chatMaxActiveSessionsPerMachine: config.chatMaxActiveSessionsPerMachine,
     chatPermissionTimeoutMs: config.chatPermissionTimeoutMs,
     chatReadyTimeoutMs: config.chatReadyTimeoutMs,
+    chatReconnectGraceMs: config.chatReconnectGraceMs,
   });
   app.realtime.jobs.start();
   app.addHook('onClose', async () => {

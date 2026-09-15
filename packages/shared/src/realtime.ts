@@ -642,6 +642,25 @@ export const chatSessionClosedEventSchema = z.object({
 });
 
 /**
+ * server → daemon on EVERY /ctl (re)connect (9 W11 E): the server's live
+ * channel rows for the machine. The daemon tears down any session it holds
+ * that is NOT listed (its row was reaped while the daemon grace-kept it, or
+ * the server restarted) and acks with the ids it still holds — registered
+ * sessions plus establishments in flight for LISTED ids. The server then
+ * closes rows the daemon does not hold (ghosts of a daemon hard-death).
+ * Ownership stays server-side (Principle 1): the daemon never re-adopts
+ * rows, it only drops what the server disowned.
+ */
+export const chatReconcileEventSchema = z.object({
+  sessionIds: z.array(z.string().min(1).max(64)).max(64),
+});
+
+/** daemon → server: the `chat:reconcile` ack. */
+export const chatReconcileAckSchema = z.object({
+  held: z.array(z.string().min(1).max(64)).max(64),
+});
+
+/**
  * One of the agent's OWN persisted sessions (9 W7) — `session/list` from the
  * target's ACP adapter (claude-code/codex) or dsh's native store, surfaced
  * through `GET /api/agent-instances/:id/sessions`. The platform persists

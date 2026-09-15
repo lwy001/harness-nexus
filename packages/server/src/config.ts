@@ -85,6 +85,12 @@ export interface ServerConfig {
   /** C5 — spawn+initialize+session/new watchdog for `chat:session.start`. */
   chatReadyTimeoutMs: number;
   /**
+   * 9 W11 E — how long a daemon's /ctl disconnect delays the channel reap
+   * (a sub-second transport blip must not kill every channel; a reconnect
+   * within the window reconciles instead). 0 = reap immediately (pre-W11).
+   */
+  chatReconnectGraceMs: number;
+  /**
    * Phase 8 C2 — marketplace emitter `.mcp.json` shape. `client` (default):
    * one stdio `hnx mcp serve` entry per profile. `server`: the pre-C2
    * aggregated-endpoint + PAT-env output (the no-`hnx` fallback).
@@ -152,6 +158,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     chatMaxActiveSessionsPerMachine: Number(env.CHAT_MAX_ACTIVE_SESSIONS_PER_MACHINE ?? '5'),
     chatPermissionTimeoutMs: Number(env.CHAT_PERMISSION_TIMEOUT_MS ?? '60000'),
     chatReadyTimeoutMs: Number(env.CHAT_READY_TIMEOUT_MS ?? '30000'),
+    chatReconnectGraceMs: Number(env.CHAT_RECONNECT_GRACE_MS ?? '8000'),
     emitterMode: (env.EMITTER_MODE as ServerConfig['emitterMode']) ?? 'client',
   };
 }

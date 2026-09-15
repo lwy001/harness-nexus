@@ -530,6 +530,33 @@ export class ChatService {
   }
 
   /**
+   * 9 W11 E — the server's live channel ids for a machine (the reconcile
+   * handshake's list, sent to the daemon on every /ctl (re)connect).
+   */
+  liveSessionIds(machineId: string): string[] {
+    const ids: string[] = [];
+    for (const session of this.live.values()) {
+      if (session.machineId === machineId) ids.push(session.sessionId);
+    }
+    return ids;
+  }
+
+  /**
+   * 9 W11 E — reconcile completion: rows the daemon does NOT hold are ghosts
+   * (its session died during a blip without the close event landing, or the
+   * daemon restarted/hard-died). Close them; held rows survive the blip.
+   */
+  async retainOnly(machineId: string, held: Set<string>): Promise<void> {
+    for (const session of [...this.live.values()]) {
+      if (session.machineId === machineId && !held.has(session.sessionId)) {
+        // notifyDaemon closes the loop for a daemon that still runs one of
+        // these (an ack race) — a no-op ack for one that does not.
+        await this.closeInternal(session, 'connection-lost', { notifyDaemon: true });
+      }
+    }
+  }
+
+  /**
    * Live channels of an agent instance keyed by NATIVE session id — the
    * listing surface for "which sessions still hold a channel" (`open` /
    * `openChannelId` rows; a row click rejoins instead of resuming).
