@@ -284,6 +284,49 @@ describe('rejoin (9 W7 — resync, no persisted rows)', () => {
       d.close();
     }
   }, 15000);
+
+  it('a FRESH socket rejoining a ready channel receives the ready re-push + history (join-before-push)', async () => {
+    // Tab-switch/refresh transcript loss (user-found 2026-09-15): the
+    // rejoin used to push `ready` + the resync from INSIDE open(), before
+    // the /app handler joined the opener — a socket that was never in the
+    // room got nothing. The fix joins in reattach, BEFORE the pushes.
+    const d = await connectDaemon(['chat']);
+    const fresh = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+    try {
+      const startPromise = once(d, 'chat:session.start');
+      const open = await openSession(browser, agentId);
+      const start = (await startPromise) as { sessionId: string };
+      expect(open.sessionId).toBe(start.sessionId);
+      d.emit('chat:session.ready', { sessionId: start.sessionId, nativeSessionId: 'native-race' });
+      await once(browser, 'chat:session.ready');
+
+      await once(fresh, 'connect');
+      const readyP = once(fresh, 'chat:session.ready');
+      const resyncP = once(d, 'chat:session.resync');
+      const rejoin = await openSession(fresh, agentId, start.sessionId);
+      expect(rejoin.phase).toBe('ready');
+      const ready = (await readyP) as { sessionId: string; nativeSessionId?: string };
+      expect(ready.sessionId).toBe(start.sessionId);
+      expect(ready.nativeSessionId).toBe('native-race');
+      const resync = (await resyncP) as { sessionId: string };
+      expect(resync.sessionId).toBe(start.sessionId);
+      // The daemon's history replay is relayed into the room — the fresh
+      // socket must receive it too.
+      const historyP = once(fresh, 'chat:history');
+      d.emit('chat:history', {
+        sessionId: start.sessionId,
+        items: [{ type: 'user', blocks: [{ type: 'text', text: 'again' }] }],
+      });
+      const history = (await historyP) as { sessionId: string };
+      expect(history.sessionId).toBe(start.sessionId);
+
+      await emitAck(d, 'chat:session.closed', { sessionId: start.sessionId, reason: 'user' });
+      await once(fresh, 'chat:session.closed');
+    } finally {
+      fresh.close();
+      d.close();
+    }
+  }, 15000);
 });
 
 describe('workspace directories (9 W6)', () => {

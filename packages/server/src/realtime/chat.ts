@@ -174,7 +174,7 @@ export class ChatService {
       if (!existing || existing.ownerId !== ownerId) {
         return { ok: false, code: 'SESSION_NOT_FOUND' };
       }
-      return this.reattach(existing);
+      return this.reattach(existing, openerSocketId);
     }
 
     // 9 W11 (user-found) — one channel per native session: a resume open
@@ -190,7 +190,7 @@ export class ChatService {
           s.agentInstanceId === agentInstanceId &&
           (s.resumingNativeId === resume.sessionId || s.nativeSessionId === resume.sessionId),
       );
-      if (existing !== undefined) return this.reattach(existing);
+      if (existing !== undefined) return this.reattach(existing, openerSocketId);
     }
 
     const agent = await this.deps.uow.agentInstances.findById(agentInstanceId);
@@ -271,13 +271,20 @@ export class ChatService {
    * `joined: true`; a starting channel needs no ready re-push (it never
    * emitted one — the real push lands when the agent comes up).
    */
-  private reattach(existing: LiveSession): ChatOpenResult {
+  private reattach(existing: LiveSession, openerSocketId: string): ChatOpenResult {
     if (existing.phase === 'starting') {
       // 9 W11: with user-scoped liveness a channel SURVIVES its opener's
       // page refresh mid-spawn (another window may be watching the tab) —
       // reattach silently: join + ack 'starting'.
       return { ok: true, sessionId: existing.sessionId, joined: true, phase: 'starting' };
     }
+    // Join the opener BEFORE pushing. The /app handler's join runs after
+    // open() resolves, so pushes emitted here would reach a room a FRESH
+    // socket (page refresh / second window) has not entered yet — its
+    // ready re-push was simply lost. (Same-SPA tab switches need the
+    // browser-side switch buffer as well: the pushes can predate the
+    // keyed listeners regardless of room membership.)
+    this.deps.io.joinChannel(openerSocketId, existing.sessionId);
     // A re-join may be a page refresh whose listeners were attached after
     // the original ready push — re-push so every viewer settles.
     this.deps.io.toChannel(existing.sessionId, 'chat:session.ready', {
