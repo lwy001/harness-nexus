@@ -186,6 +186,8 @@ export interface ChatChannelView {
   nativeSessionId?: string;
   /** Epoch ms — the eviction order (oldest first). */
   openedAt: number;
+  /** 9 W11 D6 — epoch ms of the last turn's END (open time until then). */
+  lastActiveAt: number;
 }
 
 export interface ChatChannelsPush {

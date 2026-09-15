@@ -93,6 +93,13 @@ export interface ServerConfig {
    */
   chatReconnectGraceMs: number;
   /**
+   * 9 W11 D6 — close a user's idle chat channels after this long without a
+   * turn (measured from the last turn's END). 0 (the default) NEVER
+   * auto-closes: enabling it may close a tab the user still wanted — pair
+   * it with the tab bar's idle-age label.
+   */
+  chatIdleTtlMs: number;
+  /**
    * Phase 8 C2 — marketplace emitter `.mcp.json` shape. `client` (default):
    * one stdio `hnx mcp serve` entry per profile. `server`: the pre-C2
    * aggregated-endpoint + PAT-env output (the no-`hnx` fallback).
@@ -162,6 +169,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     chatPermissionTimeoutMs: Number(env.CHAT_PERMISSION_TIMEOUT_MS ?? '60000'),
     chatReadyTimeoutMs: Number(env.CHAT_READY_TIMEOUT_MS ?? '30000'),
     chatReconnectGraceMs: Number(env.CHAT_RECONNECT_GRACE_MS ?? '8000'),
+    chatIdleTtlMs: Number(env.CHAT_IDLE_TTL_MS ?? '0'),
     emitterMode: (env.EMITTER_MODE as ServerConfig['emitterMode']) ?? 'client',
   };
 }

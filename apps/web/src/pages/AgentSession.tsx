@@ -245,6 +245,14 @@ export function AgentSessionPage() {
     const onClosed = (push: ChatSessionClosedPush): void => {
       if (push.sessionId !== sessionId) return;
       liveChannelRef.current = '';
+      // A user-initiated close (tab ×, 断开) needs no tombstone — the pane
+      // returns to its welcome state (the reset effect on sessionId==='').
+      // Server-side closures keep the closed pane so their reason shows.
+      if (push.reason === 'user') {
+        setSessionId('');
+        void refreshSessions();
+        return;
+      }
       setPhase('closed');
       // An evicted channel deserves its own explanation — the user did not
       // close anything; the machine's channel budget did.
@@ -448,12 +456,13 @@ export function AgentSessionPage() {
     });
   }
 
-  /** Channel-only teardown — the native session survives (9 W7). */
+  /** Channel-only teardown — the native session survives (9 W7). The pane
+   *  returns to its welcome state (the pane is "empty", not "closed"). */
   async function disconnectChannel(): Promise<void> {
     if (sessionId === '') return;
     liveChannelRef.current = '';
     await emitWithAck('chat:session.close', { sessionId, reason: 'user' });
-    setPhase('closed');
+    setSessionId('');
     void refreshSessions();
   }
 
@@ -479,12 +488,14 @@ export function AgentSessionPage() {
     });
   }
 
-  /** 一键清理 — busy channels defer (finish the turn), idle ones close now. */
-  async function cleanupChannels(): Promise<void> {
-    if (!confirm(t('chat.tabsCleanupConfirm'))) return;
+  /** 清理 menu — close-all (busy defer) or 只清理闲置 (busy untouched, 9 W11 D6). */
+  async function cleanupChannels(idleOnly: boolean): Promise<void> {
+    if (!confirm(idleOnly ? t('chat.tabsCleanupIdleConfirm') : t('chat.tabsCleanupConfirm'))) {
+      return;
+    }
     const res = await emitWithAck<{ closed?: number; deferred?: number }>(
       'chat:channels.closeAll',
-      {},
+      { idleOnly },
     );
     toast.success(
       t('chat.tabsCleanupDone', { closed: res.closed ?? 0, deferred: res.deferred ?? 0 }),
@@ -533,7 +544,7 @@ export function AgentSessionPage() {
           activeSessionId={sessionId}
           onActivate={activateChannel}
           onClose={closeChannelTab}
-          onCleanup={() => void cleanupChannels()}
+          onCleanup={(idleOnly) => void cleanupChannels(idleOnly)}
         />
         <div className="flex h-full min-h-0">
           {/* Left rail: new session + the agent's native sessions, grouped by cwd */}

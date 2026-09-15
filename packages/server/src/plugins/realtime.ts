@@ -93,6 +93,7 @@ export async function registerRealtime(
     chatPermissionTimeoutMs: number;
     chatReadyTimeoutMs: number;
     chatReconnectGraceMs: number;
+    chatIdleTtlMs: number;
     sessionsListTimeoutMs: number;
     adaptersReportTimeoutMs: number;
   },
@@ -140,6 +141,7 @@ export async function registerRealtime(
       maxActiveSessionsPerMachine: opts.chatMaxActiveSessionsPerMachine,
       permissionTimeoutMs: opts.chatPermissionTimeoutMs,
       readyTimeoutMs: opts.chatReadyTimeoutMs,
+      idleTtlMs: opts.chatIdleTtlMs,
     },
   );
   const jobs = new JobService(
@@ -653,7 +655,10 @@ export async function registerRealtime(
         return;
       }
       void (async () => {
-        const result = await realtime.chat.closeAll(socket.data.userId as string);
+        const result = await realtime.chat.closeAll(
+          socket.data.userId as string,
+          parsed.data.idleOnly ?? false,
+        );
         ack?.(result);
       })();
     });

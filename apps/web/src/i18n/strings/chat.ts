@@ -77,6 +77,11 @@ const en = {
   // ---- 9 W11 B: live-channel tabs ----
   tabCloseAria: 'Close channel {id}',
   tabDeferred: 'finishing',
+  tabIdleTitle: 'Idle since the last turn ended',
+  tabsCleanupAll: 'Close all (busy ones finish first)',
+  tabsCleanupIdle: 'Close idle only',
+  tabsCleanupIdleConfirm: 'Close every IDLE channel? Busy channels keep running untouched.',
+
   tabsCleanup: 'Close all',
   tabsCleanupTitle: 'Close every live channel (idle now; mid-turn channels finish first)',
   tabsCleanupConfirm:
@@ -186,6 +191,11 @@ const zh: typeof en = {
   // ---- 9 W11 B: live-channel tabs ----
   tabCloseAria: '关闭通道 {id}',
   tabDeferred: '收尾中',
+  tabIdleTitle: '自上回合结束起闲置',
+  tabsCleanupAll: '关闭全部（忙的收尾后关闭）',
+  tabsCleanupIdle: '只关闭闲置',
+  tabsCleanupIdleConfirm: '关闭所有闲置通道？忙通道不受影响，继续运行。',
+
   tabsCleanup: '一键清理',
   tabsCleanupTitle: '关闭全部活动通道（空闲的立即关闭；输出中的先完成当前回合）',
   tabsCleanupConfirm:
