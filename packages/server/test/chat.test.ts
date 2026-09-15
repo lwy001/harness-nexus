@@ -146,10 +146,20 @@ afterAll(async () => {
   await app?.close();
 }, 20000);
 
-async function connectDaemon(capabilities: string[]): Promise<Socket> {
+async function connectDaemon(
+  capabilities: string[],
+  opts: { heldIds?: () => string[] } = {},
+): Promise<Socket> {
   const sock = io(`${baseUrl}/ctl`, {
     auth: { token: machineToken, machineId },
     transports: ['websocket'],
+  });
+  // 9 W11 E — the server reconciles on EVERY connection; the handler must be
+  // attached BEFORE the connect resolves or the ack misses the window. The
+  // default models a fresh W11 daemon: it holds nothing.
+  sock.on('chat:reconcile', (payload: unknown, ack?: (res: unknown) => void) => {
+    const held = opts.heldIds ? opts.heldIds() : [];
+    ack?.({ held });
   });
   await once(sock, 'connect');
   await emitAck(sock, 'machine:hello', { daemonVersion: '0.4.0-test', capabilities });
@@ -1129,6 +1139,122 @@ describe('user-scoped channel liveness (9 W11)', () => {
       const ready = await once(browser, 'chat:session.ready');
       expect((ready as { sessionId: string }).sessionId).toBe(sessionId);
       await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+});
+
+describe('disconnect grace + reconcile (9 W11 E)', () => {
+  /**
+   * A daemon socket that CANNOT auto-reconnect — `engine.close()` on it is a
+   * one-way TRANSPORT blip (the server sees 'transport close', not a
+   * deliberate client disconnect), which is exactly the D5 shape.
+   */
+  const connectBlipDaemon = async (
+    onReconcile?: (sessionIds: string[], ack?: (res: unknown) => void) => void,
+  ): Promise<Socket> => {
+    const sock = io(`${baseUrl}/ctl`, {
+      auth: { token: machineToken, machineId },
+      transports: ['websocket'],
+      reconnection: false,
+    });
+    if (onReconcile !== undefined) {
+      sock.on('chat:reconcile', (payload: unknown, ack?: (res: unknown) => void) => {
+        const ids = (payload as { sessionIds?: string[] }).sessionIds ?? [];
+        onReconcile(ids, ack);
+      });
+    }
+    await once(sock, 'connect');
+    await emitAck(sock, 'machine:hello', { daemonVersion: '0.14.0-test', capabilities: ['chat'] });
+    return sock;
+  };
+
+  const engineKill = (sock: Socket): void => {
+    (sock.io as unknown as { engine: { close(): void } }).engine.close();
+  };
+
+  const openReady = async (d: Socket): Promise<string> => {
+    const startP = once(d, 'chat:session.start');
+    const res = await openSession(browser, agentId);
+    expect(res.error).toBeUndefined();
+    const start = (await startP) as { sessionId: string };
+    const readyP = once(browser, 'chat:session.ready');
+    readyFor(d, start);
+    await readyP;
+    return start.sessionId;
+  };
+
+  it('a transport blip holds rows inside the grace window, then reaps past it', async () => {
+    const d = await connectBlipDaemon();
+    try {
+      const sessionId = await openReady(d);
+      engineKill(d);
+
+      // Inside the window (suite grace 2000ms): the row survives.
+      await new Promise((r) => setTimeout(r, 300));
+      const snap1 = (await emitAck(browser, 'chat:channels.sync', {})) as {
+        channels: { sessionId: string }[];
+      };
+      expect(snap1.channels.some((c) => c.sessionId === sessionId)).toBe(true);
+
+      // Past the window: the delayed reap closes it.
+      const closed = (await once(browser, 'chat:session.closed', 6000)) as { reason: string };
+      expect(closed.reason).toBe('connection-lost');
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('a reconnect inside the window cancels the reap and reconcile KEEPS held rows', async () => {
+    const held: string[] = [];
+    const d = await connectBlipDaemon((ids, ack) => ack?.({ held: [...held] }));
+    try {
+      const sessionId = await openReady(d);
+      held.push(sessionId);
+      engineKill(d);
+      await new Promise((r) => setTimeout(r, 150));
+
+      // The daemon that came back acks the session as held — the row must
+      // survive the blip end-to-end (grace canceled, reconcile confirms).
+      const back = await connectDaemon(['chat'], { heldIds: () => [...held] });
+      try {
+        await new Promise((r) => setTimeout(r, 600));
+        const snap = (await emitAck(browser, 'chat:channels.sync', {})) as {
+          channels: { sessionId: string }[];
+        };
+        expect(snap.channels.some((c) => c.sessionId === sessionId)).toBe(true);
+        await emitAck(browser, 'chat:session.close', { sessionId, reason: 'user' });
+      } finally {
+        back.disconnect();
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+
+  it('a daemon that does not answer reconcile (pre-W11) falls back to the delayed reap', async () => {
+    // No reconcile handler — the old-daemon compatibility path.
+    const d = await connectBlipDaemon();
+    try {
+      await openReady(d);
+      engineKill(d);
+      await new Promise((r) => setTimeout(r, 100));
+
+      // The replacement never acks: the handshake times out (min(5000,
+      // grace)=2000ms) and the fallback reaps through the SAME grace.
+      const silent = await connectBlipDaemon();
+      try {
+        const closed = (await once(browser, 'chat:session.closed', 8000)) as { reason: string };
+        expect(closed.reason).toBe('connection-lost');
+      } finally {
+        silent.disconnect();
+        await new Promise((r) => setTimeout(r, 150));
+      }
     } finally {
       d.disconnect();
       await new Promise((r) => setTimeout(r, 150));

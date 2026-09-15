@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachChatHandlers, mapAcpUpdate } from '../src/daemon/chat.js';
 import { deriveSessionCaps } from '../src/daemon/acp/agent-connection.js';
@@ -14,6 +16,9 @@ import type { ChatStreamEvent } from '@harness-nexus/shared';
  */
 
 const FIXTURE = new URL('./fixtures/acp-agent.mjs', import.meta.url).pathname;
+
+/** W11 A — spawned adapters are ledgered under <homeDir>/.hnx; never the real home. */
+const LEDGER_HOME = mkdtempSync(join(tmpdir(), 'hnx-chat-ledger-'));
 
 /** Minimal socket.io-client stand-in: records emits, lets tests deliver. */
 class FakeSocket {
@@ -323,6 +328,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
 
     socket.receive('chat:session.start', {
@@ -381,7 +387,7 @@ describe('session round-trip vs the fixture agent', () => {
     const closeAck = vi.fn();
     socket.receive('chat:session.close', { sessionId: 'sess-1', reason: 'user' }, closeAck);
     expect(closeAck).toHaveBeenCalledWith({ closed: true });
-    await waitFor(() => socket.eventsOf('chat:session.closed').length > 0);
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
     expect((socket.eventsOf('chat:session.closed')[0]!.payload as { reason: string }).reason).toBe(
       'user',
     );
@@ -400,6 +406,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-str',
@@ -441,6 +448,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-notice',
@@ -466,6 +474,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-err',
@@ -510,6 +519,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-err-detail',
@@ -542,6 +552,7 @@ describe('session round-trip vs the fixture agent', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: 'definitely-not-a-command-12345', PATH: '/nonexistent' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-2',
@@ -576,6 +587,7 @@ describe('native sessions (9 W7): resume, history, resync', () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
     });
 
     socket.receive('chat:session.start', {
@@ -644,6 +656,7 @@ describe('native sessions (9 W7): resume, history, resync', () => {
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
       spawnEnv: { ...process.env, FIXTURE_ACP_NO_LOAD: '1' },
+      homeDir: LEDGER_HOME,
     });
 
     socket.receive('chat:session.start', {
@@ -703,6 +716,7 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
       spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile },
+      homeDir: LEDGER_HOME,
     });
 
     socket.receive('chat:session.start', {
@@ -743,6 +757,7 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
       // Hold `session/new` open so the close below lands mid-establishment.
       spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile, FIXTURE_DELAY_NEW_MS: '1500' },
+      homeDir: LEDGER_HOME,
     });
 
     socket.receive('chat:session.start', {
@@ -874,7 +889,7 @@ describe('adapter ledger (9 W11 A)', () => {
     const pgid = entries[0]!.pgid;
 
     socket.receive('chat:session.close', { sessionId: 'sess-ledger', reason: 'user' });
-    await waitFor(() => socket.eventsOf('chat:session.closed').length > 0);
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
     // Synchronously after the closed event the file is STILL there (kill
     // paths never unlink — a hard death inside the kill grace must keep the
     // record sweepable)…
@@ -916,6 +931,220 @@ describe('adapter ledger (9 W11 A)', () => {
     await waitFor(() => (pidsIn(pidFile).every((p) => gone(p)) ? true : undefined));
     await waitFor(() => (readAdapterLedger(home).length === 0 ? true : undefined));
     rmSync(home, { recursive: true, force: true });
+  }, 15000);
+});
+
+describe('disconnect grace + reconcile (9 W11 E)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+  const gone = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const pidsIn = (file: string): number[] =>
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .map((l) => Number.parseInt(l, 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+  const openSession = async (socket: FakeSocket, sessionId: string): Promise<void> => {
+    socket.receive('chat:session.start', {
+      sessionId,
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    const ready = (await waitFor(
+      () =>
+        socket.emitted.find(
+          (e) =>
+            e.event === 'chat:session.ready' &&
+            (e.payload as { sessionId?: string }).sessionId === sessionId,
+        )?.payload,
+    )) as { error?: string };
+    expect(ready.error).toBeUndefined();
+  };
+
+  it('a transport blip within the grace window keeps the channel; a later prompt works', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    await openSession(socket, 'sess-blip');
+
+    socket.receive('disconnect', 'transport close');
+    // Within the window: nothing tears down.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(socket.eventsOf('chat:session.closed')).toHaveLength(0);
+
+    socket.receive('connect');
+    const ack = vi.fn();
+    socket.receive(
+      'chat:message.send',
+      { sessionId: 'sess-blip', prompt: [{ type: 'text', text: 'hi' }] },
+      ack,
+    );
+    expect(ack).toHaveBeenCalledWith({ accepted: true });
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    socket.receive('chat:session.close', { sessionId: 'sess-blip', reason: 'user' });
+  }, 15000);
+
+  it('a blip that outlasts the grace window tears everything down', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: {
+        HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`,
+        HN_TEARDOWN_GRACE_MS: '80',
+        PATH: process.env.PATH ?? '',
+      },
+      homeDir: LEDGER_HOME,
+    });
+    await openSession(socket, 'sess-expire');
+
+    socket.receive('disconnect', 'transport close');
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
+    expect((socket.eventsOf('chat:session.closed')[0]!.payload as { reason: string }).reason).toBe(
+      'daemon-disconnected',
+    );
+  }, 15000);
+
+  it('a deliberate stop (io client disconnect) tears down immediately despite the grace', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    await openSession(socket, 'sess-stop');
+
+    socket.receive('disconnect', 'io client disconnect');
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
+  }, 15000);
+
+  it('HN_TEARDOWN_GRACE_MS=0 restores the pre-W11 immediate teardown', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: {
+        HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`,
+        HN_TEARDOWN_GRACE_MS: '0',
+        PATH: process.env.PATH ?? '',
+      },
+      homeDir: LEDGER_HOME,
+    });
+    await openSession(socket, 'sess-off');
+
+    socket.receive('disconnect', 'transport close');
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
+  }, 15000);
+
+  it('reconcile drops unlisted sessions, keeps listed ones, and acks what is held', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    await openSession(socket, 'sess-keep');
+    await openSession(socket, 'sess-drop');
+
+    const ack = vi.fn();
+    socket.receive('chat:reconcile', { sessionIds: ['sess-keep'] }, ack);
+
+    const dropped = await waitFor(() =>
+      socket
+        .eventsOf('chat:session.closed')
+        .find((e) => (e.payload as { sessionId: string }).sessionId === 'sess-drop'),
+    );
+    expect((dropped.payload as { reason: string }).reason).toBe('reconciled');
+    expect(ack).toHaveBeenCalledWith({ held: ['sess-keep'] });
+
+    // The kept channel still prompts.
+    const promptAck = vi.fn();
+    socket.receive(
+      'chat:message.send',
+      { sessionId: 'sess-keep', prompt: [{ type: 'text', text: 'hi' }] },
+      promptAck,
+    );
+    expect(promptAck).toHaveBeenCalledWith({ accepted: true });
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    socket.receive('chat:session.close', { sessionId: 'sess-keep', reason: 'user' });
+  }, 15000);
+
+  it('reconcile ABORTS an unlisted in-flight establishment (no orphan, no ready)', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      // Hold session/new open so the reconcile lands mid-establishment.
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile, FIXTURE_DELAY_NEW_MS: '1500' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-orphan',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => (readFileSync(pidFile, 'utf8').trim() !== '' ? true : undefined));
+
+    const ack = vi.fn();
+    socket.receive('chat:reconcile', { sessionIds: [] }, ack);
+    expect(ack).toHaveBeenCalledWith({ held: [] });
+
+    // The establishment must abort at its checkpoint — no ready, adapter dead.
+    await new Promise((r) => setTimeout(r, 2200));
+    expect(socket.emitted.filter((e) => e.event === 'chat:session.ready')).toHaveLength(0);
+    await waitFor(() => (pidsIn(pidFile).every((p) => gone(p)) ? true : undefined));
+  }, 15000);
+
+  it('reconcile reports a LISTED in-flight start as held and lets it finish', async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile, FIXTURE_DELAY_NEW_MS: '600' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-inflight',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => (readFileSync(pidFile, 'utf8').trim() !== '' ? true : undefined));
+
+    const ack = vi.fn();
+    socket.receive('chat:reconcile', { sessionIds: ['sess-inflight'] }, ack);
+    expect(ack).toHaveBeenCalledWith({ held: ['sess-inflight'] });
+
+    const ready = (await waitFor(
+      () => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload,
+    )) as { error?: string };
+    expect(ready.error).toBeUndefined();
+    socket.receive('chat:session.close', { sessionId: 'sess-inflight', reason: 'user' });
   }, 15000);
 });
 
@@ -1435,6 +1664,7 @@ describe('session config (9 W9 A)', () => {
         FIXTURE_IMAGE_CAPS: '1',
         FIXTURE_SESSION_ID: 'fx-cfg',
       },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-cfg',
@@ -1522,6 +1752,7 @@ describe('session config (9 W9 A)', () => {
     attachChatHandlers(socket as never, {
       env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
       spawnEnv: { FIXTURE_IMAGE_CAPS: '1' },
+      homeDir: LEDGER_HOME,
     });
     socket.receive('chat:session.start', {
       sessionId: 'sess-img',
