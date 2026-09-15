@@ -1,0 +1,213 @@
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
+
+/**
+ * Adapter process ledger (Phase 9 W11 A) — the daemon's crash-proof account
+ * of every adapter process GROUP it created. One JSON file per live adapter
+ * under `~/.hnx/adapters/<wireSessionId>.json`:
+ *
+ *   { pgid, target, command, wireSessionId, nativeSessionId?, startedAt }
+ *
+ * Invariants:
+ * - The entry is written INSIDE `AcpAgentConnection.start`, right after the
+ *   detached spawn and BEFORE initialize — a hard death during establishment
+ *   still leaves a sweepable record (Principle: a crash may orphan a
+ *   process, never an UNACCOUNTED one).
+ * - Kill paths never unlink: files are removed ONLY by the periodic audit
+ *   (group gone) or the boot sweep. Removing at teardown would lose
+ *   accounting if the daemon hard-dies inside the SIGTERM→SIGKILL grace —
+ *   leaving the file lets the next boot's sweep finish the reap instead.
+ * - No secrets: the command name only (credentials live in the target's
+ *   native config, never in adapter argv/env).
+ * - One daemon per (user, home): a second daemon's boot sweep would reap the
+ *   first one's live adapters. Concurrent daemons on one home are already
+ *   unsupported (shared ~/.hnx/config.json, double job dispatch).
+ */
+
+export interface AdapterLedgerEntry {
+  /** The process-group id (the detached leader's pid). */
+  pgid: number;
+  target: string;
+  command: string;
+  wireSessionId: string;
+  nativeSessionId?: string;
+  startedAt: number;
+}
+
+/** Wire session ids are server-generated base64url-ish tokens. */
+const WIRE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Sanity bound — a daemon owns at most CHAT_MAX_SESSIONS_PER_MACHINE of these. */
+const MAX_FILES = 256;
+
+export function adapterLedgerDir(home: string): string {
+  return join(home, '.hnx', 'adapters');
+}
+
+export function writeAdapterLedgerEntry(home: string, entry: AdapterLedgerEntry): void {
+  if (!WIRE_ID.test(entry.wireSessionId)) {
+    throw new Error('refusing adapter ledger write: unsafe wire session id');
+  }
+  if (!Number.isInteger(entry.pgid) || entry.pgid <= 0) {
+    throw new Error(`refusing adapter ledger write: invalid pgid ${String(entry.pgid)}`);
+  }
+  const dir = adapterLedgerDir(home);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${entry.wireSessionId}.json`);
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(entry)}\n`, 'utf8');
+  // Atomic swap — a crash mid-write can never half-replace an entry.
+  renameSync(tmp, file);
+}
+
+/** Parse one ledger file; null = malformed (not an entry we ever wrote). */
+function parseEntry(file: string): AdapterLedgerEntry | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (
+    typeof parsed['pgid'] === 'number' &&
+    Number.isInteger(parsed['pgid']) &&
+    parsed['pgid'] > 0 &&
+    typeof parsed['target'] === 'string' &&
+    typeof parsed['command'] === 'string' &&
+    typeof parsed['wireSessionId'] === 'string' &&
+    WIRE_ID.test(parsed['wireSessionId']) &&
+    typeof parsed['startedAt'] === 'number'
+  ) {
+    return parsed as unknown as AdapterLedgerEntry;
+  }
+  return null;
+}
+
+/** All valid entries (malformed files are skipped here, not deleted). */
+export function readAdapterLedger(home: string): AdapterLedgerEntry[] {
+  const dir = adapterLedgerDir(home);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return []; // no ledger dir yet — nothing was ever spawned here
+  }
+  const out: AdapterLedgerEntry[] = [];
+  for (const name of names.slice(0, MAX_FILES)) {
+    if (!name.endsWith('.json')) continue;
+    const entry = parseEntry(join(dir, name));
+    if (entry !== null) out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Whether the process GROUP still exists. EPERM (the group exists but is
+ * owned by someone else — pid reuse made it foreign) counts as NOT ours:
+ * every caller treats a false answer as "drop the file without signaling",
+ * so a foreign process is never killed on our word alone.
+ */
+export function groupIsAlive(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** SIGTERM the group, then SIGKILL after `graceMs` (unref'd — mirrors conn.kill). */
+export function killProcessGroup(pgid: number, graceMs = 3000): void {
+  const sig = (s: NodeJS.Signals): void => {
+    try {
+      process.kill(-pgid, s);
+    } catch {
+      // group already gone
+    }
+  };
+  const t = setTimeout(() => sig('SIGKILL'), graceMs);
+  t.unref();
+  sig('SIGTERM');
+}
+
+function unlinkQuiet(home: string, wireSessionId: string): void {
+  try {
+    unlinkSync(join(adapterLedgerDir(home), `${wireSessionId}.json`));
+  } catch {
+    // already gone
+  }
+}
+
+/**
+ * Housekeeping shared by the sweep and the audit: junk files — a torn write,
+ * hand-dropped garbage, or a `.json.tmp` stranded by a hard death between
+ * the tmp write and the rename — must not accumulate.
+ */
+function dropJunkFiles(home: string): number {
+  const dir = adapterLedgerDir(home);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names.slice(0, MAX_FILES)) {
+    const isTmp = name.endsWith('.json.tmp');
+    if (!isTmp && !name.endsWith('.json')) continue;
+    if (!isTmp && parseEntry(join(dir, name)) !== null) continue;
+    try {
+      unlinkSync(join(dir, name));
+      removed++;
+    } catch {
+      // racing writer — the next pass retries
+    }
+  }
+  return removed;
+}
+
+/**
+ * Boot sweep — run ONCE at daemon start, before anything here can spawn a
+ * new adapter: every still-alive pgid in the ledger is a leftover from a
+ * previous instance's hard death (SIGKILL/OOM skip every teardown path; the
+ * detached groups survive it). Kills live groups, deletes every file.
+ * Returns what happened so the caller can log it.
+ */
+export function sweepAdapterLedger(home: string): { reaped: number; dropped: number } {
+  let reaped = 0;
+  let dropped = 0;
+  for (const entry of readAdapterLedger(home)) {
+    if (groupIsAlive(entry.pgid)) {
+      killProcessGroup(entry.pgid);
+      reaped++;
+    } else {
+      dropped++;
+    }
+    unlinkQuiet(home, entry.wireSessionId);
+  }
+  dropJunkFiles(home);
+  return { reaped, dropped };
+}
+
+/**
+ * Periodic audit — the ONLY runtime remover of ledger files: an entry whose
+ * group is gone (the adapter exited, or a teardown's kill completed) is
+ * deleted; live entries stay. Returns how many files were dropped.
+ */
+export function auditAdapterLedger(home: string): number {
+  let dropped = 0;
+  for (const entry of readAdapterLedger(home)) {
+    if (!groupIsAlive(entry.pgid)) {
+      unlinkQuiet(home, entry.wireSessionId);
+      dropped++;
+    }
+  }
+  return dropped + dropJunkFiles(home);
+}
