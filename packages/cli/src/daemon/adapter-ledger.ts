@@ -109,6 +109,37 @@ export function readAdapterLedger(home: string): AdapterLedgerEntry[] {
 }
 
 /**
+ * Whether the process GROUP has at least one LIVE (non-zombie) member.
+ * `kill(-pgid, 0)` alone cannot tell: a ZOMBIE stays answerable forever,
+ * and on machines whose PID 1 does not reap (a bare docker CMD, nohup under
+ * a plain shell) orphaned grandchildren zombify and would pin their ledger
+ * entry past every audit. Linux /proc walk; where /proc is absent the
+ * kill() answer stands (conservative).
+ */
+function groupHasLiveMember(pgid: number): boolean {
+  let names: string[];
+  try {
+    names = readdirSync('/proc');
+  } catch {
+    return true;
+  }
+  for (const name of names) {
+    if (!/^[0-9]+$/.test(name)) continue;
+    let stat: string;
+    try {
+      stat = readFileSync(`/proc/${name}/stat`, 'utf8');
+    } catch {
+      continue; // raced an exit — the next call re-reads
+    }
+    // Fields after `(comm)`: state ppid pgrp … (comm may contain spaces).
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    if (fields.length < 3) continue;
+    if (Number.parseInt(fields[2]!, 10) === pgid && fields[0] !== 'Z') return true;
+  }
+  return false;
+}
+
+/**
  * Whether the process GROUP still exists. EPERM (the group exists but is
  * owned by someone else — pid reuse made it foreign) counts as NOT ours:
  * every caller treats a false answer as "drop the file without signaling",
@@ -117,10 +148,10 @@ export function readAdapterLedger(home: string): AdapterLedgerEntry[] {
 export function groupIsAlive(pgid: number): boolean {
   try {
     process.kill(-pgid, 0);
-    return true;
   } catch {
     return false;
   }
+  return groupHasLiveMember(pgid);
 }
 
 /** SIGTERM the group, then SIGKILL after `graceMs` (unref'd — mirrors conn.kill). */

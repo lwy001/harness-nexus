@@ -149,6 +149,18 @@ writes; the entry exists BEFORE establishment completes (fixture-delayed
 the native id and close defers removal to the audit; a failed establishment
 leaves no residue once the group dies.
 
+**Post-ship fix (2026-09-15, found by the C rig E2E): zombie-pinned
+ledger entries.** After an operator kill on the rig, the adapter chain died
+but one grandchild stayed as a ZOMBIE — the machine container's PID 1 does
+not reap orphans, so `kill(-pgid, 0)` kept answering success forever and
+the audit refused to drop the entry (it would have lingered until the next
+daemon restart). `groupIsAlive` now walks `/proc/<pid>/stat` when the
+kill-probe succeeds and treats a ZOMBIE-only group as gone (rig-verified
+against the live zombie: zombie-only → false, init group → true). This
+matters wherever PID 1 is not a reaper: bare docker CMDs, nohup under a
+plain shell. A zombie cannot be signaled anyway, so the sweep correctly
+counts such entries as dropped, not reaped.
+
 ## B. Channel snapshot push + tab bar + one-click cleanup (server → web) — kills D2
 
 > **SHIPPED 2026-09-14** — server+web only (daemon untouched). What follows
