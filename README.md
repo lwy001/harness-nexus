@@ -12,6 +12,8 @@
   English | <a href="README.zh-CN.md">简体中文</a>
   &nbsp;·&nbsp;
   <a href="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml"><img src="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  &nbsp;·&nbsp;
+  <a href="https://www.npmjs.com/package/@harness-nexus/cli"><img src="https://img.shields.io/npm/v/@harness-nexus/cli" alt="npm @harness-nexus/cli"></a>
 </p>
 
 **⚠️ Early stage.** Harness Nexus is young software under active development:
@@ -36,31 +38,39 @@ while a small client (`hnx`) on each of your machines does the local work.
   connected over WSS, scan what's installed there, diff against a profile,
   one-click import back into the platform, and deploy profiles as replayable
   jobs.
-- **Chat with a deployed agent** — talk to an agent instance from the browser
-  over ACP (streaming replies, tool calls, permission prompts), executed on
-  your machine, gated per machine and off by default.
+- **Manage the harnesses themselves** — install / upgrade / pin the agent
+  runtimes (Claude Code, Codex, dsh) as remote jobs, push a default LLM
+  provider & model config to a machine, and inspect each harness's native
+  config files (redacted) without SSH.
+- **Chat with your agents** — talk to any agent instance from the browser over
+  ACP: streaming replies, rich tool-call cards, permission prompts, image and
+  file attachments, per-session mode & model selectors. List and resume the
+  agent's own native sessions; the platform stores nothing session-shaped.
+  Runs on your machine; gated per machine, off by default.
 - **Multi-user from day one** — JWT + personal access tokens, global vs.
   personal resources, admin/user roles.
 
 ## Status
 
-| Area                                   | State                        |
-| -------------------------------------- | ---------------------------- |
-| Auth, users, roles, PATs               | ✅ shipped                   |
-| MCP connections, credentials, proxy    | ✅ shipped                   |
-| Resources & profile editors (web)      | ✅ shipped                   |
-| Skill hub (browse/save/search sources) | ✅ shipped                   |
-| Claude Code marketplace emitter        | ✅ shipped                   |
-| `hnx` install / uninstall (local)      | ✅ shipped (codex, deepseek) |
-| Machines, daemon, MCP shims            | ✅ shipped                   |
-| Inventory / diff / import              | ✅ shipped                   |
-| Remote deploy jobs                     | ✅ shipped                   |
-| ACP chat                               | ✅ shipped                   |
-| Web UI languages (en / zh-CN)          | ✅ shipped                   |
-| npm: `@harness-nexus/cli` published    | ✅ 0.1.0-alpha               |
-| Harness runtime mgmt (install/upgrade) | 🧪 designed (Phase 9)        |
-| Orchestration (multi-agent)            | 🧪 undesigned                |
-| Other import adapters (ECC/Superpower) | 🧪 planned                   |
+| Area                                   | State                           |
+| -------------------------------------- | ------------------------------- |
+| Auth, users, roles, PATs               | ✅ shipped                      |
+| MCP connections, credentials, proxy    | ✅ shipped                      |
+| Resources & profile editors (web)      | ✅ shipped                      |
+| Skill hub (browse/save/search sources) | ✅ shipped                      |
+| Claude Code marketplace emitter        | ✅ shipped                      |
+| `hnx` install / uninstall (local)      | ✅ shipped (codex, deepseek)    |
+| Machines, daemon, MCP shims            | ✅ shipped                      |
+| Inventory / diff / import              | ✅ shipped                      |
+| Remote deploy jobs                     | ✅ shipped                      |
+| Harness runtime mgmt (W1–W4)           | ✅ shipped                      |
+| ACP chat: portal UI, sessions (W5–W9)  | ✅ shipped                      |
+| LLM providers + model discovery (W10)  | ✅ shipped                      |
+| Web UI languages (en / zh-CN)          | ✅ shipped                      |
+| npm: `@harness-nexus/cli` published    | ✅ 0.1.0-alpha                  |
+| Docker Hub images                      | 🔜 lands on the next vX.Y.Z tag |
+| Orchestration (multi-agent)            | 🧪 undesigned                   |
+| Other import adapters (ECC/Superpower) | 🧪 planned                      |
 
 The detailed plan lives in [`docs/roadmap.md`](docs/roadmap.md); each phase has
 a paired PRD + design doc indexed in [`docs/README.md`](docs/README.md).
@@ -108,28 +118,40 @@ switch from the web UI (`/admin/users`, `/admin/settings`).
 ### CI & releases
 
 Every push and PR runs CI (install → build → typecheck → test,
-`.github/workflows/ci.yml`). Cut a release by bumping the five package
-versions (`packages/{core,shared,sdk-ts,mcp-runtime,cli}`) and running the
-`release` workflow — it publishes to npm via OIDC trusted publishing, so no
-npm token is stored in the repository.
+`.github/workflows/ci.yml`). Releases are **tag-driven**: bump the five
+package versions (`packages/{core,shared,sdk-ts,mcp-runtime,cli}`), merge to
+main, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Pushing the tag runs
+two workflows in lockstep:
+
+- `release` — publishes the npm packages via OIDC trusted publishing (no npm
+  token is stored in the repository); already-published versions are skipped,
+  so re-running a tag is idempotent.
+- `docker` — builds and pushes both images to Docker Hub
+  (`sinrimin/harness-nexus-server` / `-web`, tagged `X.Y.Z` + `latest`) using
+  environment secrets gated by the `release` environment.
 
 ## Docker
 
-`docker compose up --build` starts the whole stack as two containers:
+Two containers make up the stack:
 
 - **`server`** — the Fastify API + MCP proxy + realtime channel (multi-stage
   image from the root `Dockerfile`). SQLite persists to a `/data` volume.
-  Not published — only reachable from `web`.
+  No host ports — only reachable from `web`.
 - **`web`** — nginx serving the built SPA (`apps/web/Dockerfile`) and
   reverse-proxying `/api`, `/mcp` and `/socket.io` (WebSocket) to `server`.
   The only exposed port.
+
+Both images are published to Docker Hub on every release tag (linux/amd64),
+so pulling beats building:
 
 ```bash
 # 1. Configure (copy + fill in the required JWT_SECRET)
 cp .env.example .env
 # edit .env: JWT_SECRET="$(openssl rand -base64 48)"
 
-# 2. Build & run
+# 2. Run from the published images…
+docker compose pull && docker compose up -d
+# …or build from source (compiles the whole workspace inside the image):
 docker compose up --build -d
 
 # 3. Open the UI (bound to localhost by default — see ports: in docker-compose.yml)
@@ -169,9 +191,10 @@ This product stores and serves secrets (upstream credentials). Design choices
 that matter: credential secrets are AES-256-GCM encrypted at rest and never
 returned in full; tokens (PATs, machine enrollment) are shown exactly once;
 machine tokens only reach the realtime channel, not the REST API; remote chat
-is opt-in per machine, owner-only, with session audit rows; env/header values
-are redacted before machine inventory is uploaded. Treat the instance (and its
-`JWT_SECRET`) as root for everything connected to it.
+is opt-in per machine and owner-only, and the platform stores nothing
+session-shaped — chat transcripts stay with the agent on your machine;
+env/header values are redacted before machine inventory is uploaded. Treat the
+instance (and its `JWT_SECRET`) as root for everything connected to it.
 
 ## Documentation
 
