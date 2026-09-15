@@ -1,4 +1,4 @@
-import { arch, hostname, platform } from 'node:os';
+import { arch, homedir, hostname, platform } from 'node:os';
 import { io } from 'socket.io-client';
 import {
   inventoryCollectRequestSchema,
@@ -12,12 +12,13 @@ import { collectItems, scanAllTargets, scanTarget, scannerFor } from '../invento
 import { probeRuntimes } from '../inventory/runtime.js';
 import { runtimeConfigViewPayload } from './config-view.js';
 import { listDirectories, listFiles } from './workspace.js';
+import { sweepAdapterLedger } from './adapter-ledger.js';
 import { attachJobHandlers } from './jobs.js';
 import { attachChatHandlers } from './chat.js';
 import { attachSessionsHandlers } from './sessions.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.12.0-p9w9';
+export const DAEMON_VERSION = '0.13.0-p9w11';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
@@ -67,6 +68,21 @@ export interface DaemonOptions {
  * the honest-presence contract; MCP serving (C2) does NOT depend on it.
  */
 export function runDaemon(options: DaemonOptions): Promise<void> {
+  // 9 W11 A — boot sweep BEFORE anything here can spawn an adapter: every
+  // still-alive process group in the ledger was orphaned by a previous
+  // instance's hard death (SIGKILL/OOM skips every teardown path while the
+  // detached groups survive it), or is mid-grace from an interrupted
+  // shutdown — either way the sweep finishes the reap. Safe by construction:
+  // the ledger only ever holds pgids this user's daemon created, and no new
+  // one exists yet to collide with.
+  const swept = sweepAdapterLedger(homedir());
+  if (swept.reaped > 0 || swept.dropped > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `hnx daemon: adapter sweep — reaped ${String(swept.reaped)} orphaned group(s), dropped ${String(swept.dropped)} stale ledger entries`,
+    );
+  }
+
   const socket = io(`${options.server}/ctl`, {
     auth: { token: options.token, machineId: options.machineId },
     transports: ['websocket'],

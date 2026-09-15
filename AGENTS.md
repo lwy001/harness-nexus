@@ -1068,8 +1068,28 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
 ## Adapter lifecycle & session truth (Phase 9 W11)
 
 Full design in `docs/design/phase-9-w11-adapter-lifecycle.md` (problem
-inventory D1–D5 with evidence, slices A–F). Summary for daily work —
-**slice B is SHIPPED (server+web, daemon untouched); A/C/D/E designed**:
+inventory D1–D6 with evidence, slices A–F). Summary for daily work —
+**slices A and B are SHIPPED; C/D/E designed**:
+
+- **A — adapter pid ledger + boot sweep (daemon, `0.13.0-p9w11`).**
+  `~/.hnx/adapters/<wireSessionId>.json` (`packages/cli/src/daemon/
+adapter-ledger.ts`) accounts for every adapter process GROUP the daemon
+  created: the entry is written INSIDE `AcpAgentConnection.start` (new
+  `onSpawned` cb, right after the detached spawn, BEFORE initialize) and
+  re-written after registration with the `nativeSessionId`. **Kill paths
+  never unlink** — the periodic audit (60s, unref'd, in
+  `attachChatHandlers`; `auditIntervalMs` opt for tests) is the only runtime
+  remover (entries whose group is gone), so a hard death inside the
+  SIGTERM→SIGKILL grace keeps the record sweepable. The **boot sweep** in
+  `runDaemon` (before `machine:hello`) SIGTERMs+SIGKILLs every still-alive
+  ledgered group and deletes every file — that is the D1 orphan reap.
+  Also shipped with A: `AcpAgentConnection.start` now KILLS the spawn when
+  initialize fails (a hung initialize used to leak a live group behind a
+  dead channel — callers only own the connection after start resolves);
+  `kill(-pgid, 0)` EPERM counts as not-ours (never kill what we cannot
+  prove we spawned); junk/`.json.tmp` files are housekept by the same
+  audit/sweep. One daemon per (user, home) — a second daemon's sweep would
+  reap the first's live adapters.
 
 - **`chat:channels` is a per-user SNAPSHOT push** (owner's `user:<id>` /app
   room), emitted by `ChatService` on open / ready / every `closeInternal` /
@@ -1108,11 +1128,10 @@ nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
   moment-in-time `open` stamps — the listing is still the row source
   (titles/cwd cost a daemon round-trip); only `open`/`openChannelId` stay
   live between refreshes.
-- **Still open in W11** (see the design doc): A (daemon pid ledger + boot
-  sweep — the orphaned-adapter class), C (`GET /api/machines/:id/adapters`
+- **Still open in W11** (see the design doc): C (`GET /api/machines/:id/adapters`
   - MachineDetail panel), D (sessions:list TTL cache), E (/ctl disconnect
-    grace window — a transient daemon flap still reaps every channel on the
-    machine, demonstrated live during the B E2E).
+    grace window + reconnect reconcile — a transient daemon flap still reaps
+    every channel on the machine, demonstrated live during the B E2E).
 
 ## Authentication & authorization (permission interceptors)
 

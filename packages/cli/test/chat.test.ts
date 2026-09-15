@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachChatHandlers, mapAcpUpdate } from '../src/daemon/chat.js';
 import { deriveSessionCaps } from '../src/daemon/acp/agent-connection.js';
 import { resolveAcpCommand } from '../src/daemon/acp/adapters.js';
+import { readAdapterLedger } from '../src/daemon/adapter-ledger.js';
 import type { ChatStreamEvent } from '@harness-nexus/shared';
 
 /**
@@ -767,6 +769,153 @@ describe('resume failure hygiene (9 W7 leak regression)', () => {
         .filter((n) => Number.isFinite(n) && n > 0);
       return pids.length > 0 && pids.every((p) => !alive(p)) ? true : undefined;
     });
+  }, 15000);
+});
+
+describe('adapter ledger (9 W11 A)', () => {
+  function waitFor<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const tick = (): void => {
+        const v = fn();
+        if (v !== undefined) return resolve(v);
+        if (Date.now() - started > ms) return reject(new Error('waitFor: timeout'));
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+  }
+  const gone = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const pidsIn = (file: string): number[] =>
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .map((l) => Number.parseInt(l, 10))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+  it('the entry exists BEFORE establishment completes — the hard-death window is covered', async () => {
+    const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-ledger-'));
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      // Hold `session/new` open: the channel sits mid-establishment while we
+      // inspect the ledger (a daemon hard-death HERE is the D1 case).
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile, FIXTURE_DELAY_NEW_MS: '1500' },
+      homeDir: home,
+      auditIntervalMs: 0,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-early',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => (readFileSync(pidFile, 'utf8').trim() !== '' ? true : undefined));
+
+    const entries = readAdapterLedger(home);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      wireSessionId: 'sess-early',
+      target: 'hermes',
+      command: 'node',
+    });
+    // The pgid is the SPAWNED group's id (the fixture's own pid), recorded
+    // before the agent answered anything — and no native session id yet.
+    expect(entries[0]!.pgid).toBe(pidsIn(pidFile)[0]);
+    expect(entries[0]!.nativeSessionId).toBeUndefined();
+
+    // A boot sweep at this instant would find and reap exactly this group.
+    socket.receive('chat:session.close', { sessionId: 'sess-early', reason: 'user' });
+    await waitFor(() => (pidsIn(pidFile).every((p) => gone(p)) ? true : undefined));
+    rmSync(home, { recursive: true, force: true });
+  }, 15000);
+
+  it('registration enriches the entry with the native id; close defers removal to the audit', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-ledger-'));
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: home,
+      auditIntervalMs: 100,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-ledger',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    const ready = (await waitFor(
+      () => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload,
+    )) as { nativeSessionId?: string; error?: string };
+    expect(ready.error).toBeUndefined();
+
+    const entries = readAdapterLedger(home);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ wireSessionId: 'sess-ledger' });
+    expect(entries[0]!.nativeSessionId).toBe(ready.nativeSessionId);
+    const pgid = entries[0]!.pgid;
+
+    socket.receive('chat:session.close', { sessionId: 'sess-ledger', reason: 'user' });
+    await waitFor(() => socket.eventsOf('chat:session.closed').length > 0);
+    // Synchronously after the closed event the file is STILL there (kill
+    // paths never unlink — a hard death inside the kill grace must keep the
+    // record sweepable)…
+    expect(readAdapterLedger(home)).toHaveLength(1);
+    // …and the audit removes it once the group is actually gone.
+    await waitFor(() => (readAdapterLedger(home).length === 0 ? true : undefined));
+    expect(gone(pgid)).toBe(true);
+    rmSync(home, { recursive: true, force: true });
+  }, 15000);
+
+  it('a failed establishment leaves no ledger residue once the group dies', async () => {
+    const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const home = mkdtempSync(join(tmpdir(), 'hnx-ledger-'));
+    const pidFile = join(mkdtempSync(join(tmpdir(), 'hnx-fx-pid-')), 'pids');
+    writeFileSync(pidFile, '', 'utf8');
+
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { ...process.env, FIXTURE_PID_FILE: pidFile },
+      homeDir: home,
+      auditIntervalMs: 100,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-fail-ledger',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+      resume: { sessionId: 'fx-native-fail', cwd: '/tmp' },
+    });
+    const ready = (await waitFor(
+      () => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload,
+    )) as { error?: string };
+    expect(ready.error).toContain('no configured model');
+
+    await waitFor(() => (pidsIn(pidFile).every((p) => gone(p)) ? true : undefined));
+    await waitFor(() => (readAdapterLedger(home).length === 0 ? true : undefined));
+    rmSync(home, { recursive: true, force: true });
   }, 15000);
 });
 

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { groupIsAlive } from '../adapter-ledger.js';
 
 /**
  * Minimal ACP client over a subprocess's stdio (Phase 8 C5) — JSON-RPC 2.0,
@@ -84,6 +85,8 @@ export function derivePromptCaps(result: unknown): { image: boolean } {
 
 export class AcpAgentConnection {
   private proc: ChildProcess;
+  /** The detached leader's pid — which is also its process-group id. */
+  readonly pgid: number | null;
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
   private stderrTail: string[] = [];
@@ -94,6 +97,7 @@ export class AcpAgentConnection {
 
   private constructor(proc: ChildProcess) {
     this.proc = proc;
+    this.pgid = proc.pid ?? null;
     const rl = createInterface({ input: proc.stdout! });
     rl.on('line', (line) => this.handleLine(line));
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -116,11 +120,23 @@ export class AcpAgentConnection {
     });
   }
 
-  /** Spawn + `initialize` handshake + `initialized` notification. */
+  /**
+   * Spawn + `initialize` handshake + `initialized` notification.
+   *
+   * 9 W11 A — `onSpawned` fires synchronously right after the detached spawn
+   * (BEFORE initialize) so the caller can ledger the process group while the
+   * hard-death window is still open; a throwing callback kills the spawn and
+   * fails the start (an unledgered adapter is worse than a closed channel).
+   */
   static async start(
     command: string,
     args: string[],
-    opts: { cwd: string; env?: NodeJS.ProcessEnv | undefined; initializeTimeoutMs?: number },
+    opts: {
+      cwd: string;
+      env?: NodeJS.ProcessEnv | undefined;
+      initializeTimeoutMs?: number;
+      onSpawned?: (pgid: number) => void;
+    },
   ): Promise<{
     conn: AcpAgentConnection;
     agentInfo: AcpAgentInfo;
@@ -147,15 +163,33 @@ export class AcpAgentConnection {
     proc.on('error', (e) => {
       conn.failAll(new Error(`ACP adapter '${command}' failed: ${errText(e)}`));
     });
-    const result = (await conn.request(
-      'initialize',
-      { protocolVersion: 1, clientCapabilities: {} },
-      initializeTimeoutMs,
-    )) as {
+    if (opts.onSpawned !== undefined && proc.pid !== undefined) {
+      try {
+        opts.onSpawned(proc.pid);
+      } catch (e) {
+        conn.kill();
+        throw new Error(`failed to ledger ACP adapter '${command}': ${errText(e)}`);
+      }
+    }
+    let result: {
       agentInfo?: AcpAgentInfo;
       loadSession?: boolean;
       agentCapabilities?: { sessionCapabilities?: Record<string, unknown> };
     };
+    try {
+      result = (await conn.request(
+        'initialize',
+        { protocolVersion: 1, clientCapabilities: {} },
+        initializeTimeoutMs,
+      )) as typeof result;
+    } catch (e) {
+      // The caller never receives this connection (start has not returned),
+      // so no one else would kill it — a timed-out/failed initialize must
+      // not leak the spawned group. This closes the pre-W11 leak where a
+      // hung initialize left a live adapter behind a dead channel.
+      conn.kill();
+      throw e;
+    }
     conn.notify('initialized', {});
     return {
       conn,
@@ -207,6 +241,14 @@ export class AcpAgentConnection {
   /** Fires when the subprocess exits on its own (crash/quit) — not on kill(). */
   onExit(handler: () => void): void {
     this.proc.on('exit', handler);
+  }
+
+  /**
+   * Whether the process GROUP still exists (the audit's backstop — a session
+   * whose group died without the exit event reaching teardown).
+   */
+  isGroupAlive(): boolean {
+    return this.pgid !== null && groupIsAlive(this.pgid);
   }
 
   /**

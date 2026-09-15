@@ -33,6 +33,7 @@ import {
 } from '@harness-nexus/shared';
 import { AcpAgentConnection, type JsonRpcId } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
+import { auditAdapterLedger, writeAdapterLedgerEntry } from './adapter-ledger.js';
 import {
   createDshLiveMapper,
   decodeTranscript,
@@ -182,6 +183,12 @@ export interface ChatHandlersOptions {
   spawnEnv?: NodeJS.ProcessEnv;
   /** Overridable for tests (transcript lookup on dsh resume). */
   homeDir?: string;
+  /**
+   * 9 W11 A — adapter-ledger audit cadence in ms (default 60s). The audit is
+   * the only runtime remover of ledger files; 0 disables it (tests that
+   * assert file lifetimes drive `auditAdapterLedger` directly).
+   */
+  auditIntervalMs?: number;
 }
 
 export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {}): void {
@@ -242,8 +249,26 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     for (const [, p] of session.permissions) clearTimeout(p.timer);
     session.permissions.clear();
     session.conn.kill();
+    // 9 W11 A — the kill path does NOT unlink the ledger file: if the daemon
+    // hard-dies inside the SIGTERM→SIGKILL grace, an unlinked file would
+    // lose accounting (the group survives with no record). The audit below
+    // removes it once the group is gone.
     socket.emit('chat:session.closed', { sessionId: session.sessionId, reason });
   };
+
+  // 9 W11 A — periodic audit: the only runtime remover of ledger files
+  // (entries whose process group is gone), and the backstop for a session
+  // whose group died without the exit event reaching teardown.
+  const auditMs = opts.auditIntervalMs ?? 60_000;
+  if (auditMs > 0) {
+    const auditTimer = setInterval(() => {
+      auditAdapterLedger(home);
+      for (const session of [...sessions.values()]) {
+        if (!session.conn.isGroupAlive()) teardown(session, 'agent-exited');
+      }
+    }, auditMs);
+    auditTimer.unref();
+  }
 
   // In-flight tail attachments by native session id (one per session).
   const tailAttaches = new Map<string, Promise<void>>();
@@ -381,8 +406,26 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       };
       if (abortIfClosed()) return;
       try {
+        // 9 W11 A — ledger the process group the moment it exists (inside
+        // start, right after the detached spawn and before initialize): a
+        // hard death during establishment still leaves a boot-sweepable
+        // record. The entry is re-written after registration with the native
+        // session id; removal is the audit's job, never a kill path.
+        const ledgerStartedAt = Date.now();
+        let ledgerPgid: number | null = null;
+        const onSpawned = (pgid: number): void => {
+          ledgerPgid = pgid;
+          writeAdapterLedgerEntry(home, {
+            pgid,
+            target,
+            command: cmd.command,
+            wireSessionId: sessionId,
+            startedAt: ledgerStartedAt,
+          });
+        };
         const spawnOpts = {
           cwd,
+          onSpawned,
           ...(tapArmed === null
             ? opts.spawnEnv !== undefined
               ? { env: opts.spawnEnv }
@@ -485,6 +528,18 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         };
         sessions.set(sessionId, session);
         liveConn = null; // registered — teardown owns the connection from here
+        // 9 W11 A — enrich the ledger entry with the native session id (the
+        // adapter report in slice C and post-mortem forensics key off it).
+        if (ledgerPgid !== null) {
+          writeAdapterLedgerEntry(home, {
+            pgid: ledgerPgid,
+            target,
+            command: cmd.command,
+            wireSessionId: sessionId,
+            nativeSessionId: acpSessionId,
+            startedAt: ledgerStartedAt,
+          });
+        }
         wireSession(session, emitEvent);
         conn.onExit(() => {
           // Crash/quit outside our control — end the channel honestly.
