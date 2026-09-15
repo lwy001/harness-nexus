@@ -25,11 +25,52 @@ export interface SessionsHandlersOptions {
   env?: NodeJS.ProcessEnv;
   /** Overridable for tests. */
   homeDir?: string;
+  /**
+   * 9 W11 D — listing cache TTL override (tests). Env: `SESSIONS_CACHE_TTL_MS`,
+   * default 15s, 0 = off.
+   */
+  cacheTtlMs?: number;
 }
 
 export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOptions = {}): void {
   const env = opts.env ?? process.env;
   const home = opts.homeDir ?? homedir();
+  const ttlMs =
+    opts.cacheTtlMs ??
+    (() => {
+      const raw = Number.parseInt(env.SESSIONS_CACHE_TTL_MS ?? '', 10);
+      return Number.isFinite(raw) ? Math.max(raw, 0) : 15_000;
+    })();
+
+  /**
+   * 9 W11 D — listing TTL cache, keyed by target (one machine per daemon).
+   * Every rail paint otherwise pays an adapter spawn (claude/codex) or a
+   * zstd file walk (dsh); a hit answers without either. `refresh` bypasses
+   * (the rail's manual refresh button), failures never cache, and
+   * concurrent requests share the in-flight computation.
+   */
+  const cache = new Map<string, { expiresAt: number; sessions: NativeSessionView[] }>();
+  const inFlight = new Map<string, Promise<NativeSessionView[]>>();
+  const listCached = (
+    target: string,
+    refresh: boolean,
+    compute: () => Promise<NativeSessionView[]>,
+  ): Promise<NativeSessionView[]> => {
+    const cached = cache.get(target);
+    if (!refresh && cached !== undefined && cached.expiresAt > Date.now()) {
+      return Promise.resolve(cached.sessions);
+    }
+    let p = inFlight.get(target);
+    if (p === undefined) {
+      p = compute().then((sessions) => {
+        if (ttlMs > 0) cache.set(target, { expiresAt: Date.now() + ttlMs, sessions });
+        return sessions;
+      });
+      p.finally(() => inFlight.delete(target)).catch(() => {});
+      inFlight.set(target, p);
+    }
+    return p;
+  };
 
   socket.on('sessions:list', (payload: unknown, ack?: (res: unknown) => void) => {
     const parsed = sessionsListRequestSchema.safeParse(payload);
@@ -38,67 +79,21 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
       return;
     }
     ack?.({ accepted: true });
-    const { requestId, target } = parsed.data;
+    const { requestId, target, refresh } = parsed.data;
     void (async () => {
       try {
         if (target === 'claude-code' || target === 'codex') {
           socket.emit('sessions:list:result', {
             requestId,
-            sessions: await listViaAdapter(target, env),
+            sessions: await listCached(target, refresh === true, () => listViaAdapter(target, env)),
           });
           return;
         }
         if (target === 'deepseek') {
-          const zstd = nativeZstd();
-          if (zstd === null) {
-            socket.emit('sessions:list:result', {
-              requestId,
-              error: 'dsh session transcripts need Node >= 22.15 (zstd) on the daemon',
-            });
-            return;
-          }
-          const catalog = (() => {
-            try {
-              return currentCatalogModels(
-                readFileSync(join(home, '.dsh', 'settings.yaml'), 'utf8'),
-              );
-            } catch {
-              return null; // no settings yet — nothing to compare against
-            }
-          })();
-          const sessions = dshListSessions(
-            join(home, '.dsh', 'sessions'),
-            {
-              readdir: (p) => readdirSync(p),
-              readFile: (p) => readFileSync(p),
-              stat: (p) => statSync(p),
-            },
-            zstd,
-            { maxSessions: 200 },
-          ).map((s): NativeSessionView => {
-            // dsh validates the session's PINNED (provider, model) against
-            // the live catalog at resume — a provider-config change orphans
-            // old sessions. Flag them here so the rail explains instead of
-            // offering a guaranteed failure.
-            if (s.model !== null && catalog !== null && !catalog.has(s.model)) {
-              return {
-                sessionId: s.sessionId,
-                cwd: s.cwd,
-                ...(s.title !== null ? { title: s.title } : {}),
-                ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
-                model: s.model,
-                staleReason: 'model-missing',
-              };
-            }
-            return {
-              sessionId: s.sessionId,
-              cwd: s.cwd,
-              ...(s.title !== null ? { title: s.title } : {}),
-              ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
-              ...(s.model !== null ? { model: s.model } : {}),
-            };
+          socket.emit('sessions:list:result', {
+            requestId,
+            sessions: await listCached(target, refresh === true, async () => listDsh(home)),
           });
-          socket.emit('sessions:list:result', { requestId, sessions });
           return;
         }
         socket.emit('sessions:list:result', { requestId, supported: false });
@@ -109,6 +104,53 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
         });
       }
     })();
+  });
+}
+
+/** dsh's file-scan listing, mapped to rail rows (pure — no spawn, no auth). */
+function listDsh(home: string): NativeSessionView[] {
+  const zstd = nativeZstd();
+  if (zstd === null) {
+    throw new Error('dsh session transcripts need Node >= 22.15 (zstd) on the daemon');
+  }
+  const catalog = (() => {
+    try {
+      return currentCatalogModels(readFileSync(join(home, '.dsh', 'settings.yaml'), 'utf8'));
+    } catch {
+      return null; // no settings yet — nothing to compare against
+    }
+  })();
+  return dshListSessions(
+    join(home, '.dsh', 'sessions'),
+    {
+      readdir: (p) => readdirSync(p),
+      readFile: (p) => readFileSync(p),
+      stat: (p) => statSync(p),
+    },
+    zstd,
+    { maxSessions: 200 },
+  ).map((s): NativeSessionView => {
+    // dsh validates the session's PINNED (provider, model) against
+    // the live catalog at resume — a provider-config change orphans
+    // old sessions. Flag them here so the rail explains instead of
+    // offering a guaranteed failure.
+    if (s.model !== null && catalog !== null && !catalog.has(s.model)) {
+      return {
+        sessionId: s.sessionId,
+        cwd: s.cwd,
+        ...(s.title !== null ? { title: s.title } : {}),
+        ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
+        model: s.model,
+        staleReason: 'model-missing',
+      };
+    }
+    return {
+      sessionId: s.sessionId,
+      cwd: s.cwd,
+      ...(s.title !== null ? { title: s.title } : {}),
+      ...(s.updatedAt !== null ? { updatedAt: s.updatedAt } : {}),
+      ...(s.model !== null ? { model: s.model } : {}),
+    };
   });
 }
 

@@ -21,6 +21,7 @@ import {
   machineHelloSchema,
   machineStatusEventSchema,
   nativeSessionViewSchema,
+  sessionsListRequestSchema,
 } from '../src/realtime.js';
 
 describe('realtime handshake schemas', () => {
@@ -433,5 +434,24 @@ describe('live-channel snapshot schemas (9 W11 B)', () => {
     expect(chatChannelsCloseAllRequestSchema.safeParse({}).success).toBe(true);
     expect(chatChannelsCloseAllRequestSchema.safeParse({ idleOnly: true }).success).toBe(true);
     expect(chatChannelsCloseAllRequestSchema.safeParse({ force: true }).success).toBe(false);
+  });
+});
+
+describe('sessions:list cache bypass flag (9 W11 D)', () => {
+  it('refresh is optional, boolean, and rejected when non-boolean', () => {
+    expect(
+      sessionsListRequestSchema.safeParse({ requestId: 'r1', target: 'claude-code' }).success,
+    ).toBe(true);
+    expect(
+      sessionsListRequestSchema.safeParse({
+        requestId: 'r1',
+        target: 'claude-code',
+        refresh: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      sessionsListRequestSchema.safeParse({ requestId: 'r1', target: 'codex', refresh: 'yes' })
+        .success,
+    ).toBe(false);
   });
 });

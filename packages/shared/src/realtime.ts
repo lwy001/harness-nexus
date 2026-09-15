@@ -734,6 +734,11 @@ export const nativeSessionViewSchema = z.object({
 export const sessionsListRequestSchema = z.object({
   requestId: z.string().min(1).max(64),
   target: agentTargetSchema,
+  /**
+   * 9 W11 D — bypass the daemon's listing TTL cache (the rail's manual
+   * refresh button). Optional so older daemons strip it harmlessly.
+   */
+  refresh: z.boolean().optional(),
 });
 
 /** daemon → server: the listing (`error` arm settles the waiter honestly). */

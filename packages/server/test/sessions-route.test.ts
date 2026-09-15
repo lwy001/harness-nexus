@@ -161,6 +161,31 @@ describe('GET /api/agent-instances/:id/sessions (9 W7)', () => {
     await new Promise((r) => setTimeout(r, 150));
   });
 
+  it('rides ?refresh=1 through to the daemon as `refresh` (9 W11 D cache bypass)', async () => {
+    const seen: { refresh?: boolean }[] = [];
+    await connectDaemon(['sessions'], () => ({ sessions: [] }));
+    daemon.removeAllListeners('sessions:list');
+    daemon.on('sessions:list', (payload: { requestId: string; refresh?: boolean }) => {
+      seen.push({ ...('refresh' in payload ? { refresh: payload.refresh } : {}) });
+      daemon.emit('sessions:list:result', { requestId: payload.requestId, sessions: [] });
+    });
+    const plain = await app.inject({
+      method: 'GET',
+      url: `/api/agent-instances/${agentId}/sessions`,
+      headers: auth(ownerJwt),
+    });
+    expect(plain.statusCode).toBe(200);
+    const bypass = await app.inject({
+      method: 'GET',
+      url: `/api/agent-instances/${agentId}/sessions?refresh=1`,
+      headers: auth(ownerJwt),
+    });
+    expect(bypass.statusCode).toBe(200);
+    expect(seen).toEqual([{}, { refresh: true }]);
+    daemon.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+  });
+
   it('accepts an RFC3339 +00:00 updatedAt (codex-acp/chrono dialect, rig-found)', async () => {
     // codex-acp serializes timestamps as `…+00:00`, not `…Z`. The strict
     // datetime schema used to reject the WHOLE result payload, the waiter

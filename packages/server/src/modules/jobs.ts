@@ -186,67 +186,78 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
   // fetched live through the daemon (`sessions:list` over /ctl). Listing is
   // owner-or-admin like every machine-scoped read; CHATTING is owner-only
   // (enforced in the chat service, not here).
-  app.get<{ Params: { id: string } }>('/api/agent-instances/:id/sessions', guard, async (req) => {
-    const agent = await app.uow.agentInstances.findById(req.params.id);
-    if (!agent) throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
-    const machine = await visibleMachine(agent.machineId, req.user!);
-    if (!app.realtime.presence.isOnline(machine.id)) {
-      throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
-    }
-    if (!machine.capabilities.includes('sessions')) {
-      throw new AppError(
-        'Daemon does not advertise the sessions capability (upgrade hnx on the machine)',
-        409,
-        'DAEMON_NO_SESSIONS',
-      );
-    }
-
-    const requestId = randomUUID();
-    const request = sessionsListRequestSchema.parse({ requestId, target: agent.target });
-    const { done } = app.realtime.sessions.awaitList(machine.id, requestId);
-    app.io.of('/ctl').to(`machine:${machine.id}`).emit('sessions:list', request);
-    const outcome = await done;
-    // Error arm BEFORE the generic failure branches — a fast daemon error must
-    // not read as a timeout (the W6 workspace lesson).
-    if (!outcome.ok) {
-      if (outcome.error !== undefined) {
-        throw new AppError(outcome.error, 502, 'DAEMON_SESSIONS_FAILED');
-      }
-      if (outcome.reason === 'disconnected') {
+  app.get<{ Params: { id: string }; Querystring: { refresh?: string } }>(
+    '/api/agent-instances/:id/sessions',
+    guard,
+    async (req) => {
+      const agent = await app.uow.agentInstances.findById(req.params.id);
+      if (!agent) throw new AppError('Agent instance not found', 404, 'AGENT_INSTANCE_NOT_FOUND');
+      const machine = await visibleMachine(agent.machineId, req.user!);
+      if (!app.realtime.presence.isOnline(machine.id)) {
         throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
       }
-      throw new AppError('Daemon did not answer the listing in time', 504, 'SESSIONS_TIMEOUT');
-    }
-    // Post-W8 visibility: mark rows whose native session currently holds a
-    // live channel (and carry the channel id so a row click can REJOIN it —
-    // resuming would spawn a second channel for the same agent session).
-    // A live channel may also have NO native row yet (claude-code materializes
-    // its transcript file only on the first message — "my new session never
-    // showed up"): synthesize an open row from the channel itself.
-    const openChannels = app.realtime.chat.channelsByNativeId(req.params.id);
-    const rows = (outcome.sessions ?? []).map((s) =>
-      openChannels.has(s.sessionId)
-        ? { ...s, open: true, openChannelId: openChannels.get(s.sessionId) }
-        : { ...s, open: false },
-    );
-    const channelCwds = app.realtime.chat.openChannelCwds(req.params.id);
-    for (const [nativeId, cwd] of channelCwds) {
-      if (openChannels.has(nativeId) && !rows.some((r) => r.sessionId === nativeId)) {
-        rows.push({
-          sessionId: nativeId,
-          cwd,
-          title: null,
-          open: true,
-          openChannelId: openChannels.get(nativeId),
-        });
+      if (!machine.capabilities.includes('sessions')) {
+        throw new AppError(
+          'Daemon does not advertise the sessions capability (upgrade hnx on the machine)',
+          409,
+          'DAEMON_NO_SESSIONS',
+        );
       }
-    }
-    return {
-      agent,
-      supported: outcome.supported ?? true,
-      sessions: rows,
-    };
-  });
+
+      const requestId = randomUUID();
+      // 9 W11 D — `?refresh=1` (the rail's manual refresh button) tells the
+      // daemon to bypass its listing TTL cache. The flag is optional on the
+      // wire, so pre-W11-D daemons simply strip it.
+      const request = sessionsListRequestSchema.parse({
+        requestId,
+        target: agent.target,
+        ...(req.query.refresh === '1' ? { refresh: true } : {}),
+      });
+      const { done } = app.realtime.sessions.awaitList(machine.id, requestId);
+      app.io.of('/ctl').to(`machine:${machine.id}`).emit('sessions:list', request);
+      const outcome = await done;
+      // Error arm BEFORE the generic failure branches — a fast daemon error must
+      // not read as a timeout (the W6 workspace lesson).
+      if (!outcome.ok) {
+        if (outcome.error !== undefined) {
+          throw new AppError(outcome.error, 502, 'DAEMON_SESSIONS_FAILED');
+        }
+        if (outcome.reason === 'disconnected') {
+          throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+        }
+        throw new AppError('Daemon did not answer the listing in time', 504, 'SESSIONS_TIMEOUT');
+      }
+      // Post-W8 visibility: mark rows whose native session currently holds a
+      // live channel (and carry the channel id so a row click can REJOIN it —
+      // resuming would spawn a second channel for the same agent session).
+      // A live channel may also have NO native row yet (claude-code materializes
+      // its transcript file only on the first message — "my new session never
+      // showed up"): synthesize an open row from the channel itself.
+      const openChannels = app.realtime.chat.channelsByNativeId(req.params.id);
+      const rows = (outcome.sessions ?? []).map((s) =>
+        openChannels.has(s.sessionId)
+          ? { ...s, open: true, openChannelId: openChannels.get(s.sessionId) }
+          : { ...s, open: false },
+      );
+      const channelCwds = app.realtime.chat.openChannelCwds(req.params.id);
+      for (const [nativeId, cwd] of channelCwds) {
+        if (openChannels.has(nativeId) && !rows.some((r) => r.sessionId === nativeId)) {
+          rows.push({
+            sessionId: nativeId,
+            cwd,
+            title: null,
+            open: true,
+            openChannelId: openChannels.get(nativeId),
+          });
+        }
+      }
+      return {
+        agent,
+        supported: outcome.supported ?? true,
+        sessions: rows,
+      };
+    },
+  );
 
   // ---- GET /api/machines/:id/adapters — live adapter processes (9 W11 C) ----
   // PROCESS truth from the daemon's live sessions map (never the ledger —
