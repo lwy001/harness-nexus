@@ -61,6 +61,23 @@ import type { ChatConfigSetPayload } from '@/realtime';
 
 type Phase = 'idle' | 'connecting' | 'ready' | 'closed';
 
+/**
+ * Rejoin pushes that raced the open ack (9 W11, user-found): the server
+ * re-pushes `ready` + resync history while processing `chat:session.open`,
+ * which can arrive BEFORE this page re-attaches its sessionId-keyed
+ * listeners (switching tabs mid-conversation occasionally left the pane
+ * empty forever — nothing ever re-delivers the history). The stable
+ * listener below buffers the LATEST per-session pushes; the sessionId
+ * effect replays them after the pane reset. Terminal markers win over
+ * `ready` (applied last).
+ */
+interface SwitchRaceBuffer {
+  ready?: ChatSessionReadyPush;
+  failed?: ChatSessionFailedPush;
+  closed?: ChatSessionClosedPush;
+  history?: ChatHistoryEvent['items'];
+}
+
 /** Rail data: the daemon-routed listing or the gate that blocked it. */
 type RailState =
   | { state: 'loading' }
@@ -151,6 +168,50 @@ export function AgentSessionPage() {
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const connectTargetRef = useRef<string | null>(null);
+  /** Latest per-session pushes caught by the stable listener below. */
+  const switchBufferRef = useRef(new Map<string, SwitchRaceBuffer>());
+
+  // 9 W11 — a STABLE (non-keyed) listener: rejoin pushes can predate the
+  // sessionId-keyed listeners' attach; buffer them for the switch replay.
+  // Bounded — a wire session id is never reused after close, evicted
+  // entries are dead weight only.
+  useEffect(() => {
+    const socket = appSocket();
+    const entry = (sid: string): SwitchRaceBuffer => {
+      let e = switchBufferRef.current.get(sid);
+      if (e === undefined) {
+        if (switchBufferRef.current.size >= 16) {
+          const oldest = switchBufferRef.current.keys().next().value;
+          if (oldest !== undefined) switchBufferRef.current.delete(oldest);
+        }
+        e = {};
+        switchBufferRef.current.set(sid, e);
+      }
+      return e;
+    };
+    const onReady = (push: ChatSessionReadyPush): void => {
+      entry(push.sessionId).ready = push;
+    };
+    const onFailed = (push: ChatSessionFailedPush): void => {
+      entry(push.sessionId).failed = push;
+    };
+    const onClosed = (push: ChatSessionClosedPush): void => {
+      entry(push.sessionId).closed = push;
+    };
+    const onHistory = (push: ChatHistoryEvent): void => {
+      entry(push.sessionId).history = push.items;
+    };
+    socket.on('chat:session.ready', onReady);
+    socket.on('chat:session.failed', onFailed);
+    socket.on('chat:session.closed', onClosed);
+    socket.on('chat:history', onHistory);
+    return () => {
+      socket.off('chat:session.ready', onReady);
+      socket.off('chat:session.failed', onFailed);
+      socket.off('chat:session.closed', onClosed);
+      socket.off('chat:history', onHistory);
+    };
+  }, []);
 
   useEffect(() => {
     setAgent(null);
@@ -218,6 +279,30 @@ export function AgentSessionPage() {
     }
     setPhase(pendingPhaseRef.current === 'ready' ? 'ready' : 'connecting');
     pendingPhaseRef.current = null;
+    // Replay the rejoin pushes that raced ahead of this switch (see
+    // SwitchRaceBuffer): the buffer holds the LATEST snapshot per session,
+    // consumed here so the keyed listeners own everything live afterwards.
+    const buffered = switchBufferRef.current.get(sessionId);
+    if (buffered === undefined) return;
+    switchBufferRef.current.delete(sessionId);
+    if (buffered.history !== undefined) dispatch({ type: 'history', items: buffered.history });
+    if (buffered.ready !== undefined) {
+      setPhase('ready');
+      if (buffered.ready.nativeSessionId !== undefined) {
+        setNativeSessionId(buffered.ready.nativeSessionId);
+      }
+      if (buffered.ready.promptCapabilities?.image === true) setImageSupported(true);
+    }
+    if (buffered.failed !== undefined) {
+      setPhase('closed');
+      setError(buffered.failed.error);
+    }
+    if (buffered.closed !== undefined) {
+      setPhase('closed');
+      liveChannelRef.current = '';
+      if (buffered.closed.reason === 'evicted') setError(t('chat.evicted'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   // Live channel wiring — the same contract as the C5 page, plus 9 W7 history.
