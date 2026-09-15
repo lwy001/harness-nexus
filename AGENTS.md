@@ -1174,6 +1174,21 @@ startedAt, command}`. The operator kill is `POST
   the existing channel (`resumingNativeId` dedupe — one adapter per native
   session), and closing the CURRENT channel via tab × / 断开 returns the
   pane to its welcome state (server-side closures keep the reason banner).
+- **Tab-switch transcript race (fixed 2026-09-15, user-found after D6).**
+  Switching tabs SOMETIMES left the pane empty forever: the rejoin's
+  `ready` re-push + resync history are emitted while the server processes
+  `chat:session.open`, which can arrive at the page BEFORE its
+  sessionId-keyed listeners re-attach — dropped, never re-delivered
+  (phase recovered from `ack.phase`, the history had no recovery). Two
+  fixes: `AgentSession` keeps a STABLE non-keyed listener that buffers
+  the latest ready/failed/closed/history per session and the sessionId
+  effect replays it after the pane reset; server-side `reattach` joins
+  the opener to the room BEFORE pushing (a FRESH socket — page refresh /
+  second window — used to miss the ready re-push entirely because the
+  `/app` handler's join ran after `open()`). Rig note: "channels stay
+  live after the browser left" is NOT a leak while the owner has ANY
+  window open (user-scoped liveness) — check for the user's own /app
+  socket before suspecting the reap.
 - **D — sessions:list TTL cache (shipped 2026-09-15, daemon
   `0.16.0-p9w11`).** The daemon caches the listing per target for
   `SESSIONS_CACHE_TTL_MS` (default 15s, 0 = off) — claude/codex hits skip

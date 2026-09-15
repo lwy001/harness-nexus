@@ -535,3 +535,37 @@ per-channel room still governs EVENT delivery (a window only receives a
 channel's stream after opening/rejoining it there), but it no longer governs
 liveness. Two viewer-gone tests were re-based accordingly; two regression
 tests cover the two-window survival and the starting rejoin.
+
+## Post-ship fix — tab switch could clear the transcript (2026-09-15, user-found)
+
+User-found after D6: with two channels open (both with history), switching
+tabs SOMETIMES left the pane empty — composer ready, no rows, never
+recovers. Two coupled races, both on the rejoin path:
+
+1. **Browser (the reported symptom).** `reattach` re-pushes `ready` and
+   asks the daemon to resync while still processing `chat:session.open`;
+   on a tab switch those pushes can arrive at the page BEFORE it
+   re-attaches its sessionId-keyed listeners (the ack resolves, then
+   `setSessionId` commits) — the old-session filter drops them, and
+   nothing ever re-delivers the history. `phase` recovered from
+   `ack.phase`, so the pane settled READY with an empty fold.
+   Fix: a STABLE non-keyed listener in `AgentSession` buffers the latest
+   `ready`/`failed`/`closed`/`history` per session (bounded, terminal
+   markers win); the sessionId effect replays the buffered snapshot right
+   after the pane reset. This also restores `nativeSessionId` and
+   `imageSupported` on switch, which rode the same lost `ready` push.
+2. **Server (a fresh socket got nothing at all).** The `/app` handler
+   joins the opener to `chan:<sid>` only AFTER `open()` resolves — a
+   socket that was never in the room (page refresh / second window
+   rejoining) missed the ready re-push entirely. `reattach` now joins the
+   opener BEFORE pushing (the handler's join is idempotent).
+
+Rig A/B: reproduced 1-in-3 rapid switches emptying the pane pre-fix; 18/18
+hops clean post-fix, plus a page-reload fresh-socket rejoin restoring the
+transcript. Regression test: a fresh `/app` socket rejoining a ready
+channel receives the ready re-push and the relayed history.
+
+Rig note for future debugging: "channels stay live after the browser
+left" on a shared rig is NOT a viewer-gone leak while the OWNER has any
+window open (user-scoped liveness) — check for the user's own live
+`/app` socket before suspecting the reap.
