@@ -493,12 +493,16 @@ export class HarnessNexusClient {
   }
 
   /** 9 W7 — the agent's OWN sessions, listed live from the target's native store. */
-  async listAgentSessions(agentInstanceId: string): Promise<{
+  async listAgentSessions(
+    agentInstanceId: string,
+    opts?: { refresh?: boolean },
+  ): Promise<{
     agent: AgentInstanceView;
     supported: boolean;
     sessions: NativeSessionView[];
   }> {
-    return this.request('GET', `/api/agent-instances/${agentInstanceId}/sessions`);
+    const qs = opts?.refresh === true ? '?refresh=1' : '';
+    return this.request('GET', `/api/agent-instances/${agentInstanceId}/sessions${qs}`);
   }
 
   /** The resolved profile bundle a deploy fetches (machine PAT exception #2). */

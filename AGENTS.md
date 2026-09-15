@@ -1069,7 +1069,8 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
 
 Full design in `docs/design/phase-9-w11-adapter-lifecycle.md` (problem
 inventory D1–D6 with evidence, slices A–F). Summary for daily work —
-**slices A, B, E, C, and the D6 resolution are SHIPPED; D (cost-only) remains**:
+**W11 is COMPLETE: slices A, B, E, C, D, and the D6 resolution are all
+SHIPPED**:
 
 - **A — adapter pid ledger + boot sweep (daemon, `0.13.0-p9w11`).**
   `~/.hnx/adapters/<wireSessionId>.json` (`packages/cli/src/daemon/
@@ -1173,8 +1174,16 @@ startedAt, command}`. The operator kill is `POST
   the existing channel (`resumingNativeId` dedupe — one adapter per native
   session), and closing the CURRENT channel via tab × / 断开 returns the
   pane to its welcome state (server-side closures keep the reason banner).
-- **Still open in W11** (see the design doc): D (sessions:list TTL cache —
-  cost only).
+- **D — sessions:list TTL cache (shipped 2026-09-15, daemon
+  `0.16.0-p9w11`).** The daemon caches the listing per target for
+  `SESSIONS_CACHE_TTL_MS` (default 15s, 0 = off) — claude/codex hits skip
+  the adapter spawn entirely, dsh's file scan rides the same cache, failures
+  never cache, and concurrent requests share one in-flight computation.
+  The rail's manual refresh button sends `?refresh=1`, which the server
+  passes through as `refresh: true` on the `sessions:list` event (optional
+  on the wire, so pre-D daemons strip it harmlessly); auto-refreshes (mount/
+  ready/closed) take the cached rows — the B push overlay keeps open-channel
+  marks correct between refreshes.
 
 ## Authentication & authorization (permission interceptors)
 

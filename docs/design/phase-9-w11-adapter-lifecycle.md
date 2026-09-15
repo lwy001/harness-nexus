@@ -1,19 +1,14 @@
 # Design: Phase 9 W11 — Adapter process lifecycle & session truth
 
-> Status: **A (adapter pid ledger + boot sweep + audit), B (channel
-> snapshot + tab bar + one-click cleanup, 2026-09-14), E (disconnect grace
->
-> - reconnect reconcile), and C (adapter report + machine panel) ALL
->   SHIPPED 2026-09-14/15** (daemon `0.15.0-p9w11`; see the sections and
->   their as-built/post-ship notes, including B's same-day
->   user-scoped-liveness fix and E's no-debounce correction);
->   D (listing TTL cache) still open (cost-only); **D6 RESOLVED 2026-09-15**
->   (idle-age tabs + 只清理闲置 + `CHAT_IDLE_TTL_MS` default-off, plus two
->   user-found open/close bug fixes — see §"Re-evaluation" → "D6
->   resolution"), **re-prioritized by the
->   §"Re-evaluation" after the B post-ship fixes** (E expanded with a
->   reconnect-reconcile handshake, new D6 idle-pressure decision point,
->   D ↓). Trigger: three rig incidents
+> Status: **W11 COMPLETE — A (adapter pid ledger + boot sweep + audit), B
+>   (channel snapshot + tab bar + one-click cleanup), E (disconnect grace +
+>   reconnect reconcile), C (adapter report + machine panel), D (listing
+>   TTL cache, daemon `0.16.0-p9w11`), and D6 (idle-age tabs + 只清理闲置 +
+>   `CHAT_IDLE_TTL_MS` default-off) ALL SHIPPED 2026-09-14/15** — see the
+>   sections and their as-built/post-ship notes, including B's same-day
+>   user-scoped-liveness fix and E's no-debounce correction, plus two
+>   user-found open/close bug fixes in the D6 batch (see §"Re-evaluation" →
+>   "D6 resolution"). Trigger: three rig incidents
 >   in one day (see §1) exposed that adapter processes are the least governed
 >   object in the stack and that the session rail cannot answer "which of these
 >   are actually alive". Predecessors: C5's channel lifecycle notes and the W7
@@ -293,6 +288,12 @@ answers from the live map (pgid > 0, native id, command, startedAt) and
 empties after close; malformed request → `proto:invalid`.
 
 ## D. Listing TTL cache (daemon) — kills D4
+
+> **SHIPPED 2026-09-15** (daemon `0.16.0-p9w11`). As designed, plus two
+> additions the implementation made natural: failures NEVER cache (a
+> transient spawn error retries on the next request), and concurrent
+> requests share the in-flight computation (one spawn, N answers). The
+> dsh zstd-missing error rides the same throw path as before (uncached).
 
 `sessions:list` for the adapter-listed targets (codex/claude) caches the
 listing per (machine,target) for `SESSIONS_CACHE_TTL_MS` (default 15s) in the

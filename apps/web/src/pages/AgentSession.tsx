@@ -170,18 +170,24 @@ export function AgentSessionPage() {
     })();
   }, [agentId, logout]);
 
-  const refreshSessions = useCallback(async () => {
-    if (agentId === '') return;
-    try {
-      const res = await withAuthGuard(() => api.listAgentSessions(agentId), logout);
-      setRail({ state: 'ready', supported: res.supported, sessions: res.sessions });
-    } catch (e) {
-      const code = e instanceof HarnessNexusError ? e.code : '';
-      if (code === 'MACHINE_OFFLINE') setRail({ state: 'offline' });
-      else if (code === 'DAEMON_NO_SESSIONS') setRail({ state: 'daemon-old' });
-      else setRail({ state: 'error', message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [agentId, logout]);
+  const refreshSessions = useCallback(
+    async (bypassCache = false) => {
+      if (agentId === '') return;
+      try {
+        const res = await withAuthGuard(
+          () => api.listAgentSessions(agentId, bypassCache ? { refresh: true } : {}),
+          logout,
+        );
+        setRail({ state: 'ready', supported: res.supported, sessions: res.sessions });
+      } catch (e) {
+        const code = e instanceof HarnessNexusError ? e.code : '';
+        if (code === 'MACHINE_OFFLINE') setRail({ state: 'offline' });
+        else if (code === 'DAEMON_NO_SESSIONS') setRail({ state: 'daemon-old' });
+        else setRail({ state: 'error', message: e instanceof Error ? e.message : String(e) });
+      }
+    },
+    [agentId, logout],
+  );
 
   useEffect(() => {
     void refreshSessions();
@@ -562,7 +568,7 @@ export function AgentSessionPage() {
                 size="icon"
                 className="size-7"
                 title={t('common.refresh')}
-                onClick={() => void refreshSessions()}
+                onClick={() => void refreshSessions(true)}
               >
                 <RefreshCwIcon className="size-3.5" />
               </Button>
