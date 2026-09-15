@@ -136,7 +136,13 @@ repo-scoped); the job declares `environment: release`, the environment's
 deployment rule restricts it to `v*` tags, and adding required reviewers to
 the environment later gates publishes behind approval. `docker.yml` re-uses
 release.yml's tag-must-match-manifests guard so a mistyped tag fails BOTH
-workflows. Unlike npm, Docker tags are mutable — re-pushing a tag just
+workflows. Manual dispatch from main (`workflow_dispatch`) is the fallback —
+it publishes the manifests' version, and it is the ONLY way to image an
+already-released version (re-pushing an old tag fires nothing: a workflow
+only runs if it exists in the tagged commit). The environment's deployment
+allowlist must therefore include the `main` BRANCH alongside the `v*` tags,
+or dispatch runs are rejected by the environment gate. Unlike npm, Docker
+tags are mutable — re-pushing a tag just
 overwrites with identical content. `docker-compose.yml` carries both image
 names with `build:` still primary, so this box keeps deploying from source
 while `docker compose pull` fetches the published images.
