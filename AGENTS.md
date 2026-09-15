@@ -111,7 +111,7 @@ Run a single package by filter, e.g. `pnpm --filter @harness-nexus/core run buil
 
 To boot the server without SQLite set up: `STORAGE_DRIVER=memory pnpm dev:server`.
 
-### Releasing to npm
+### Releasing to npm & Docker Hub
 
 Five packages publish in lockstep (`@harness-nexus/{core,shared,mcp-runtime,sdk,cli}`).
 **The flow is tag-driven (2026-09-11 onward):**
@@ -125,6 +125,21 @@ Five packages publish in lockstep (`@harness-nexus/{core,shared,mcp-runtime,sdk,
    retrying a partially failed run is a no-op for what already landed.
    Manual dispatch from main (`workflow_dispatch`) remains the fallback — it
    publishes whatever the manifests say, unguarded by any tag.
+
+The SAME tag push also publishes the Docker images (`docker.yml`, 2026-09-15):
+`sinrimin/harness-nexus-server` + `sinrimin/harness-nexus-web` on Docker Hub,
+tagged `X.Y.Z` + `latest` (pre-1.0 the alphas ARE latest, mirroring npm),
+`linux/amd64` only for now (QEMU-emulated arm64 builds are prohibitively slow).
+Credentials are ENVIRONMENT secrets on the `release` environment
+(`DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` — a Docker Hub PAT, Read & Write,
+repo-scoped); the job declares `environment: release`, the environment's
+deployment rule restricts it to `v*` tags, and adding required reviewers to
+the environment later gates publishes behind approval. `docker.yml` re-uses
+release.yml's tag-must-match-manifests guard so a mistyped tag fails BOTH
+workflows. Unlike npm, Docker tags are mutable — re-pushing a tag just
+overwrites with identical content. `docker-compose.yml` carries both image
+names with `build:` still primary, so this box keeps deploying from source
+while `docker compose pull` fetches the published images.
 
 Publishing uses **OIDC trusted publishing** — zero npm credentials in GitHub
 (per-package trusted publisher registered on npmjs.com: sinrimin/harness-nexus +
@@ -1444,7 +1459,9 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   must work pre-1.0; `packages/cli/README.md` is the npm landing page), with
   GitHub Actions CI on every push/PR (`ci.yml`, Node 20) and an OIDC
   trusted-publishing release workflow (`release.yml`, manual dispatch, no npm
-  token stored). See "Releasing to npm" under Common commands. Remaining:
+  token stored), plus a tag-driven Docker Hub image publish workflow
+  (`docker.yml` — server + web images, `release` environment secrets). See
+  "Releasing to npm & Docker Hub" under Common commands. Remaining:
   C6 (orchestration). **Phase 9 — harness runtime lifecycle — W1 through
   W10 are SHIPPED (2026-09, see the sections above): Agent-first inventory
   with the runtime probe arm, detected AgentInstances (chatable),

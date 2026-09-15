@@ -11,6 +11,8 @@
   <a href="README.md">English</a> | 简体中文
   &nbsp;·&nbsp;
   <a href="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml"><img src="https://github.com/sinrimin/harness-nexus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  &nbsp;·&nbsp;
+  <a href="https://www.npmjs.com/package/@harness-nexus/cli"><img src="https://img.shields.io/npm/v/@harness-nexus/cli" alt="npm @harness-nexus/cli"></a>
 </p>
 
 **⚠️ 早期阶段。** Harness Nexus 尚处于活跃开发期：功能、API 与线上协议可能随时变更，
@@ -30,30 +32,37 @@
   Harness (dsh)**——更多目标在路线图上。
 - **机器与部署** — 用 `hnx enroll` 注册机器，其守护进程通过 WSS 保持连接；扫描机器
   上已安装的内容、与配置集做对比、一键导回平台、以可重放的作业部署配置集。
-- **与已部署的代理对话** — 在浏览器中通过 ACP 与代理实例对话（流式回复、工具调用、
-  权限请求），执行发生在你自己的机器上，按机器逐一开启，默认关闭。
+- **管理宿主本身** — 以远程作业方式安装/升级/固定代理运行时（Claude Code、Codex、
+  dsh），向机器推送默认的 LLM 供应商与模型配置，并以脱敏方式查看各宿主的原生配置
+  文件，无需 SSH。
+- **与你的代理对话** — 在浏览器中通过 ACP 与任意代理实例对话：流式回复、工具调用
+  卡片、权限请求、图片/文件附件、会话级模式与模型选择器。支持列出并恢复代理自己的
+  原生会话；平台不持久化任何会话数据。执行发生在你自己的机器上；按机器逐一开启，
+  默认关闭。
 - **从第一天起就支持多用户** — JWT + 个人访问令牌、全局 vs. 个人资源、管理员/普通
   用户两种角色。
 
 ## 项目状态
 
-| 领域                             | 状态                         |
-| -------------------------------- | ---------------------------- |
-| 认证、用户、角色、PAT            | ✅ 已完成                    |
-| MCP 连接、凭据、代理转发         | ✅ 已完成                    |
-| 资源与配置集编辑器（Web）        | ✅ 已完成                    |
-| 技能中心（浏览/保存/多源搜索）   | ✅ 已完成                    |
-| Claude Code 市场发射器           | ✅ 已完成                    |
-| `hnx` 安装/卸载（本地）          | ✅ 已完成（codex、deepseek） |
-| 机器、守护进程、MCP shim         | ✅ 已完成                    |
-| 清单 / 对比 / 导入               | ✅ 已完成                    |
-| 远程部署作业                     | ✅ 已完成                    |
-| ACP 聊天                         | ✅ 已完成                    |
-| Web UI 界面语言（英/中）         | ✅ 已完成                    |
-| npm 发布（@harness-nexus/cli）   | ✅ 0.1.0-alpha               |
-| 运行时管理（安装/升级/配置）     | 🧪 设计完成（Phase 9）       |
-| 编排（多代理）                   | 🧪 未设计                    |
-| 其余导入适配器（ECC/Superpower） | 🧪 计划中                    |
+| 领域                              | 状态                         |
+| --------------------------------- | ---------------------------- |
+| 认证、用户、角色、PAT             | ✅ 已完成                    |
+| MCP 连接、凭据、代理转发          | ✅ 已完成                    |
+| 资源与配置集编辑器（Web）         | ✅ 已完成                    |
+| 技能中心（浏览/保存/多源搜索）    | ✅ 已完成                    |
+| Claude Code 市场发射器            | ✅ 已完成                    |
+| `hnx` 安装/卸载（本地）           | ✅ 已完成（codex、deepseek） |
+| 机器、守护进程、MCP shim          | ✅ 已完成                    |
+| 清单 / 对比 / 导入                | ✅ 已完成                    |
+| 远程部署作业                      | ✅ 已完成                    |
+| 运行时管理（W1–W4）               | ✅ 已完成                    |
+| ACP 聊天：门户界面与会话（W5–W9） | ✅ 已完成                    |
+| LLM 供应商 + 模型发现（W10）      | ✅ 已完成                    |
+| Web UI 界面语言（英/中）          | ✅ 已完成                    |
+| npm 发布（@harness-nexus/cli）    | ✅ 0.1.0-alpha               |
+| Docker Hub 镜像                   | 🔜 下一个 vX.Y.Z tag 首发    |
+| 编排（多代理）                    | 🧪 未设计                    |
+| 其余导入适配器（ECC/Superpower）  | 🧪 计划中                    |
 
 详细计划见 [`docs/roadmap.md`](docs/roadmap.md)；每个阶段都有配套的 PRD + 设计文档，
 索引在 [`docs/README.md`](docs/README.md)。
@@ -101,25 +110,35 @@ pnpm dev:web            # Web UI 监听 :5173
 ### CI 与发布
 
 每次 push 与 PR 都会运行 CI（install → build → typecheck → test，
-`.github/workflows/ci.yml`）。发版方式：改五个包的版本号
-（`packages/{core,shared,sdk-ts,mcp-runtime,cli}`）后运行 `release` 工作流——
-它通过 OIDC trusted publishing 发布到 npm，仓库中不保存任何 npm 令牌。
+`.github/workflows/ci.yml`）。发布是 **tag 驱动**的：改五个包的版本号
+（`packages/{core,shared,sdk-ts,mcp-runtime,cli}`）、合并到 main，然后
+`git tag vX.Y.Z && git push origin vX.Y.Z`。推送 tag 会同时触发两个工作流：
+
+- `release` —— 通过 OIDC trusted publishing 发布 npm 包（仓库中不保存任何
+  npm 令牌）；已发布的版本会被跳过，重跑同一 tag 是幂等的。
+- `docker` —— 构建两个镜像并推送到 Docker Hub（`sinrimin/harness-nexus-server` /
+  `-web`，打 `X.Y.Z` + `latest` 标签），凭据是 `release` 环境保护下的
+  environment secrets。
 
 ## Docker
 
-`docker compose up --build` 以两个容器启动整个栈：
+整个栈由两个容器组成：
 
 - **`server`** — Fastify API + MCP 代理 + realtime 通道（多阶段构建镜像，来自根目录
-  `Dockerfile`）。SQLite 持久化到 `/data` 卷。不对外发布——仅 `web` 可达。
+  `Dockerfile`）。SQLite 持久化到 `/data` 卷。不开宿主端口——仅 `web` 可达。
 - **`web`** — nginx 提供构建后的 SPA（`apps/web/Dockerfile`），并把 `/api`、`/mcp`、
   `/socket.io`（WebSocket）反向代理到 `server`。唯一对外暴露的端口。
+
+两个镜像在每个发布 tag 上发布到 Docker Hub（linux/amd64），直接拉取比本地构建更快：
 
 ```bash
 # 1. 配置（复制并填写必需的 JWT_SECRET）
 cp .env.example .env
 # 编辑 .env: JWT_SECRET="$(openssl rand -base64 48)"
 
-# 2. 构建并启动
+# 2. 用已发布的镜像运行……
+docker compose pull && docker compose up -d
+# ……或从源码构建（需在镜像内编译整个 workspace）：
 docker compose up --build -d
 
 # 3. 打开界面（默认仅绑定 localhost——见 docker-compose.yml 中的 ports:）
@@ -154,8 +173,9 @@ ACP 聊天子进程。远程聊天默认按机器关闭——在机器页面开�
 
 本产品存储并服务机密（上游凭据）。值得了解的设计选择：凭据密钥以 AES-256-GCM 静态
 加密且永不完整返回；令牌（PAT、机器注册）只显示一次；机器令牌只进入 realtime 通道，
-不进入 REST API；远程聊天按机器选择加入、仅所有者可用、有会话审计记录；机器清单上传
-前会先脱敏 env/header 值。请把实例（及其 `JWT_SECRET`）当作其连接的一切的 root 对待。
+不进入 REST API；远程聊天按机器选择加入、仅所有者可用，且平台不持久化任何会话数据——
+聊天转录保留在你机器上的代理本身；机器清单上传前会先脱敏 env/header 值。请把实例
+（及其 `JWT_SECRET`）当作其连接的一切的 root 对待。
 
 ## 文档
 
