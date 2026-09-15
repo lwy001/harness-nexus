@@ -1,11 +1,13 @@
 # Design: Phase 9 W11 — Adapter process lifecycle & session truth
 
-> Status: **B (channel snapshot + tab bar + one-click cleanup) SHIPPED
-> 2026-09-14** (server+web only, daemon untouched — see §B and the post-ship
-> notes, including the same-day user-scoped-liveness fix); A/C/D/E designed,
-> not yet implemented, **re-prioritized by the §"Re-evaluation" after the B
-> post-ship fixes** (A ↑, E expanded with a reconnect-reconcile handshake,
-> new D6 idle-pressure decision point, D ↓). Trigger: three rig incidents
+> Status: **A (adapter pid ledger + boot sweep + audit, daemon
+> `0.13.0-p9w11`) and B (channel snapshot + tab bar + one-click cleanup)
+> SHIPPED — A on 2026-09-15, B on 2026-09-14** (see §A/§B and their
+> post-ship notes, including B's same-day user-scoped-liveness fix);
+> C/D/E designed, not yet implemented, **re-prioritized by the
+> §"Re-evaluation" after the B post-ship fixes** (E expanded with a
+> reconnect-reconcile handshake, new D6 idle-pressure decision point,
+> D ↓). Trigger: three rig incidents
 > in one day (see §1) exposed that adapter processes are the least governed
 > object in the stack and that the session rail cannot answer "which of these
 > are actually alive". Predecessors: C5's channel lifecycle notes and the W7
@@ -76,6 +78,10 @@
 
 ## A. Adapter ledger & boot sweep (daemon) — kills D1
 
+> **SHIPPED 2026-09-15** (`packages/cli/src/daemon/adapter-ledger.ts`, daemon
+> `0.13.0-p9w11`, no wire change). What follows is the design plus the
+> as-built notes where implementation diverged or hardened it.
+
 `~/.hnx/adapters/` holds one JSON file per live adapter
 (`<wireSessionId>.json`), written synchronously at spawn BEFORE
 `AcpAgentConnection.start` returns, removed in `teardown` after the kill is
@@ -98,8 +104,48 @@ issued:
   the server, and carries no secrets (command line only — the credential
   lives in the machine's native config, never in argv/env of the adapter).
 
-Tests (cli): sweep reaps a fake pgid recorded in the ledger; teardown removes
-the file; a ledger entry with a dead pgid is dropped without signaling.
+### As-built notes (2026-09-15)
+
+- **The entry is written INSIDE `start`, not merely "before it returns"**:
+  `AcpAgentConnection.start` grew an `onSpawned(pgid)` callback invoked right
+  after the detached spawn and BEFORE the initialize await, and `chat.ts`
+  writes the entry there — a hard death DURING establishment (the widest
+  window: up to 20s of initialize timeout) still leaves a sweepable record.
+  A throwing callback KILLS the spawn and fails the start (Principle 2: an
+  unledgered adapter is worse than a closed channel). After registration the
+  entry is re-written with the `nativeSessionId` (what slice C's report and
+  post-mortem forensics key off).
+- **Kill paths never unlink — removal belongs to the audit/sweep only**
+  (deliberate deviation from the line above): unlinking at teardown loses
+  accounting if the daemon hard-dies inside the SIGTERM→SIGKILL grace (the
+  unref'd SIGKILL timer dies with the process); leaving the file lets the
+  next boot's sweep finish the reap. Cost: ≤ one audit period (60s) of
+  stale file after a normal close.
+- **A pre-existing leak was found and closed while implementing**: a
+  timed-out/failed `initialize` used to leave the spawned group alive —
+  `chat.ts` only owns the connection AFTER `start` resolves, so its catch
+  could not kill it. `start` now kills on any initialize rejection before
+  rethrowing (this also covers `sessions.ts`' short-lived listing spawns).
+- **EPERM counts as not-ours**: `kill(-pgid, 0)` returning EPERM (the pid
+  was reused by a foreign-owned process) makes every caller drop the file
+  WITHOUT signaling — Principle 3 enforced at the syscall boundary.
+- Junk housekeeping: torn `.json` writes and stranded `.json.tmp` files are
+  removed by the same audit/sweep pass; `writeAdapterLedgerEntry` is an
+  atomic tmp+rename, rejects unsafe wire session ids (path traversal), and
+  the reader re-validates every field.
+- `attachChatHandlers` gained `auditIntervalMs` (default 60s, 0 disables —
+  test knob); the audit lives next to the sessions map it backstops. One
+  daemon per (user, home): a second daemon's boot sweep would reap the
+  first's live adapters (concurrent daemons on one home are already
+  unsupported).
+
+Tests (cli): sweep reaps a REAL detached group recorded in the ledger and
+the process actually dies; a dead-pgid entry is dropped without counting as
+reaped; audit keeps live entries; junk/`.tmp` housekeeping; traversal-safe
+writes; the entry exists BEFORE establishment completes (fixture-delayed
+`session/new`, pgid === the spawned process); registration enriches with
+the native id and close defers removal to the audit; a failed establishment
+leaves no residue once the group dies.
 
 ## B. Channel snapshot push + tab bar + one-click cleanup (server → web) — kills D2
 
@@ -258,9 +304,9 @@ latency, not correctness.
 
 ## Plan (implementation order — re-prioritized 2026-09-14, see below)
 
-1. **S1 = A** (daemon-local, no wire change) — ledger + sweep + audit + tests.
-   HIGHEST: the tab model raised steady-state adapter counts, so the
-   orphan blast radius of a daemon hard-death grew with it.
+1. **S1 = A** (daemon-local, no wire change) — **SHIPPED 2026-09-15**
+   (`adapter-ledger.ts`: spawn-time entry via `onSpawned`, boot sweep in
+   `runDaemon`, 60s audit, initialize-failure kill; daemon `0.13.0-p9w11`).
 2. **S2 = B** — **SHIPPED** (snapshot push + tab bar + cleanup, plus the
    mount-sync / opens-keep-channels / user-scoped-liveness fixes).
 3. **S3 = E** (grace window + reconnect reconcile; env kill-switch
@@ -275,8 +321,8 @@ latency, not correctness.
    cost optimization.
 6. **F** optional follow-up.
 
-Each slice is independently shippable; S1 (orphans) and S3 (blip reap) are
-the two remaining defect classes actually observed on the rig.
+Each slice is independently shippable; S1 (orphans) is shipped, and S3
+(blip reap) is the remaining defect class actually observed on the rig.
 
 ## Re-evaluation (2026-09-14, after the B post-ship fixes)
 
