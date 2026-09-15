@@ -33,6 +33,9 @@ export function testConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     chatMaxActiveSessionsPerMachine: 1,
     chatPermissionTimeoutMs: 400,
     chatReadyTimeoutMs: 800,
+    // 9 W11 E — long enough that a simulated blip + fast manual reconnect
+    // lands inside the window; the expiry test waits past it.
+    chatReconnectGraceMs: 2000,
     ...overrides,
   };
 }

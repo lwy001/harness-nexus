@@ -1,10 +1,12 @@
 # Design: Phase 9 W11 — Adapter process lifecycle & session truth
 
 > Status: **A (adapter pid ledger + boot sweep + audit, daemon
-> `0.13.0-p9w11`) and B (channel snapshot + tab bar + one-click cleanup)
-> SHIPPED — A on 2026-09-15, B on 2026-09-14** (see §A/§B and their
-> post-ship notes, including B's same-day user-scoped-liveness fix);
-> C/D/E designed, not yet implemented, **re-prioritized by the
+> `0.13.0-p9w11`), B (channel snapshot + tab bar + one-click cleanup,
+> 2026-09-14), and E (disconnect grace + reconnect reconcile, daemon
+> `0.14.0-p9w11` + server `ReconnectGuard`, 2026-09-15) SHIPPED** (see the
+> sections and their as-built/post-ship notes, including B's same-day
+> user-scoped-liveness fix and E's no-debounce correction);
+> C/D designed, not yet implemented, **re-prioritized by the
 > §"Re-evaluation" after the B post-ship fixes** (E expanded with a
 > reconnect-reconcile handshake, new D6 idle-pressure decision point,
 > D ↓). Trigger: three rig incidents
@@ -248,6 +250,13 @@ Tests (cli): hit serves cached rows without spawn; bypass respawns.
 
 ## E. Disconnect grace window + reconnect reconcile — kills D5
 
+> **SHIPPED 2026-09-15** (daemon `0.14.0-p9w11`, server `ReconnectGuard`).
+> The original text below is kept; the as-built notes at the end record
+> where reality forced changes — most importantly the "presence already
+> debounces offline" premise was FALSE (socket-level presence reaps
+> instantly), so the server-side reap had to be delayed too or the daemon's
+> grace was pointless.
+
 - Daemon: on `/ctl` `disconnect`, arm a `TEARDOWN_GRACE_MS` (default 8000)
   timer instead of tearing down immediately; `connect` cancels it. Mid-grace
   prompts continue against the local adapter (the turn survives the blip;
@@ -275,9 +284,50 @@ Tests (cli): hit serves cached rows without spawn; bypass respawns.
   and does NOT wait the grace — `stop()` flushes teardown synchronously;
   the grace timer must be cancelled/ignored on shutdown).
 
-Tests (cli): disconnect+reconnect within grace keeps sessions; past grace
-tears down; reconcile drops unlisted sessions and keeps listed ones.
-(server) reconcile emission on /ctl connect.
+### As-built notes (2026-09-15)
+
+- **The server had NO offline debounce.** `MachinePresence` flips offline
+  the instant the last `/ctl` socket drops and the disconnect handler reaped
+  chat rows right there — a daemon-side grace alone would have changed
+  nothing (rows died before any reconnect). `ReconnectGuard`
+  (`server/src/realtime/reconnect.ts`, wired into the realtime plugin) owns
+  BOTH halves: `onWentOffline` arms a delayed reap
+  (`CHAT_RECONNECT_GRACE_MS`, default 8000; 0 restores pre-W11) and
+  `onCtlConnect` cancels it and runs the handshake — `chat:reconcile
+{sessionIds}` → daemon acks `{held}` → `retainOnly` closes rows the
+  daemon does not hold (ghosts of a restart/hard-death, and stale rows
+  whose daemon-side close event was lost inside a blip).
+- **Deliberate closes bypass the grace on BOTH sides.** The daemon treats
+  reason `'io client disconnect'` (its own `stop()`) as immediate; the
+  server treats `'client namespace disconnect'` / `'io server disconnect'`
+  the same — a daemon that deliberately closed already tore its sessions
+  down, so waiting only delays cleanup. Kill-switches:
+  `HN_TEARDOWN_GRACE_MS=0` (daemon) and `CHAT_RECONNECT_GRACE_MS=0`
+  (server) restore the pre-W11 behavior exactly.
+- **Reconcile covers establishments IN FLIGHT.** The daemon tracks starts
+  from `chat:session.start` to registration (`inFlightStarts`): an unlisted
+  in-flight start is flagged into `closedBeforeReady` (it aborts at its
+  checkpoint — no orphan), while a LISTED one is reported as held so the
+  server does not close its row through a ghost-race. Without this, a blip
+  landing mid-spawn either leaked an unjoinable adapter or killed a channel
+  that was legitimately coming up.
+- **No/invalid ack falls back THROUGH the grace** (pre-W11 daemons have no
+  handler): the ack wait is `min(5000, grace)` and a timeout routes into
+  the same delayed reap — an instant reap there would defeat the window for
+  a socket that merely blipped a second time. For a genuine old daemon this
+  only means ghost rows close a few seconds later.
+- The old blind reap-on-every-`/ctl`-connect is GONE, replaced by
+  reconcile-on-connect — the ghost-flush property is preserved (a fresh
+  daemon acks `held: []`, so leftover rows close), but a grace-KEEPING
+  daemon's rows now survive the reconnect.
+
+Tests (cli): a blip within the grace keeps the channel (a later prompt
+works); past the grace everything tears down; a deliberate close and the
+`=0` kill-switch tear down immediately; reconcile drops unlisted sessions,
+keeps listed ones, and acks held — including the in-flight both ways.
+(server) rows survive a transport blip inside the window and reap past it;
+a reconnect's reconcile keeps held rows; the no-ack fallback reaps through
+the grace.
 
 ## F. Spawn hardening (P2, optional) — trims the tree
 
@@ -309,10 +359,9 @@ latency, not correctness.
    `runDaemon`, 60s audit, initialize-failure kill; daemon `0.13.0-p9w11`).
 2. **S2 = B** — **SHIPPED** (snapshot push + tab bar + cleanup, plus the
    mount-sync / opens-keep-channels / user-scoped-liveness fixes).
-3. **S3 = E** (grace window + reconnect reconcile; env kill-switch
-   `HN_TEARDOWN_GRACE_MS=0` restores today's behavior) — promoted ABOVE D:
-   demonstrated live twice, and it is now the last "my tab vanished"
-   surprise with a known cause.
+3. **S3 = E** (grace window + reconnect reconcile) — **SHIPPED
+   2026-09-15** (kill-switches `HN_TEARDOWN_GRACE_MS=0` daemon-side and
+   `CHAT_RECONNECT_GRACE_MS=0` server-side restore the pre-W11 behavior).
 4. **S4 = C** (adapter report + MachineDetail panel) — unchanged value:
    process truth is still invisible; the per-row kill is now redundant with
    tab × for the OWNER but remains the operator path.
@@ -321,8 +370,9 @@ latency, not correctness.
    cost optimization.
 6. **F** optional follow-up.
 
-Each slice is independently shippable; S1 (orphans) is shipped, and S3
-(blip reap) is the remaining defect class actually observed on the rig.
+Each slice is independently shippable; S1 (orphans) and S3 (blip reap)
+are shipped — no observed defect class remains open in W11 (C and D are
+visibility/cost work).
 
 ## Re-evaluation (2026-09-14, after the B post-ship fixes)
 

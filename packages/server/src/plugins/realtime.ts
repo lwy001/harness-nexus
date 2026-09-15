@@ -38,6 +38,7 @@ import { WorkspaceCoordinator } from '../realtime/workspace.js';
 import { SessionsCoordinator } from '../realtime/sessions.js';
 import { DetectedInstanceSync } from '../realtime/runtime-instances.js';
 import { ChatService } from '../realtime/chat.js';
+import { ReconnectGuard } from '../realtime/reconnect.js';
 import { JobService } from '../jobs/service.js';
 
 /**
@@ -87,6 +88,7 @@ export async function registerRealtime(
     chatMaxActiveSessionsPerMachine: number;
     chatPermissionTimeoutMs: number;
     chatReadyTimeoutMs: number;
+    chatReconnectGraceMs: number;
     sessionsListTimeoutMs: number;
   },
 ): Promise<void> {
@@ -159,6 +161,10 @@ export async function registerRealtime(
     ...(machine.daemonVersion !== null ? { daemonVersion: machine.daemonVersion } : {}),
   });
 
+  // 9 W11 E — chat rows survive a sub-second daemon blip: the offline reap
+  // is delayed by a grace window and a reconnect reconciles instead.
+  const reconnect = new ReconnectGuard(chat, opts.chatReconnectGraceMs);
+
   const realtime: RealtimeService = {
     presence,
     inventory,
@@ -225,19 +231,15 @@ export async function registerRealtime(
         socket.disconnect(true);
         return;
       }
-      // A newly connected daemon owns ZERO chat channels by construction: it
-      // tears every session down when its socket drops ("channels die with the
-      // connection"). Any channel still live for this machine therefore belongs
-      // to a connection that is gone — a ghost that would sit against
-      // `CHAT_MAX_SESSIONS_PER_MACHINE` forever, rejecting every new open.
-      //
-      // This runs on EVERY connection, deliberately not inside the
-      // offline→online branch below: a daemon restart (or a reconnect) can
-      // register the new socket before the old disconnect is processed, so the
-      // machine never "went offline" and `onMachineOffline` on that path is
-      // skipped — which is exactly how a restarted daemon used to wedge chat on
-      // its machine until the server itself restarted.
-      await realtime.chat.onMachineOffline(machineId);
+      // 9 W11 E — reconcile on EVERY connection (deliberately not only in
+      // the offline→online branch: a reconnect can register the new socket
+      // before the old disconnect is processed, so the machine never "went
+      // offline" and the reap timer below is never armed — reconcile is
+      // what flushes ghost rows in that race). The daemon answers with the
+      // channels it actually holds; rows it does not hold are ghosts of a
+      // restart/hard-death and close. No/invalid ack (a pre-W11 daemon)
+      // falls back to the delayed reap.
+      reconnect.onCtlConnect(socket, machineId);
       const updated = await touchLastSeen(machine);
       if (presence.connected(machineId, socket.id)) {
         realtime.broadcastStatus(updated, true);
@@ -436,7 +438,7 @@ export async function registerRealtime(
       void realtime.chat.onDaemonClosed(machineId, parsed.data.sessionId, parsed.data.reason);
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason: string) => {
       const wentOffline = presence.disconnected(socket.id);
       if (wentOffline === null) return;
       inventory.failMachine(wentOffline);
@@ -446,7 +448,16 @@ export async function registerRealtime(
       realtime.jobs.recoverMachine(wentOffline);
       // Channels die with the daemon connection; the AGENT sessions survive
       // on the machine (9 W7) — viewers are notified via chat:session.closed.
-      void realtime.chat.onMachineOffline(wentOffline);
+      // 9 W11 E: a BLIP (transport close/error, ping timeout) delays the reap
+      // by the grace window — Socket.IO rides it out and a reconnect
+      // reconciles. A DELIBERATE close (the daemon called disconnect: stop()
+      // or restart) mirrors the daemon side and reaps immediately — that
+      // daemon already tore its sessions down.
+      if (reason === 'client namespace disconnect' || reason === 'io server disconnect') {
+        void realtime.chat.onMachineOffline(wentOffline);
+      } else {
+        reconnect.onWentOffline(wentOffline);
+      }
       void (async () => {
         const machine = await app.uow.machines.findById(wentOffline);
         if (machine) {

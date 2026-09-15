@@ -17,6 +17,7 @@ import {
   chatConfigSetEventSchema,
   chatPermissionRespondEventSchema,
   chatPromptEventSchema,
+  chatReconcileEventSchema,
   chatSessionCloseEventSchema,
   chatSessionResyncEventSchema,
   chatSessionStartEventSchema,
@@ -206,6 +207,15 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
   const closedBeforeReady = new Set<string>();
   const CLOSED_BEFORE_READY_MAX = 64;
 
+  /**
+   * 9 W11 E — starts currently mid-establishment (spawn → registration).
+   * `chat:reconcile` reports these (when their id is still listed server-side)
+   * as held, and flags UNLISTED ones into `closedBeforeReady` so the
+   * establishment aborts — a row the server no longer knows must not finish
+   * into an unjoinable orphan.
+   */
+  const inFlightStarts = new Set<string>();
+
   const emitEvent = (session: DaemonSession, event: ChatStreamEvent): void => {
     pushHistory(session, { type: 'event', event });
     socket.emit('chat:event', { sessionId: session.sessionId, event });
@@ -269,6 +279,19 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     }, auditMs);
     auditTimer.unref();
   }
+
+  /**
+   * 9 W11 E — disconnect grace window. `HN_TEARDOWN_GRACE_MS` (default 8000;
+   * 0 restores the pre-W11 immediate teardown). Socket.IO reconnects from a
+   * transport blip within ~1s, so holding channels (and in-flight turns) for
+   * the window survives the blip; the server delays its offline reap by the
+   * same window and reconciles on reconnect.
+   */
+  const graceMs = (() => {
+    const raw = Number.parseInt(env.HN_TEARDOWN_GRACE_MS ?? '', 10);
+    return Number.isFinite(raw) ? Math.max(raw, 0) : 8000;
+  })();
+  let graceTimer: NodeJS.Timeout | null = null;
 
   // In-flight tail attachments by native session id (one per session).
   const tailAttaches = new Map<string, Promise<void>>();
@@ -379,6 +402,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     ack?.({ accepted: true });
     const { sessionId, target, cwd, resume } = parsed.data;
     void (async () => {
+      inFlightStarts.add(sessionId);
       const cmd = resolveAcpCommand(target, env);
       if (cmd === null) {
         socket.emit('chat:session.ready', {
@@ -600,7 +624,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           error: e instanceof Error ? e.message : String(e),
         });
       }
-    })();
+    })().finally(() => inFlightStarts.delete(sessionId));
   });
 
   // ---- server → daemon: prompt / cancel / permission / disconnect / resync ----
@@ -757,9 +781,66 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     ack?.({ accepted: true });
   });
 
-  socket.on('disconnect', () => {
-    // Channels die with the daemon's connection; the native sessions survive.
-    for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
+  // 9 W11 E — the server's live rows for this machine, sent on EVERY /ctl
+  // (re)connect. Drop what it disowned; report what we still hold.
+  socket.on('chat:reconcile', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = chatReconcileEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    const listed = new Set(parsed.data.sessionIds);
+    // A session whose row is gone server-side (reaped past the server's
+    // grace, or the server restarted) is unjoinable and invisible — no tab,
+    // no closer — tear it down now instead of leaking the adapter.
+    for (const session of [...sessions.values()]) {
+      if (!listed.has(session.sessionId)) teardown(session, 'reconciled');
+    }
+    // The same orphan risk exists MID-ESTABLISHMENT: flag unlisted starts so
+    // they abort at their checkpoints (the close-consume path).
+    for (const id of inFlightStarts) {
+      if (listed.has(id)) continue;
+      if (closedBeforeReady.size >= CLOSED_BEFORE_READY_MAX) closedBeforeReady.clear();
+      closedBeforeReady.add(id);
+    }
+    // Held = registered sessions + establishments in flight for rows the
+    // server still knows (reporting an unlisted in-flight start as held
+    // would keep a ghost row alive).
+    const held = [...sessions.keys(), ...[...inFlightStarts].filter((id) => listed.has(id))];
+    ack?.({ held: held.slice(0, 64) });
+  });
+
+  // A reconnect within the grace window revives every channel: cancel the
+  // pending teardown BEFORE the server's reconcile lands (its list decides
+  // what survives; the grace only buys time for the reconnect itself).
+  socket.on('connect', () => {
+    if (graceTimer !== null) {
+      clearTimeout(graceTimer);
+      graceTimer = null;
+    }
+  });
+
+  socket.on('disconnect', (reason: string) => {
+    // 9 W11 E — a deliberate stop ('io client disconnect': SIGTERM → stop())
+    // or the kill-switch (HN_TEARDOWN_GRACE_MS=0) tears down immediately,
+    // exactly as before. A transport blip instead HOLDS every channel for
+    // the grace window: Socket.IO reconnects within ~1s, the server mirrors
+    // the grace on its reap, and a mid-grace turn keeps running against the
+    // local adapter (packets buffer; the viewer resyncs on rejoin).
+    if (graceMs <= 0 || reason === 'io client disconnect') {
+      if (graceTimer !== null) {
+        clearTimeout(graceTimer);
+        graceTimer = null;
+      }
+      for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
+      return;
+    }
+    if (graceTimer !== null) return; // already armed by an earlier blip cycle
+    graceTimer = setTimeout(() => {
+      graceTimer = null;
+      for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
+    }, graceMs);
+    graceTimer.unref();
   });
 }
 
