@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon,
   BoxesIcon,
   CameraIcon,
+  CpuIcon,
   FileCogIcon,
   GitCompareArrowsIcon,
   LaptopIcon,
@@ -54,6 +55,7 @@ import {
   PROVIDER_API_SUPPORT,
   RUNTIME_API_SUPPORT,
   providerApiToSpecApi,
+  type AdapterProcessView,
   type AgentInstanceView,
   type CredentialView,
   type ImportResult,
@@ -308,6 +310,11 @@ export function MachineDetailPage() {
             jobs={jobs}
             agents={agents}
             onChanged={refreshJobs}
+          />
+          <AdaptersCard
+            machineId={id!}
+            online={machine?.online === true}
+            capabilities={machine?.capabilities ?? []}
           />
         </div>
       )}
@@ -1635,5 +1642,167 @@ function BaseWorkspaceField({
         {busy ? t('common.saving') : t('common.save')}
       </Button>
     </label>
+  );
+}
+
+/** 9 W11 C — uptime for an adapter row (startedAt is an epoch-ms number). */
+function adapterUptime(startedAt: number, locale: string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - startedAt) / 60000));
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  return rtf.format(-Math.round(hours / 24), 'day');
+}
+
+/**
+ * 9 W11 C — the adapter-process panel: present-tense PROCESS truth from the
+ * daemon (`adapters:report` over /ctl), on-demand from the machine page. The
+ * per-row 终止 is the OPERATOR kill (owner-or-admin); the owner's everyday
+ * path remains the chat tab bar's ×.
+ */
+function AdaptersCard({
+  machineId,
+  online,
+  capabilities,
+}: {
+  machineId: string;
+  online: boolean;
+  capabilities: string[];
+}) {
+  const { logout } = useAuth();
+  const { t, lang } = useI18n();
+  const [rows, setRows] = useState<AdapterProcessView[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [killing, setKilling] = useState<string | null>(null);
+  const available = online && capabilities.includes('chat');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setRows(await withAuthGuard(() => api.listMachineAdapters(machineId), logout));
+    } catch (e) {
+      setRows([]);
+      toast.error(
+        e instanceof HarnessNexusError ? e.message : t('machineDetail.adaptersLoadFailed'),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [machineId, logout, t]);
+
+  useEffect(() => {
+    if (available) void load();
+    else setRows(null);
+  }, [available, load]);
+
+  async function kill(sessionId: string): Promise<void> {
+    if (!window.confirm(t('machineDetail.adapterKillConfirm'))) return;
+    setKilling(sessionId);
+    try {
+      await withAuthGuard(() => api.closeMachineAdapter(machineId, sessionId), logout);
+      toast.success(t('machineDetail.adapterKilled'));
+      await load();
+    } catch (e) {
+      toast.error(
+        e instanceof HarnessNexusError ? e.message : t('machineDetail.adaptersLoadFailed'),
+      );
+    } finally {
+      setKilling(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CpuIcon className="size-4" />
+            {t('machineDetail.adaptersTitle')}
+          </CardTitle>
+          <CardDescription>{t('machineDetail.adaptersDesc')}</CardDescription>
+        </div>
+        {available ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            className="shrink-0"
+          >
+            <RefreshCwIcon className={loading ? 'size-4 animate-spin' : 'size-4'} />
+            {t('machineDetail.adaptersRefresh')}
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {!available ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            {t('machineDetail.adaptersOffline')}
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">{t('machineDetail.adapterTarget')}</TableHead>
+                  <TableHead>{t('machineDetail.adapterNative')}</TableHead>
+                  <TableHead>{t('machineDetail.adapterUptime')}</TableHead>
+                  <TableHead>PGID</TableHead>
+                  <TableHead className="pr-4 text-right">{t('common.actions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows === null || loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-muted-foreground py-6 text-center">
+                      {t('machineDetail.adaptersLoading')}
+                    </TableCell>
+                  </TableRow>
+                ) : rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-muted-foreground py-6 text-center">
+                      {t('machineDetail.adaptersEmpty')}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  rows.map((a) => (
+                    <TableRow key={a.wireSessionId}>
+                      <TableCell className="pl-4">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {a.target}
+                        </Badge>
+                      </TableCell>
+                      <TableCell
+                        className="max-w-56 truncate font-mono text-xs"
+                        title={a.nativeSessionId ?? ''}
+                      >
+                        {a.nativeSessionId ?? '—'}
+                      </TableCell>
+                      <TableCell className="nums text-sm">
+                        {adapterUptime(a.startedAt, lang)}
+                      </TableCell>
+                      <TableCell className="nums font-mono text-xs">{a.pgid}</TableCell>
+                      <TableCell className="pr-4 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={killing !== null}
+                          onClick={() => void kill(a.wireSessionId)}
+                        >
+                          {killing === a.wireSessionId
+                            ? t('common.saving')
+                            : t('machineDetail.adapterKill')}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

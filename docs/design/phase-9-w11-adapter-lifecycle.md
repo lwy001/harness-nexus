@@ -1,12 +1,12 @@
 # Design: Phase 9 W11 — Adapter process lifecycle & session truth
 
-> Status: **A (adapter pid ledger + boot sweep + audit, daemon
-> `0.13.0-p9w11`), B (channel snapshot + tab bar + one-click cleanup,
-> 2026-09-14), and E (disconnect grace + reconnect reconcile, daemon
-> `0.14.0-p9w11` + server `ReconnectGuard`, 2026-09-15) SHIPPED** (see the
-> sections and their as-built/post-ship notes, including B's same-day
+> Status: **A (adapter pid ledger + boot sweep + audit), B (channel
+> snapshot + tab bar + one-click cleanup, 2026-09-14), E (disconnect grace
+> + reconnect reconcile), and C (adapter report + machine panel) ALL
+> SHIPPED 2026-09-14/15** (daemon `0.15.0-p9w11`; see the sections and
+> their as-built/post-ship notes, including B's same-day
 > user-scoped-liveness fix and E's no-debounce correction);
-> C/D designed, not yet implemented, **re-prioritized by the
+> D designed, not yet implemented (cost-only), **re-prioritized by the
 > §"Re-evaluation" after the B post-ship fixes** (E expanded with a
 > reconnect-reconcile handshake, new D6 idle-pressure decision point,
 > D ↓). Trigger: three rig incidents
@@ -214,6 +214,9 @@ no orphans).
 
 ## C. Adapter report — kills D3
 
+> **SHIPPED 2026-09-15** (daemon `0.15.0-p9w11`; see the as-built notes at
+> the end of the section).
+
 One new `/ctl` request/reply pair, inventory-style waiters
 (`AdapterReportCoordinator`, mirroring `SessionsCoordinator`):
 
@@ -233,8 +236,45 @@ pgid, nativeSessionId?, startedAt, command }] }` straight from the live
   page's per-agent header may show a count badge fed from the same push in B
   (channels count) — process count stays on the machine page.
 
-Tests (server): route gates + coordinator error-arm-before-timeout; (cli)
-result schema shape.
+### As-built notes (2026-09-15)
+
+- Wire: `adapters:report {requestId}` → `adapters:report:result
+  {adapters | error}` (`adapterProcessViewSchema` in shared; `pgid` is
+  `int().min(0)` — 0 = unknown, always real for a live session). The
+  daemon answers INSTANTLY from the sessions map (no spawn); `DaemonSession`
+  gained `command` + `startedAt` for it.
+- REST mirrors the sessions route exactly: `GET /api/machines/:id/adapters`
+  (owner-or-admin 404-hiding; online → 409 `MACHINE_OFFLINE`; `chat`
+  capability → 409 `DAEMON_NO_CHAT`; error-arm → 502; timeout → 504
+  `ADAPTERS_TIMEOUT` — a pre-W11 daemon simply never answers, 30s default,
+  `ADAPTERS_REPORT_TIMEOUT_MS`). The operator kill is
+  `POST /api/machines/:id/adapters/:sessionId/close` → `ChatService
+  .forceCloseSession` (closeInternal + notifyDaemon; the ROUTE gates
+  owner-or-admin — chat itself stays owner-only). 404 `ADAPTER_NOT_FOUND`
+  for a dead id. SDK: `listMachineAdapters` / `closeMachineAdapter`.
+- The kill's "teardown + ledger removal" from the original text above is
+  superseded by the W11 A as-built rule: kill paths never unlink — the
+  daemon teardown rides `chat:session.close` and the 60s audit drops the
+  ledger entry once the group is gone.
+- Panel (`MachineDetail` 适配器进程 card): on-demand fetch when online +
+  `chat` (auto once, 刷新 re-fetches; muted hint otherwise), one row per
+  adapter — target badge, native session id (mono, truncated), uptime
+  (`startedAt` → relative), PGID (`nums`), 终止 button (confirm-first).
+  Neutral Signal styling; process count stays on the machine page.
+- **Found while testing**: the /ctl connection handler registered presence
+  AFTER an `await` (findById + touchLastSeen) — a socket dying inside that
+  window was never counted off (its disconnect handler ran before
+  `connected()` registered it), leaving the machine showing online forever.
+  Presence now registers synchronously at handler entry (the deleted-machine
+  corner may flicker online for a beat before the force-disconnect lands).
+  Also fixed a suite daemon leak ('user disconnect' test never closed it —
+  the first true-offline assertion in the file exposed it).
+
+Tests (server): route happy path, gates (foreign 404 / no-capability 409 /
+offline 409), pre-W11 timeout → 504, operator kill (daemon gets the close,
+viewer gets `closed{reason:'operator'}`, second kill 404). (cli) the report
+answers from the live map (pgid > 0, native id, command, startedAt) and
+empties after close; malformed request → `proto:invalid`.
 
 ## D. Listing TTL cache (daemon) — kills D4
 
@@ -362,17 +402,17 @@ latency, not correctness.
 3. **S3 = E** (grace window + reconnect reconcile) — **SHIPPED
    2026-09-15** (kill-switches `HN_TEARDOWN_GRACE_MS=0` daemon-side and
    `CHAT_RECONNECT_GRACE_MS=0` server-side restore the pre-W11 behavior).
-4. **S4 = C** (adapter report + MachineDetail panel) — unchanged value:
-   process truth is still invisible; the per-row kill is now redundant with
-   tab × for the OWNER but remains the operator path.
+4. **S4 = C** (adapter report + MachineDetail panel) — **SHIPPED
+   2026-09-15** (daemon `0.15.0-p9w11`; also hardened synchronous presence
+   registration on /ctl connect).
 5. **S5 = D** (listing TTL cache) — demoted: the push overlay made stale
    LISTINGS matter less (only titles/updatedAt), so this is now a pure
    cost optimization.
 6. **F** optional follow-up.
 
-Each slice is independently shippable; S1 (orphans) and S3 (blip reap)
-are shipped — no observed defect class remains open in W11 (C and D are
-visibility/cost work).
+Each slice is independently shippable; S1 (orphans), S3 (blip reap), and
+S4 (process visibility) are shipped — no observed defect class remains open
+in W11 (D is cost work; D6 is a decision point).
 
 ## Re-evaluation (2026-09-14, after the B post-ship fixes)
 

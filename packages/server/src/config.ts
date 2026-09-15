@@ -74,6 +74,8 @@ export interface ServerConfig {
   workspaceListTimeoutMs: number;
   /** `sessions:list` round-trip budget (Phase 9 W7 native session rail; an `npx` adapter spawn is slow cold). */
   sessionsListTimeoutMs: number;
+  /** 9 W11 C — `adapters:report` round-trip budget (instant daemon-side; only old daemons wait it out). */
+  adaptersReportTimeoutMs: number;
   jobAckTimeoutMs: number;
   jobSweepIntervalMs: number;
   jobMaxAttempts: number;
@@ -144,6 +146,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     providerModelsTimeoutMs: Number(env.PROVIDER_MODELS_TIMEOUT_MS ?? '10000'),
     workspaceListTimeoutMs: Number(env.WORKSPACE_TIMEOUT_MS ?? '10000'),
     sessionsListTimeoutMs: Number(env.SESSIONS_TIMEOUT_MS ?? '30000'),
+    adaptersReportTimeoutMs: Number(env.ADAPTERS_REPORT_TIMEOUT_MS ?? '30000'),
     jobAckTimeoutMs: Number(env.JOB_ACK_TIMEOUT_MS ?? '60000'),
     jobSweepIntervalMs: Number(env.JOB_SWEEP_INTERVAL_MS ?? '15000'),
     jobMaxAttempts: Number(env.JOB_MAX_ATTEMPTS ?? '3'),

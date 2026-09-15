@@ -127,6 +127,19 @@ export interface AgentInstanceMachineView {
 }
 
 /**
+ * One live adapter process the daemon owns (9 W11 C — the machine panel's
+ * row; mirrors `adapterProcessViewSchema` in shared).
+ */
+export interface AdapterProcessView {
+  wireSessionId: string;
+  target: string;
+  pgid: number;
+  nativeSessionId?: string;
+  startedAt: number;
+  command: string;
+}
+
+/**
  * An agent on a machine (Phase 8 C4 deploy rows + Phase 9 W1 detected rows).
  * Detected instances have null profile/job ids — they came from a runtime
  * probe, not a deploy.
@@ -456,6 +469,20 @@ export class HarnessNexusClient {
   async listMachineAgents(machineId: string): Promise<AgentInstanceView[]> {
     const res = await this.request('GET', `/api/machines/${machineId}/agents`);
     return res.agents;
+  }
+
+  /** 9 W11 C — live adapter processes the daemon owns (the machine panel). */
+  async listMachineAdapters(machineId: string): Promise<AdapterProcessView[]> {
+    const res = await this.request('GET', `/api/machines/${machineId}/adapters`);
+    return res.adapters;
+  }
+
+  /** 9 W11 C — operator kill: closes the channel behind the adapter row. */
+  async closeMachineAdapter(machineId: string, sessionId: string): Promise<{ closed: boolean }> {
+    return this.request(
+      'POST',
+      `/api/machines/${machineId}/adapters/${encodeURIComponent(sessionId)}/close`,
+    );
   }
 
   /** 9 W6 — the chat session page's agent + machine gating summary. */

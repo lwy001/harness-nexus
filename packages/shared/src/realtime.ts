@@ -661,6 +661,36 @@ export const chatReconcileAckSchema = z.object({
 });
 
 /**
+ * One adapter process the RUNNING daemon owns (9 W11 C — the adapter
+ * report). Straight from the daemon's live sessions map, NOT the ledger:
+ * the report is present-tense truth ("what is running"), while the ledger
+ * is crash accounting ("what must be swept if I die").
+ */
+export const adapterProcessViewSchema = z.object({
+  /** The platform channel id (= the ledger file's key). */
+  wireSessionId: z.string().min(1).max(64),
+  target: z.string().min(1).max(32),
+  /** The process-group id (0 = unknown; always real for a live session). */
+  pgid: z.number().int().min(0),
+  nativeSessionId: z.string().min(1).max(128).optional(),
+  startedAt: z.number().int().positive(),
+  /** The spawn command's executable (e.g. `npx`) — no args, no secrets. */
+  command: z.string().min(1).max(256),
+});
+
+/** server → daemon: report the adapter processes you own (9 W11 C). */
+export const adaptersReportRequestSchema = z.object({
+  requestId: z.string().min(1).max(64),
+});
+
+/** daemon → server: the report (`error` arm settles the waiter honestly). */
+export const adaptersReportResultEventSchema = z.object({
+  requestId: z.string().min(1).max(64),
+  adapters: z.array(adapterProcessViewSchema).max(64).optional(),
+  error: z.string().max(512).optional(),
+});
+
+/**
  * One of the agent's OWN persisted sessions (9 W7) — `session/list` from the
  * target's ACP adapter (claude-code/codex) or dsh's native store, surfaced
  * through `GET /api/agent-instances/:id/sessions`. The platform persists
@@ -830,3 +860,5 @@ export type ChatHistoryEvent = z.infer<typeof chatHistoryEventSchema>;
 export type NativeSessionView = z.infer<typeof nativeSessionViewSchema>;
 export type SessionsListRequest = z.infer<typeof sessionsListRequestSchema>;
 export type SessionsListResultEvent = z.infer<typeof sessionsListResultEventSchema>;
+export type AdapterProcessView = z.infer<typeof adapterProcessViewSchema>;
+export type AdaptersReportResultEvent = z.infer<typeof adaptersReportResultEventSchema>;

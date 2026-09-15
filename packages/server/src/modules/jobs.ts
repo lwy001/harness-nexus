@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Machine } from '@harness-nexus/core';
 import {
   AppError,
+  adaptersReportRequestSchema,
   createMachineJobSchema,
   deployJobPayloadSchema,
   sessionsListRequestSchema,
@@ -246,4 +247,54 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       sessions: rows,
     };
   });
+
+  // ---- GET /api/machines/:id/adapters — live adapter processes (9 W11 C) ----
+  // PROCESS truth from the daemon's live sessions map (never the ledger —
+  // that is crash accounting), for the machine panel. Owner-or-admin like
+  // every machine-scoped read; on-demand (the rail does not call this).
+  app.get<{ Params: { id: string } }>('/api/machines/:id/adapters', guard, async (req) => {
+    const machine = await visibleMachine(req.params.id, req.user!);
+    if (!app.realtime.presence.isOnline(machine.id)) {
+      throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+    }
+    if (!machine.capabilities.includes('chat')) {
+      throw new AppError(
+        'Daemon does not advertise the chat capability (upgrade hnx on the machine)',
+        409,
+        'DAEMON_NO_CHAT',
+      );
+    }
+    const request = adaptersReportRequestSchema.parse({ requestId: randomUUID() });
+    const { done } = app.realtime.adapters.awaitReport(machine.id, request.requestId);
+    app.io.of('/ctl').to(`machine:${machine.id}`).emit('adapters:report', request);
+    const outcome = await done;
+    if (!outcome.ok) {
+      // Error arm BEFORE the generic failure branches (the W6 lesson).
+      if (outcome.error !== undefined) {
+        throw new AppError(outcome.error, 502, 'DAEMON_ADAPTERS_FAILED');
+      }
+      if (outcome.reason === 'disconnected') {
+        throw new AppError('Machine daemon is offline', 409, 'MACHINE_OFFLINE');
+      }
+      // A pre-W11 daemon has no handler — the report just never answers.
+      throw new AppError('Daemon did not answer the report in time', 504, 'ADAPTERS_TIMEOUT');
+    }
+    return { machineId: machine.id, adapters: outcome.adapters ?? [] };
+  });
+
+  // ---- POST /api/machines/:id/adapters/:sessionId/close — operator kill ----
+  // The panel's 终止: closes the CHANNEL (daemon teardown + ledger audit
+  // cleanup ride the ordinary close path). 404-hides an id that is not live.
+  app.post<{ Params: { id: string; sessionId: string } }>(
+    '/api/machines/:id/adapters/:sessionId/close',
+    guard,
+    async (req) => {
+      await visibleMachine(req.params.id, req.user!);
+      const closed = await app.realtime.chat.forceCloseSession(req.params.sessionId, 'operator');
+      if (!closed) {
+        throw new AppError('Adapter channel not found', 404, 'ADAPTER_NOT_FOUND');
+      }
+      return { closed: true };
+    },
+  );
 }

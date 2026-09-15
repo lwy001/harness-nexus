@@ -812,6 +812,15 @@ describe('session lifecycle', () => {
 });
 
 describe('REST surface', () => {
+  // The 'user disconnect' test above (re)creates the suite daemon and leaves
+  // it connected for this block; nothing after here uses it. Without this,
+  // the machine shows online for the REST of the file — the first test to
+  // assert true offline (9 W11 C gates) then hangs on a leaked socket.
+  afterAll(async () => {
+    daemon?.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+  });
+
   it('requires the sessions capability on the (online) daemon', async () => {
     // The full gating matrix lives in sessions-route.test.ts; here just the
     // shared daemon (online, 'chat' only) against the native listing.
@@ -1255,6 +1264,151 @@ describe('disconnect grace + reconcile (9 W11 E)', () => {
         silent.disconnect();
         await new Promise((r) => setTimeout(r, 150));
       }
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 15000);
+});
+
+describe('adapter report (9 W11 C)', () => {
+  // The machine enrolls with remoteChatEnabled=false; re-assert it so the
+  // operator-kill block is order-independent.
+  beforeEach(async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: { remoteChatEnabled: true },
+    });
+  });
+
+  const reportRow = {
+    wireSessionId: 'w-1',
+    target: 'claude-code',
+    pgid: 4242,
+    nativeSessionId: 'native-1',
+    startedAt: Date.now(),
+    command: 'npx',
+  };
+
+  it('GET /api/machines/:id/adapters returns the daemon-reported rows', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      d.on('adapters:report', (payload: { requestId: string }, ack?: (r: unknown) => void) => {
+        ack?.({ accepted: true });
+        void d.emit('adapters:report:result', {
+          requestId: payload.requestId,
+          adapters: [reportRow],
+        });
+      });
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/machines/${machineId}/adapters`,
+        headers: authed(jwt),
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { machineId: string; adapters: (typeof reportRow)[] };
+      expect(body.machineId).toBe(machineId);
+      expect(body.adapters).toHaveLength(1);
+      expect(body.adapters[0]).toMatchObject({ wireSessionId: 'w-1', pgid: 4242, command: 'npx' });
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  });
+
+  it('gates: foreign user 404, no chat capability 409, offline 409', async () => {
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'adapterless', password: 'hunter2hunter2' },
+    });
+    const otherJwt = other.json().token as string;
+
+    const res404 = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/adapters`,
+      headers: authed(otherJwt),
+    });
+    expect(res404.statusCode).toBe(404);
+    expect(res404.json().error).toBe('MACHINE_NOT_FOUND');
+
+    const d = await connectDaemon(['inventory']); // online, no chat capability
+    try {
+      const res409 = await app.inject({
+        method: 'GET',
+        url: `/api/machines/${machineId}/adapters`,
+        headers: authed(jwt),
+      });
+      expect(res409.statusCode).toBe(409);
+      expect(res409.json().error).toBe('DAEMON_NO_CHAT');
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    // Offline: d was disconnected in the finally above — wait until presence
+    // actually flips (the same direct-read wait the gating block uses; a
+    // deliberate close is immediate server-side, but the packet can land
+    // late under a loaded worker).
+    await waitFor(() => (app.realtime.presence.isOnline(machineId) ? undefined : true));
+    const resOffline = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/adapters`,
+      headers: authed(jwt),
+    });
+    expect(resOffline.statusCode).toBe(409);
+    expect(resOffline.json().error).toBe('MACHINE_OFFLINE');
+  }, 10000);
+
+  it('a daemon that never answers (pre-W11) times out → 504', async () => {
+    const d = await connectDaemon(['chat']); // no report handler
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/machines/${machineId}/adapters`,
+        headers: authed(jwt),
+      });
+      expect(res.statusCode).toBe(504);
+      expect(res.json().error).toBe('ADAPTERS_TIMEOUT');
+    } finally {
+      d.disconnect();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }, 10000);
+
+  it('POST …/adapters/:sessionId/close is the operator kill', async () => {
+    const d = await connectDaemon(['chat']);
+    try {
+      const startP = once(d, 'chat:session.start');
+      const res = await openSession(browser, agentId);
+      expect(res.error).toBeUndefined();
+      const start = (await startP) as { sessionId: string };
+      const readyP = once(browser, 'chat:session.ready');
+      readyFor(d, start);
+      await readyP;
+
+      const daemonCloseP = once(d, 'chat:session.close');
+      const browserClosedP = once(browser, 'chat:session.closed');
+      const kill = await app.inject({
+        method: 'POST',
+        url: `/api/machines/${machineId}/adapters/${start.sessionId}/close`,
+        headers: authed(jwt),
+      });
+      expect(kill.statusCode).toBe(200);
+      expect(kill.json()).toEqual({ closed: true });
+      expect(((await daemonCloseP) as { sessionId: string }).sessionId).toBe(start.sessionId);
+      expect(((await browserClosedP) as { reason: string }).reason).toBe('operator');
+
+      // The row is gone — a second kill 404-hides.
+      const again = await app.inject({
+        method: 'POST',
+        url: `/api/machines/${machineId}/adapters/${start.sessionId}/close`,
+        headers: authed(jwt),
+      });
+      expect(again.statusCode).toBe(404);
+      expect(again.json().error).toBe('ADAPTER_NOT_FOUND');
     } finally {
       d.disconnect();
       await new Promise((r) => setTimeout(r, 150));

@@ -18,6 +18,7 @@ import {
   chatPermissionRespondEventSchema,
   chatPromptEventSchema,
   chatReconcileEventSchema,
+  adaptersReportRequestSchema,
   chatSessionCloseEventSchema,
   chatSessionResyncEventSchema,
   chatSessionStartEventSchema,
@@ -93,6 +94,10 @@ interface DaemonSession {
   /** The agent's own session id from `session/new` / the resume arm. */
   acpSessionId: string;
   target: string;
+  /** 9 W11 C — the spawn command's executable, for the adapter report. */
+  command: string;
+  /** 9 W11 C — spawn time (also the report's uptime base). */
+  startedAt: number;
   conn: AcpAgentConnection;
   busy: boolean;
   /** In-flight permission requests by our wire requestId. */
@@ -537,6 +542,8 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           sessionId,
           acpSessionId,
           target,
+          command: cmd.command,
+          startedAt: ledgerStartedAt,
           conn,
           busy: false,
           permissions: new Map(),
@@ -779,6 +786,30 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       });
     }
     ack?.({ accepted: true });
+  });
+
+  // 9 W11 C — the adapter report: present-tense process truth from the live
+  // sessions map (the LEDGER is crash accounting, not a status surface; a
+  // report built from it could list processes that already died). Instant by
+  // construction — no spawn, no round-trip beyond the socket.
+  socket.on('adapters:report', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = adaptersReportRequestSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    ack?.({ accepted: true });
+    socket.emit('adapters:report:result', {
+      requestId: parsed.data.requestId,
+      adapters: [...sessions.values()].map((s) => ({
+        wireSessionId: s.sessionId,
+        target: s.target,
+        pgid: s.conn.pgid ?? 0,
+        nativeSessionId: s.acpSessionId,
+        startedAt: s.startedAt,
+        command: s.command,
+      })),
+    });
   });
 
   // 9 W11 E — the server's live rows for this machine, sent on EVERY /ctl

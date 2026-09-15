@@ -1069,7 +1069,7 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
 
 Full design in `docs/design/phase-9-w11-adapter-lifecycle.md` (problem
 inventory D1–D6 with evidence, slices A–F). Summary for daily work —
-**slices A, B, and E are SHIPPED; C/D designed**:
+**slices A, B, E, and C are SHIPPED; D (cost-only) remains**:
 
 - **A — adapter pid ledger + boot sweep (daemon, `0.13.0-p9w11`).**
   `~/.hnx/adapters/<wireSessionId>.json` (`packages/cli/src/daemon/
@@ -1146,10 +1146,24 @@ nativeSessionId?, openedAt}` (`chatChannelViewSchema` in shared).
   moment-in-time `open` stamps — the listing is still the row source
   (titles/cwd cost a daemon round-trip); only `open`/`openChannelId` stay
   live between refreshes.
-- **Still open in W11** (see the design doc): C (`GET /api/machines/:id/adapters`
-  - MachineDetail panel — process truth visibility), D (sessions:list TTL
-    cache — cost only), the D6 idle-pressure decision point (idle-age UI +
-    close-idle variant recommended).
+- **C — adapter report + machine panel (kills D3).** `GET
+  /api/machines/:id/adapters` (owner-or-admin, online + `chat` gated,
+  `ADAPTERS_REPORT_TIMEOUT_MS` 30s → 504; a pre-W11 daemon never answers)
+  rides `adapters:report` over /ctl — the daemon answers INSTANTLY from its
+  live sessions map (NOT the ledger: present-tense truth vs crash
+  accounting), rows `{wireSessionId, target, pgid, nativeSessionId?,
+  startedAt, command}`. The operator kill is `POST
+  /api/machines/:id/adapters/:sessionId/close` → `ChatService
+  .forceCloseSession` (notifyDaemon; the ROUTE gates owner-or-admin, chat
+  itself stays owner-only). SDK `listMachineAdapters`/
+  `closeMachineAdapter`; MachineDetail 适配器进程 card (refresh + per-row
+  终止, confirm-first). Shipped with C: /ctl presence now registers
+  SYNCHRONOUSLY in the connection handler (a socket dying inside the old
+  `await findById` window was never counted off — the machine showed
+  online forever).
+- **Still open in W11** (see the design doc): D (sessions:list TTL cache —
+  cost only), the D6 idle-pressure decision point (idle-age UI +
+  close-idle variant recommended).
 
 ## Authentication & authorization (permission interceptors)
 

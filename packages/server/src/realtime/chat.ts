@@ -520,6 +520,20 @@ export class ChatService {
     });
   }
 
+  /**
+   * 9 W11 C — operator kill (the machine panel's per-adapter 终止 button):
+   * closes the channel regardless of owner (the ROUTE gates owner-or-admin;
+   * chat itself stays owner-only). The daemon teardown rides the ordinary
+   * close event; the ledger entry drops at its audit (kill paths never
+   * unlink — the W11 A rule).
+   */
+  async forceCloseSession(sessionId: string, reason = 'operator'): Promise<boolean> {
+    const session = this.live.get(sessionId);
+    if (session === undefined) return false;
+    await this.closeInternal(session, reason, { notifyDaemon: true });
+    return true;
+  }
+
   /** Daemon went offline — every open channel of the machine ends (the agent sessions survive). */
   async onMachineOffline(machineId: string): Promise<void> {
     for (const session of [...this.live.values()]) {
