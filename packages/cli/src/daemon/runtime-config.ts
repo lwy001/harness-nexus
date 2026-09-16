@@ -25,7 +25,12 @@ import { dshNodeWarning } from './runtime.js';
  *
  *  - claude-code: `~/.claude/settings.json` — `env.ANTHROPIC_BASE_URL` (only
  *    while the spec sets one; a later unset REMOVES ours), `env.ANTHROPIC_AUTH_TOKEN`
- *    (the key), top-level `model` (base URL alone doesn't switch the model).
+ *    (the key), top-level `model` (base URL alone doesn't switch the model),
+ *    and top-level `availableModels` = unique([model, ...models]) (9 W13 —
+ *    the ACP wrapper restricts its model configOption to this allowlist, so
+ *    the session dropdown lists only gateway-servable ids; it also narrows
+ *    the machine's terminal /model picker, which is the documented Claude
+ *    Code semantics for a managed route).
  *  - codex: `~/.codex/config.toml` — root keys `model` + `model_provider`, and
  *    the `[model_providers.harness_nexus]` block with `requires_openai_auth =
  *    true` (the built-in provider's own shape — auth comes from auth.json, no
@@ -97,7 +102,15 @@ function applyClaudeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: str
   };
   if (spec.baseUrl !== undefined) env.ANTHROPIC_BASE_URL = spec.baseUrl;
   else delete env.ANTHROPIC_BASE_URL; // the platform owns the route — unset means revert to default
-  writeSecretFile(file, `${JSON.stringify({ ...settings, env, model: spec.model }, null, 2)}\n`);
+  // 9 W13 — the picker allowlist. Written whenever a spec exists (even a
+  // single model: under a gateway the built-in catalog is dead entries, same
+  // policy as dsh/opencode). Platform-owned key: re-apply overwrites whatever
+  // the user had there.
+  const availableModels = [...new Set([spec.model, ...(spec.models ?? [])])];
+  writeSecretFile(
+    file,
+    `${JSON.stringify({ ...settings, env, model: spec.model, availableModels }, null, 2)}\n`,
+  );
   return [display(homeDir, file)];
 }
 
