@@ -64,6 +64,9 @@ export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> |
   // hooks.json BRIDGES are opt-in per-profile packages an install cannot wire
   // (research § Hooks) — null, like Hermes/Codex.
   deepseek: null,
+  // 9 W12 — opencode's plugin/extension surface is TS code, not a declarative
+  // hooks.json — null, like Hermes/Codex/deepseek.
+  opencode: null,
   // 'generic' assumes the full set — a permissive default for unknown targets.
   generic: new Set<HookEvent>(HOOK_EVENTS),
 };

@@ -27,6 +27,9 @@ const DEFAULT_ACP_COMMANDS: Record<AgentTarget, readonly string[] | null> = {
   deepseek: ['dsh', '--profile', 'acp'],
   // Hermes ships a native ACP adapter as an install extra.
   hermes: ['python3', '-m', 'acp_adapter'],
+  // 9 W12 — OpenCode speaks ACP NATIVELY: `opencode acp` (official docs
+  // /docs/acp; no wrapper needed, needs `opencode` on PATH).
+  opencode: ['opencode', 'acp'],
   zcode: null, // no adapter exists (also no install adapter — 3.x)
   generic: null,
 };

@@ -1024,6 +1024,57 @@ Full design + adapter ground truth in `docs/design/phase-9-w9-sender-controls.md
 * Daemon `0.12.0-p9w9` advertises the same capability set (no new caps —
   `workspace`/`chat` gained additive arms).
 
+## OpenCode runtime onboarding (Phase 9 W12)
+
+Full design + external ground truth in `docs/design/phase-9-w12-opencode.md`
++ `docs/research/phase-9-w12-opencode.md` (verified against opencode 1.18.31
+on the rig). Summary for daily work — **opencode is a runtime-managed Agent
+with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
+→ W4 redacted viewer → ACP chat → C3 scan**:
+
+- **Zero new platform concepts**: every gate is schema-driven and every UI
+  surface lights up from the runtime arm alone. `opencode` joined
+  `RUNTIME_TARGETS` + `AgentTarget` + `SCANNABLE_TARGETS`; harness jobs ride
+  the plain npm arm (`HARNESS_PACKAGES['opencode'] = 'opencode-ai'`, `latest`
+  tag); the probe bin is `opencode`; the ACP row is `['opencode','acp']`
+  (opencode speaks ACP NATIVELY — no wrapper). Server code: none.
+- **`PROVIDER_API_SUPPORT['opencode'] = ['anthropic', 'openai-chat']`** —
+  `openai-responses` is deliberately EXCLUDED: the W3 spec snapshot carries
+  only the coarse flavor (anthropic-messages | openai), so the writer could
+  not pick `@ai-sdk/openai` vs `@ai-sdk/openai-compatible` deterministically
+  (the models.dev built-in already covers OpenAI proper). `HOOK_SUPPORT` is
+  null (plugins are TS code). The rail answers `supported:false` (no
+  session/list over ACP) — the sessions handler needs no branch.
+- **W3 writer (`applyOpencodeConfig`)**: `~/.config/opencode/opencode.json`
+  merge-preserving — top-level `model: "harness-nexus/<model>"` (W10 extras
+  become the provider's `models` map = the switchable set) +
+  `provider['harness-nexus']` with the per-flavor AI SDK `npm`
+  (`@ai-sdk/anthropic` / `@ai-sdk/openai-compatible`), `options.baseURL`
+  (**`/v1`-NORMALIZED, rig-found**: the AI SDK appends only the method path;
+  a `/v1`-less gateway base fails the gateway's pre-routing auth check as
+  "Unauthorized", NOT a 404 — Ark's `/api/coding` bit exactly here) and
+  `options.apiKey` as a `{file:…}` reference; a baseUrl-less re-apply
+  REMOVES ours. JSONC configs refuse without touching. The key file
+  `~/.config/opencode/harness-nexus.key` is 0600 and the RAW secret (no
+  trailing newline — opencode reads `{file:}` verbatim and a `\n` rides
+  the key). `options.apiKey` IS wired for custom providers (verified
+  against opencode source); auth.json is NOT part of our flow.
+- **W4 viewer**: `TARGET_CONFIG_FILES['opencode']` lists the JSON + the key
+  file; the key file is WHOLESALE-redacted (bare secret, no key names —
+  an explicit path check, extension rules would leak it).
+- **C3 scanner** (`inventory/scanners/opencode.ts`, home
+  `~/.config/opencode`): the `mcp` block of opencode.json (local `command`
+  ARRAY or string, `environment`/`env` both tolerated; remote `url`),
+  `command/*.md` → commands, `agent/*.md` → sub_agents, `skill/<n>/SKILL.md`
+  when present. JSONC parses as nothing (hand-managed = out of bounds).
+- **NOT done (deliberate)**: profile install adapter (opencode is NOT a
+  `DEPLOYABLE_TARGET`, the pick lists are unchanged), native sessions rail,
+  `~/.local/share/opencode/auth.json` (the user's own `/connect` store).
+  hermes runtime support was descoped with the user this wave.
+- Daemon `0.17.0-p9w12`; rig E2E passed end to end (install job → detected
+  Agent card → provider push → headless `opencode run` + portal ACP turn
+  answering on the pushed route → viewer masked).
+
 ## LLM provider management (Phase 9 W10)
 
 Full design + multi-model ground truth in `docs/design/phase-9-w10-llm-providers.md`.
@@ -1428,7 +1479,7 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   the first of the T-wave; supersedes the 3.8 "other agents" bucket):**
   `deepseek` is a first-class `AgentTarget` (profile enum additive; the
   supported-harnesses list user-facing docs name is **Claude Code, Codex,
-  DeepSeek Harness** — hermes keeps working unlisted). Ground truth
+  DeepSeek Harness, OpenCode** — hermes keeps working unlisted). Ground truth
   `docs/research/phase-8-t1-deepseek-harness.md` (pinned to dsh
   `v0.1.2-rc.1`): home is `~/.dsh` (`$DSH_HOME`); the HOME-level
   `cordis.patch.yml` applies to every profile AND hot-reloads live — it is

@@ -170,8 +170,8 @@ large, least-certain multi-source block (can stop partway).
 > spans install adapter + inventory scanner + ACP chat row + remote deploy —
 > all but the first are Phase 8 surfaces, so onboarding lives here. The
 > supported-harnesses list (one-click install + ACP chat): **Claude Code,
-> Codex, DeepSeek Harness** — the user-facing docs mention only these three
-> for now (hermes keeps working unlisted).
+> Codex, DeepSeek Harness, OpenCode** — the user-facing docs mention only
+> these four for now (hermes keeps working unlisted).
 
 | #         | Sub-phase                     | Delivers                                                                                                                                                                                                           | Absorbs / impacts                              |
 | --------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
@@ -270,7 +270,7 @@ STDIO_REQUIRES_CLIENT` / `409 CREDENTIAL_NOT_DISTRIBUTABLE` /
   credential (the C3-import `${cred:KEY}` shape) derives server-dial and
   crashed the fire-and-forget reload — now skipped with a warning
   (`registry-resilience.test.ts`). Supported harnesses (install + ACP):
-  Claude Code, Codex, DeepSeek Harness.
+  Claude Code, Codex, DeepSeek Harness, OpenCode (W12).
 
 ## Release & CI infrastructure (2026-09)
 

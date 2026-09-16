@@ -41,6 +41,7 @@ describe('RUNTIME_PROBES', () => {
       ['claude-code', 'claude'],
       ['codex', 'codex'],
       ['deepseek', 'dsh'],
+      ['opencode', 'opencode'],
     ]);
   });
 });
@@ -100,7 +101,7 @@ describe('probeRuntimes', () => {
     // deepseek: deliberately absent
 
     const infos = await probeRuntimes({ pathEnv: binDir, homeDir: home, timeoutMs: 4000 });
-    expect(infos).toHaveLength(3);
+    expect(infos).toHaveLength(4); // claude-code, codex, deepseek, opencode (W12)
 
     const claude = infos.find((r) => r.target === 'claude-code')!;
     expect(claude.installed).toBe(true);
@@ -115,6 +116,9 @@ describe('probeRuntimes', () => {
     const dsh = infos.find((r) => r.target === 'deepseek')!;
     expect(dsh.installed).toBe(false);
     expect(dsh.binPath).toBeUndefined();
+
+    const oc = infos.find((r) => r.target === 'opencode')!;
+    expect(oc.installed).toBe(false);
   });
 
   it('times out a hanging --version and still reports installed=true (bin exists)', async () => {

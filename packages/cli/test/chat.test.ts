@@ -291,6 +291,11 @@ describe('resolveAcpCommand', () => {
       command: 'npx',
       args: ['-y', '@agentclientprotocol/claude-agent-acp'],
     });
+    // 9 W12 — opencode speaks ACP NATIVELY (`opencode acp`).
+    expect(resolveAcpCommand('opencode', {})).toEqual({
+      command: 'opencode',
+      args: ['acp'],
+    });
     expect(resolveAcpCommand('zcode', {})).toBeNull();
     expect(
       resolveAcpCommand('claude-code', {

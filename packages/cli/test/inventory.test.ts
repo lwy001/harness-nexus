@@ -147,6 +147,35 @@ function setupHome(): string {
     ].join('\n'),
   );
 
+  // ---- opencode (9 W12): mcp from opencode.json, command/agent markdown, skills ----
+  w(
+    '.config/opencode/opencode.json',
+    JSON.stringify(
+      {
+        model: 'harness-nexus/gw-large',
+        mcp: {
+          'harness-nexus-my-kit': {
+            type: 'local',
+            command: ['/usr/local/bin/hnx', 'mcp', 'serve', '--profile', 'p1'],
+            environment: { HN_KEY: 'oc-secret-1' },
+          },
+          web: { type: 'remote', url: 'https://mcp.example.com/sse' },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  w(
+    '.config/opencode/command/deploy.md',
+    '---\ndescription: Deploy the app\n---\nDeploy carefully.\n',
+  );
+  w('.config/opencode/agent/reviewer.md', 'You are a code reviewer.\n');
+  w(
+    '.config/opencode/skill/docx/SKILL.md',
+    '---\nname: docx\ndescription: Work with documents\n---\n\nCreate and edit .docx files.\n',
+  );
+
   return home;
 }
 
@@ -307,6 +336,56 @@ describe('deepseek scanner (T1)', () => {
   });
 });
 
+describe('opencode scanner (9 W12)', () => {
+  it('maps the mcp block (array command + platform marker), markdown surfaces, and skills', () => {
+    const h = setupHome();
+    const snap = scanTarget('opencode', h);
+    const items = snap.agents[0]!.items;
+
+    const shim = items.find((i) => i.name === 'harness-nexus-my-kit')!;
+    expect(shim.kind).toBe('mcp');
+    expect(shim.origin).toBe('platform'); // harness-nexus serverName marker
+    expect(shim.meta?.command).toBe('/usr/local/bin/hnx');
+    expect(shim.meta?.transport).toBe('stdio');
+
+    const web = items.find((i) => i.name === 'web')!;
+    expect(web.origin).toBe('local');
+    expect(web.meta?.transport).toBe('http');
+    expect(web.meta?.url).toBe('https://mcp.example.com/sse');
+
+    expect(items.find((i) => i.name === 'deploy')?.kind).toBe('command');
+    expect(items.find((i) => i.name === 'reviewer')?.kind).toBe('sub_agent');
+    const docx = items.find((i) => i.name === 'docx')!;
+    expect(docx.kind).toBe('skill');
+    expect(docx.summary).toBe('Create and edit .docx files.'); // body first line (frontmatter is metadata)
+  });
+
+  it('collects mcp with split command/args and redacts env values', async () => {
+    const h = setupHome();
+    const payload = await collectItems(
+      'opencode',
+      [
+        { kind: 'mcp', name: 'harness-nexus-my-kit' },
+        { kind: 'command', name: 'deploy' },
+      ],
+      h,
+    );
+    expect(payload[0]!.artifact).toEqual({
+      kind: 'mcp',
+      transport: {
+        type: 'stdio',
+        command: '/usr/local/bin/hnx',
+        args: ['mcp', 'serve', '--profile', 'p1'],
+        env: { HN_KEY: '${cred:HN_KEY}' },
+      },
+    });
+    expect(payload[1]!.artifact).toEqual({
+      kind: 'command',
+      content: '---\ndescription: Deploy the app\n---\nDeploy carefully.\n',
+    });
+  });
+});
+
 describe('scanAllTargets', () => {
   it('reports a snapshot for every supported target and validates against the wire schema', async () => {
     const h = setupHome();
@@ -316,6 +395,7 @@ describe('scanAllTargets', () => {
       'codex',
       'deepseek',
       'hermes',
+      'opencode',
     ]);
     const { inventorySnapshotSchema } = await import('@harness-nexus/shared');
     for (const snap of snapshots) {

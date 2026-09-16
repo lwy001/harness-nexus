@@ -85,7 +85,14 @@ describe('runtimeInfoSchema (phase 9 W1)', () => {
   });
 
   it('RUNTIME_TARGETS is the managed subset of scannable targets', () => {
-    expect(RUNTIME_TARGETS).toEqual(['claude-code', 'codex', 'deepseek']);
+    expect(RUNTIME_TARGETS).toEqual(['claude-code', 'codex', 'deepseek', 'opencode']);
+  });
+
+  it('accepts opencode as an AgentTarget and RuntimeTarget (9 W12)', () => {
+    expect(
+      runtimeInfoSchema.safeParse({ target: 'opencode', installed: true, version: '1.18.31' })
+        .success,
+    ).toBe(true);
   });
 });
 

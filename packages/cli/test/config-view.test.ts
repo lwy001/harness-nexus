@@ -146,6 +146,46 @@ describe('readRuntimeConfigView', () => {
     expect(JSON.stringify(view)).not.toContain(secret);
   });
 
+  it('opencode: JSON walk masks apiKey values; the bare key file masks WHOLESALE', () => {
+    writeRel(
+      '.config/opencode/opencode.json',
+      JSON.stringify(
+        {
+          model: 'harness-nexus/gw-large',
+          provider: {
+            'harness-nexus': {
+              npm: '@ai-sdk/openai-compatible',
+              options: {
+                baseURL: 'https://gw.example.com/v1',
+                apiKey: '{file:~/.config/opencode/harness-nexus.key}',
+              },
+            },
+          },
+          mcp: { myserver: { type: 'local', command: ['bun', 'x', 'thing'] } },
+        },
+        null,
+        2,
+      ),
+    );
+    writeRel('.config/opencode/harness-nexus.key', `${secret}\n`);
+    const view = readRuntimeConfigView('opencode', home);
+    const cfg = view.files.find((f) => f.path === '~/.config/opencode/opencode.json')!;
+    const parsed = JSON.parse(cfg.content) as {
+      provider: { 'harness-nexus': { options: Record<string, string> } };
+      mcp: unknown;
+    };
+    expect(parsed.provider['harness-nexus'].options.baseURL).toBe('https://gw.example.com/v1');
+    // The key-name walk masks `apiKey` even though the value is only a
+    // `{file:…}` REFERENCE — over-redaction is safe by design here.
+    expect(parsed.provider['harness-nexus'].options.apiKey).toBe(REDACTED_PLACEHOLDER);
+    expect(parsed.mcp).toBeDefined();
+    // A bare secret has no key names — the whole body masks.
+    const keyFile = view.files.find((f) => f.path === '~/.config/opencode/harness-nexus.key')!;
+    expect(keyFile.content).toBe(`${REDACTED_PLACEHOLDER}\n`);
+    expect(view.redacted).toContain('~/.config/opencode/harness-nexus.key:(whole file)');
+    expect(JSON.stringify(view)).not.toContain(secret);
+  });
+
   it('skips absent files honestly and flags oversized/binary ones', () => {
     // A fresh home: no codex files exist at all.
     const fresh = mkdtempSync(path.join(tmpdir(), 'hnx-cv-none-'));

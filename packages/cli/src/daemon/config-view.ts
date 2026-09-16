@@ -23,7 +23,22 @@ export const TARGET_CONFIG_FILES: Record<RuntimeTarget, readonly string[]> = {
   'claude-code': ['.claude/settings.json'],
   codex: ['.codex/config.toml', '.codex/auth.json'],
   deepseek: ['.dsh/settings.yaml', '.dsh/cordis.patch.yml', '.dsh/.env'],
+  // 9 W12 — the global config + OUR key file (the `{file:…}` target the
+  // provider block references; a bare secret with no key names).
+  opencode: ['.config/opencode/opencode.json', '.config/opencode/harness-nexus.key'],
 };
+
+/**
+ * Bare-secret files — no `KEY=`/`"key":` shapes for the pair rules to catch,
+ * so the WHOLE body masks (same stance as `.env`, minus the line format).
+ */
+const WHOLESALE_SECRET_FILES: ReadonlySet<string> = new Set(['.config/opencode/harness-nexus.key']);
+
+function redactWholeFile(text: string, redacted: Redacted): string {
+  if (text.trim().length === 0) return text;
+  redacted.push('(whole file)');
+  return `${REDACTED_PLACEHOLDER}\n`;
+}
 
 /** Cap per file — real harness configs are tiny; anything big is skipped. */
 const MAX_FILE_BYTES = 128 * 1024;
@@ -157,11 +172,13 @@ export function readRuntimeConfigView(
       continue;
     }
     const before = redacted.length;
-    const masked = rel.endsWith('.json')
-      ? redactJsonFile(content, redacted)
-      : rel.endsWith('.env')
-        ? redactEnvFile(content, redacted)
-        : redactLineConfig(content, redacted);
+    const masked = WHOLESALE_SECRET_FILES.has(rel)
+      ? redactWholeFile(content, redacted)
+      : rel.endsWith('.json')
+        ? redactJsonFile(content, redacted)
+        : rel.endsWith('.env')
+          ? redactEnvFile(content, redacted)
+          : redactLineConfig(content, redacted);
     // Attribute this file's entries: `"<display>:<key>"`.
     for (let i = before; i < redacted.length; i++) redacted[i] = `${display}:${redacted[i]}`;
     files.push({ path: display, content: masked });

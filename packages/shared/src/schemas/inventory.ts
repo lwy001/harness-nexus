@@ -17,14 +17,21 @@ import { agentTargetSchema } from './profile.js';
  * the SDK, and the CLI scanner registry (kept in lockstep with
  * `packages/cli/src/inventory/scan.ts`).
  */
-export const SCANNABLE_TARGETS = ['claude-code', 'codex', 'hermes', 'deepseek'] as const;
+export const SCANNABLE_TARGETS = [
+  'claude-code',
+  'codex',
+  'hermes',
+  'deepseek',
+  'opencode',
+] as const;
 
 /**
  * Targets whose harness RUNTIME the daemon probes (Phase 9 W1) — a subset of
- * SCANNABLE_TARGETS: hermes is unlisted (no runtime management, no ACP row).
- * Kept in lockstep with `packages/cli/src/inventory/runtime.ts`.
+ * SCANNABLE_TARGETS: hermes is unlisted (no runtime management; its ACP chat
+ * row exists, only native sessions are unverified). Kept in lockstep with
+ * `packages/cli/src/inventory/runtime.ts`.
  */
-export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek'] as const;
+export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek', 'opencode'] as const;
 export const runtimeTargetSchema = z.enum(RUNTIME_TARGETS);
 export type RuntimeTarget = z.infer<typeof runtimeTargetSchema>;
 

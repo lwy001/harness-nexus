@@ -22,7 +22,8 @@ export type ResourceKind = 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'co
  * `docs/research/phase-3-ecc-install-patterns.md` +
  * `docs/research/phase-8-t1-deepseek-harness.md`.
  */
-export type AgentTarget = 'claude-code' | 'zcode' | 'hermes' | 'codex' | 'deepseek' | 'generic';
+export type AgentTarget =
+  'claude-code' | 'zcode' | 'hermes' | 'codex' | 'deepseek' | 'opencode' | 'generic';
 
 /** Visibility/scope. `global` is admin-managed; `personal` is per-user. */
 export type ResourceScope = 'global' | 'personal';
