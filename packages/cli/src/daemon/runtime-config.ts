@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import {
   harnessJobPayloadSchema,
   harnessResultDataSchema,
+  OPENCODE_PROVIDER_ID,
   type JobView,
   type RuntimeConfigSpec,
 } from '@harness-nexus/shared';
@@ -349,8 +350,7 @@ function applyDshConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string
 
 // ---- opencode (9 W12) ----
 
-/** opencode provider id — the `provider.<id>` key AND the `model` prefix. */
-const OPENCODE_PROVIDER_ID = 'harness-nexus';
+/** The raw-secret key file under `~/.config/opencode/` (0600, no trailing newline). */
 const OPENCODE_KEY_NAME = 'harness-nexus.key';
 
 /**
@@ -407,9 +407,7 @@ function applyOpencodeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: s
       npm: OPENCODE_SDK[spec.api],
       name: spec.providerLabel,
       options: {
-        ...(spec.baseUrl !== undefined
-          ? { baseURL: opencodeSdkBaseURL(spec.baseUrl) }
-          : {}),
+        ...(spec.baseUrl !== undefined ? { baseURL: opencodeSdkBaseURL(spec.baseUrl) } : {}),
         apiKey: `{file:~/.config/opencode/${OPENCODE_KEY_NAME}}`,
       },
       // W10 — the default model leads the switchable set; the server already

@@ -1752,6 +1752,58 @@ describe('session config (9 W9 A)', () => {
     expect(protoAck).toHaveBeenCalledWith({ error: 'proto:invalid' });
   }, 15000);
 
+  it('9 W13 — modelOptions narrows the model row on establish AND on re-push (codex)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      // The adapter command is just an env override — driving the FIXTURE as
+      // `codex` exercises the target-keyed rewrite without a real codex.
+      env: { HN_ACP_COMMAND_CODEX: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { FIXTURE_SESSION_CONFIG: '1', FIXTURE_SESSION_ID: 'fx-w13' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-w13',
+      agentInstanceId: 'ag-1',
+      target: 'codex',
+      cwd: '/tmp',
+      modelOptions: ['fx-sonnet'],
+    });
+
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload);
+    // Establishment snapshot: the model row keeps only fx-sonnet, with the
+    // out-of-list currentValue (fx-opus) appended verbatim; other rows whole.
+    const snapshot = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'session_config'),
+    );
+    if (snapshot.kind !== 'session_config') throw new Error('not a config event');
+    expect(snapshot.configOptions?.map((o) => o.id)).toEqual(['mode', 'model', 'effort']);
+    const modelRow = snapshot.configOptions?.find((o) => o.id === 'model');
+    expect(modelRow?.options?.map((o) => o.value)).toEqual(['fx-sonnet', 'fx-opus']);
+    expect(modelRow?.currentValue).toBe('fx-opus');
+
+    // After a set, the fixture re-pushes its FULL option list — the rewrite
+    // must ride the push too or the built-ins come back mid-session.
+    const optAck = vi.fn();
+    socket.receive(
+      'chat:config.set',
+      { sessionId: 'sess-w13', kind: 'option', configId: 'model', value: 'fx-sonnet' },
+      optAck,
+    );
+    await waitFor(() => (optAck.mock.calls.length > 0 ? true : undefined));
+    const afterOpt = await waitFor(() => {
+      const configs = socket.chatEvents().filter((e) => e.kind === 'session_config');
+      const last = configs[configs.length - 1];
+      return last !== undefined &&
+        last.kind === 'session_config' &&
+        last.configOptions?.some((o) => o.id === 'model' && o.currentValue === 'fx-sonnet')
+        ? last
+        : undefined;
+    });
+    if (afterOpt.kind !== 'session_config') throw new Error('unreachable');
+    const pushed = afterOpt.configOptions?.find((o) => o.id === 'model');
+    expect(pushed?.options?.map((o) => o.value)).toEqual(['fx-sonnet']);
+  }, 15000);
+
   it('an image prompt block passes through verbatim and echoes', async () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {

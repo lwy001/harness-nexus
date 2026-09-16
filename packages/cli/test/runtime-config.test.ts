@@ -133,7 +133,10 @@ describe('applyRuntimeConfig — claude-code', () => {
   it('availableModels = unique([model, ...models]) and REPLACES a user array (9 W13)', () => {
     // a user's own allowlist is platform-owned while a spec exists (env kept —
     // later tests in this describe assert it survives re-applies)
-    writeRel('.claude/settings.json', JSON.stringify({ env: { CUSTOM: 'keep' }, availableModels: ['old-thing'] }));
+    writeRel(
+      '.claude/settings.json',
+      JSON.stringify({ env: { CUSTOM: 'keep' }, availableModels: ['old-thing'] }),
+    );
     applyRuntimeConfig(
       'claude-code',
       spec({ api: 'anthropic-messages', models: ['gw-mini', 'gw-large', 'gw-flash'] }),
