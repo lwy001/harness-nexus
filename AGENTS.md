@@ -1112,14 +1112,30 @@ name: value}`) — building, not intersecting, is load-bearing: codex only
   `currentValue` stays selectable as a verbatim entry (out-of-picker
   semantics, e.g. resumed sessions). `chat:config.set` is untouched — the
   rewrite only narrows to platform-configured ids, never invents one.
-- **deepseek — nothing** (W10's native `models:` list already feeds its
-  picker).
+- **deepseek — flatten + tuple intersect (follow-up, daemon `0.18.1-p9w13`).**
+  Rig-found: dsh-acp's model option is NESTED-grouped
+  (`options: [{group, name, options: […]}]`), which the flat
+  `sessionConfigOptionSchema` rejected — `takeConfigOptions` dropped the row
+  and dsh showed NO selector at all. `takeConfigOptions` now FLATTENS grouped
+  options recursively (leaves carry the innermost `group` id; the web
+  `ConfigSelect` already renders `group`). The W10 `models:` catalog still
+  feeds extras; the rewrite intersects on `["harness-nexus","<id>"]` JSON
+  tuples (`DSH_PROVIDER_ID` in shared) so the built-in `deepseek-official`
+  group drops out. Effort/thought_level: dsh's ACP surface does not expose it
+  — genuinely unsupported (verified 0.1.2-rc.1).
 - **The model set rides the open wire**: `chatSessionStartEventSchema` gained
   optional `modelOptions: string[]` — ChatService.open reads the stored
   RuntimeConfig (`findByMachineAndTarget`, best-effort — a read failure never
   blocks the open) and sends `unique([model, ...models])`; omitted when no
   row / non-runtime target. Old daemons strip the unknown key (non-strict
-  zod) — additive, no capability bump. Daemon `0.18.0-p9w13`.
+  zod) — additive, no capability bump.
+- **Web follow-ups (same day, user-found):** the machine page's extras are
+  cc-switch-style editable ROWS (添加 adds an input; a successful fetch adds
+  per-row pick dropdowns; 设为默认 swaps a row into the default field with
+  the old default kept as a row) — fetching is OPTIONAL (some gateways have
+  no /models), apply normalizes (trim/dedupe/drop default). The chat rail
+  renders live-channel rows even where `supported:false` (opencode) with a
+  "open channels only" note instead of hiding the rail.
 
 ## LLM provider management (Phase 9 W10)
 

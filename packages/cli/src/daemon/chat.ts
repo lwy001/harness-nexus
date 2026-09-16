@@ -1162,6 +1162,37 @@ async function attachTranscriptTail(
 type UnknownRecord = Record<string, unknown>;
 
 /**
+ * 9 W13 — flatten one level (recursively, defensively) of ACP GROUPED select
+ * options into the platform's flat leaf shape, attaching the enclosing
+ * group's id: dsh-acp 0.1.2-rc.1 emits its model row as
+ * `options: [{group, name, options: [leaf…]}, …]`, which the flat
+ * `sessionConfigOptionSchema` would reject wholesale — silently dropping the
+ * whole selector (rig-found: dsh showed NO model switch at all). Leaves keep
+ * their own `group` when already set.
+ */
+function flattenGroupedOptions(options: unknown, inheritedGroup?: string): unknown[] {
+  if (!Array.isArray(options)) return [];
+  const out: unknown[] = [];
+  for (const entry of options) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as UnknownRecord;
+    if (Array.isArray(e['options'])) {
+      out.push(
+        ...flattenGroupedOptions(
+          e['options'],
+          typeof e['group'] === 'string' ? e['group'] : inheritedGroup,
+        ),
+      );
+    } else if (inheritedGroup !== undefined && e['group'] === undefined) {
+      out.push({ ...e, group: inheritedGroup });
+    } else {
+      out.push(e);
+    }
+  }
+  return out;
+}
+
+/**
  * 9 W9 A — validate an adapter's `configOptions` array down to the
  * platform's bounded view: only `type:'select'` rows survive (the three
  * shipped adapters expose mode/model/effort as selects; boolean options from
@@ -1175,7 +1206,9 @@ export function takeConfigOptions(raw: unknown): SessionConfigOption[] | null {
     if (typeof row !== 'object' || row === null) continue;
     const r = row as UnknownRecord;
     if (r['type'] !== undefined && r['type'] !== 'select') continue;
-    const parsed = sessionConfigOptionSchema.safeParse(r);
+    const parsed = sessionConfigOptionSchema.safeParse(
+      Array.isArray(r['options']) ? { ...r, options: flattenGroupedOptions(r['options']) } : r,
+    );
     if (parsed.success) out.push(parsed.data);
   }
   return out.length > 0 ? out : null;

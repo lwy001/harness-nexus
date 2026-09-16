@@ -1637,6 +1637,45 @@ describe('session config (9 W9 A)', () => {
     });
   });
 
+  it('9 W13 — takeConfigOptions FLATTENS nested grouped options (dsh shape)', async () => {
+    const { takeConfigOptions } = await import('../src/daemon/chat.js');
+    const kept = takeConfigOptions([
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: '["harness-nexus","m1"]',
+        options: [
+          {
+            group: 'deepseek-official',
+            name: 'DeepSeek',
+            options: [
+              { value: '["deepseek-official","m-off"]', name: 'Official' },
+              {
+                group: 'nested-extra',
+                name: 'Nested',
+                options: [{ value: '["deepseek-official","m-deep"]', name: 'Deep' }],
+              },
+            ],
+          },
+          {
+            group: 'harness-nexus',
+            name: 'volcengine',
+            options: [{ value: '["harness-nexus","m1"]', name: 'M1' }],
+          },
+        ],
+      },
+    ]);
+    expect(kept).not.toBeNull();
+    expect(kept!.length).toBe(1);
+    expect(kept![0]!.options).toEqual([
+      { value: '["deepseek-official","m-off"]', name: 'Official', group: 'deepseek-official' },
+      { value: '["deepseek-official","m-deep"]', name: 'Deep', group: 'nested-extra' },
+      { value: '["harness-nexus","m1"]', name: 'M1', group: 'harness-nexus' },
+    ]);
+  });
+
   it('mapAcpUpdate maps the config pushes as PATCH events (capture path)', () => {
     expect(
       mapAcpUpdate({ update: { sessionUpdate: 'current_mode_update', currentModeId: 'plan' } }),

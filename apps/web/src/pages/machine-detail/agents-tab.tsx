@@ -1,6 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { FileCogIcon, LaptopIcon, RefreshCwIcon, XIcon } from 'lucide-react';
+import {
+  ChevronDownIcon,
+  FileCogIcon,
+  LaptopIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  XIcon,
+} from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { useI18n, dateLocale } from '@/i18n';
@@ -21,7 +28,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -38,8 +50,6 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDownIcon } from 'lucide-react';
 import type { InventoryEntry, RuntimeInfoView } from './types.js';
 
 /**
@@ -486,6 +496,11 @@ function ProviderConfigForm({
     if (!window.confirm(t('machineDetail.applyConfirm', { target }))) return;
     setBusy(true);
     try {
+      // Row inputs are free-typed: normalize before sending (trim, drop
+      // empties and the default, dedupe — the PUT would reject them).
+      const normalizedExtras = [
+        ...new Set(extraModels.map((m) => m.trim()).filter((m) => m !== '' && m !== model.trim())),
+      ];
       const spec: RuntimeConfigSpec = {
         providerLabel: (selectedProvider?.name ?? providerLabel).trim(),
         api: (selectedProvider !== null
@@ -494,7 +509,7 @@ function ProviderConfigForm({
         model: model.trim(),
         credentialName: selectedProvider?.credentialName ?? credentialName,
         ...(selectedProvider !== null ? { providerId: selectedProvider.id } : {}),
-        ...(extraModels.length > 0 ? { models: extraModels } : {}),
+        ...(normalizedExtras.length > 0 ? { models: normalizedExtras } : {}),
         ...(effectiveBaseUrl !== '' ? { baseUrl: effectiveBaseUrl } : {}),
       };
       await withAuthGuard(() => api.putRuntimeConfig(machineId, managedTarget!, spec), logout);
@@ -511,7 +526,6 @@ function ProviderConfigForm({
     !busy &&
     (selectedProvider !== null || (providerLabel.trim() !== '' && credentialName !== ''));
 
-  const fetchedChoices = (fetched ?? []).filter((m) => m.id !== model);
   const needBaseUrlNote = selectedProvider !== null && selectedProvider.baseUrl === null;
 
   return (
@@ -651,7 +665,7 @@ function ProviderConfigForm({
         ) : null}
 
         <div className="grid min-w-44 gap-2">
-          <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelLabel')}</Label>
+          <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelDefaultLabel')}</Label>
           <div className="flex gap-2">
             <Input
               id={`pc-model-${target}`}
@@ -661,6 +675,9 @@ function ProviderConfigForm({
               autoComplete="off"
               spellCheck={false}
             />
+            {fetched !== null && fetched.length > 0 ? (
+              <FetchedModelMenu fetched={fetched} onPick={setModel} />
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -683,26 +700,6 @@ function ProviderConfigForm({
       {needBaseUrlNote && managedTarget === 'deepseek' ? (
         <p className="text-warn text-xs">{t('machineDetail.baseUrlNeeded')}</p>
       ) : null}
-      {extraModels.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm leading-none font-medium">
-            {t('machineDetail.extraModelsLabel', { count: extraModels.length })}
-          </span>
-          {extraModels.map((m) => (
-            <Badge key={m} variant="outline" className="gap-1 pr-1 font-mono text-xs">
-              {m}
-              <button
-                type="button"
-                className="hover:text-danger -mr-1 rounded-sm p-0.5"
-                onClick={() => setExtraModels((prev) => prev.filter((x) => x !== m))}
-                aria-label={t('machineDetail.extraModelsRemove', { model: m })}
-              >
-                <XIcon className="size-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
       {providers !== null && usableProviders.length === 0 && manual ? (
         <p className="text-muted-foreground text-xs">{t('machineDetail.noProviders')}</p>
       ) : null}
@@ -711,53 +708,118 @@ function ProviderConfigForm({
         <p className="text-muted-foreground text-xs">{t('machineDetail.noCredentials')}</p>
       ) : null}
 
-      {fetched !== null && fetched.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <div className="grid max-w-64 gap-2">
-            <Label htmlFor={`pc-fetched-${target}`}>{t('machineDetail.modelLabel')}</Label>
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger id={`pc-fetched-${target}`} className="font-mono text-xs">
-                <SelectValue placeholder={t('machineDetail.pickFetchedModel')} />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {fetched.map((m) => (
-                  <SelectItem key={m.id} value={m.id} className="font-mono text-xs">
-                    {m.name !== undefined && m.name !== m.id ? `${m.id} — ${m.name}` : m.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {fetchedChoices.length > 0 ? (
-            <Collapsible>
-              <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-xs hover:underline">
-                <ChevronDownIcon className="size-3.5" />
-                {t('machineDetail.extraModelsLabel', { count: extraModels.length })}
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto">
-                  {fetchedChoices.map((m) => (
-                    <label key={m.id} className="flex cursor-pointer items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={extraModels.includes(m.id)}
-                        onCheckedChange={(checked) => {
-                          setExtraModels((prev) =>
-                            checked === true ? [...prev, m.id] : prev.filter((x) => x !== m.id),
-                          );
-                        }}
-                      />
-                      <span className="font-mono">{m.id}</span>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {t('machineDetail.extraModelsHint')}
-                </p>
-              </CollapsibleContent>
-            </Collapsible>
-          ) : null}
+      {/* 9 W13 — cc-switch-style extra models: rows are freely editable
+          inputs (fetching is optional; some gateways expose no /models), a
+          fetched list turns into per-row pick dropdowns, and any row can be
+          promoted to the default (the old default swaps into the rows). */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm leading-none font-medium">
+            {t('machineDetail.extraModelsTitle')}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setExtraModels((prev) => [...prev, ''])}
+          >
+            <PlusIcon className="size-3.5" />
+            {t('machineDetail.extraModelsAdd')}
+          </Button>
         </div>
-      ) : null}
+        {extraModels.map((m, i) => (
+          <div key={i} className="flex max-w-2xl items-center gap-2">
+            <Input
+              value={m}
+              onChange={(e) =>
+                setExtraModels((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+              }
+              placeholder={t('machineDetail.extraModelsPlaceholder')}
+              className="h-9 font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {fetched !== null && fetched.length > 0 ? (
+              <FetchedModelMenu
+                fetched={fetched}
+                onPick={(id) => setExtraModels((prev) => prev.map((x, j) => (j === i ? id : x)))}
+              />
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground h-9 shrink-0 px-2 text-xs hover:text-foreground"
+              disabled={m.trim() === '' || m.trim() === model.trim()}
+              onClick={() => {
+                const id = m.trim();
+                const old = model.trim();
+                setModel(id);
+                setExtraModels((prev) => {
+                  const kept = prev.filter((_, j) => j !== i);
+                  if (old !== '' && old !== id && !kept.some((x) => x.trim() === old)) {
+                    kept.push(old);
+                  }
+                  return kept;
+                });
+              }}
+            >
+              {t('machineDetail.extraModelsMakeDefault')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground size-8 shrink-0 hover:text-danger"
+              onClick={() => setExtraModels((prev) => prev.filter((_, j) => j !== i))}
+              aria-label={t('machineDetail.extraModelsRemove', { model: m === '' ? '…' : m })}
+            >
+              <XIcon className="size-3.5" />
+            </Button>
+          </div>
+        ))}
+        <p className="text-muted-foreground text-xs">{t('machineDetail.extraModelsHint')}</p>
+      </div>
     </div>
+  );
+}
+
+/**
+ * A compact "pick from the fetched list" dropdown (cc-switch style) — sits
+ * after a model input; picking fills THAT input. Rendered only while a fetch
+ * succeeded; manual typing always stays available.
+ */
+function FetchedModelMenu({
+  fetched,
+  onPick,
+}: {
+  fetched: LlmModelInfo[];
+  onPick: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  if (fetched.length === 0) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          title={t('machineDetail.extraModelsPick')}
+          aria-label={t('machineDetail.extraModelsPick')}
+        >
+          <ChevronDownIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+        {fetched.map((m) => (
+          <DropdownMenuItem key={m.id} onClick={() => onPick(m.id)} className="font-mono text-xs">
+            {m.name !== undefined && m.name !== m.id ? `${m.id} — ${m.name}` : m.id}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
