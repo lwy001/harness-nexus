@@ -36,6 +36,15 @@ export const runtimeTargetSchema = z.enum(RUNTIME_TARGETS);
 export type RuntimeTarget = z.infer<typeof runtimeTargetSchema>;
 
 /**
+ * 9 W13 — narrow a wide `AgentTarget` down to the runtime-managed set (the
+ * RuntimeConfig repository is keyed by `RuntimeTarget`; chat-only targets
+ * like hermes/zcode simply have no row).
+ */
+export function isRuntimeTarget(target: string): target is RuntimeTarget {
+  return (RUNTIME_TARGETS as readonly string[]).includes(target);
+}
+
+/**
  * One probed harness runtime (Phase 9 W1). Metadata only — no config file
  * contents ride the snapshot (those are W4's redacted viewer).
  */

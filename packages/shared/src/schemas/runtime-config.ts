@@ -32,6 +32,16 @@ export const RUNTIME_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApi[]> 
   opencode: ['anthropic-messages', 'openai'],
 };
 
+/**
+ * 9 W13 — the opencode provider id our writer owns inside
+ * `~/.config/opencode/opencode.json` (single source: the W12 writer's block,
+ * and the daemon's model-option filter, which keeps only
+ * `${OPENCODE_PROVIDER_ID}/<model>` values). Codex uses `harness_nexus`
+ * (underscore, TOML key) and dsh `harness-nexus` (YAML key) — separate slots,
+ * not this constant.
+ */
+export const OPENCODE_PROVIDER_ID = 'harness-nexus';
+
 export const runtimeConfigSpecSchema = z.object({
   /** Display label only — surfaces in the harness's own config UI. */
   providerLabel: z.string().min(1).max(64),
@@ -49,8 +59,10 @@ export const runtimeConfigSpecSchema = z.object({
   providerId: z.string().min(1).optional(),
   /**
    * W10 — extra switchable model ids beyond the default `model` (≤16,
-   * deduped route-side). Only the dsh writer consumes them; codex and
-   * claude-code are single-default by construction (design §6).
+   * deduped route-side). Consumers: the dsh + opencode writers (native picker
+   * catalogs), the claude-code writer's `availableModels` (9 W13), and the
+   * server's `chat:session.start` hint for the daemon-side codex/opencode
+   * picker rewrite (9 W13). Codex persists only the single root `model`.
    */
   models: z.array(z.string().min(1).max(128)).max(16).optional(),
   /** Target-specific extras (kept schema-loose on purpose). */

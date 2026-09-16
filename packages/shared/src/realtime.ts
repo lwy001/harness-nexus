@@ -527,6 +527,15 @@ export const chatSessionStartEventSchema = z.object({
   cwd: z.string().min(1).max(1024),
   /** 9 W7 — present when this channel resumes a native session (`session/load` / `session/resume`). */
   resume: chatSessionOpenRequestSchema.shape.resume,
+  /**
+   * 9 W13 — the machine's configured model set for this target,
+   * `unique([spec.model, ...spec.models])` from the stored RuntimeConfig.
+   * Source for the daemon-side model-option rewrite (codex bare ids,
+   * opencode `${OPENCODE_PROVIDER_ID}/<id>` values). Absent = no stored
+   * config (or a pre-W13 server) → the daemon leaves adapter options alone.
+   * Optional + stripped by old daemons' non-strict parse, so purely additive.
+   */
+  modelOptions: z.array(z.string().min(1).max(128)).max(32).optional(),
 });
 
 /**

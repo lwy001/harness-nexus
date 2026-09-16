@@ -251,6 +251,42 @@ describe('chat request schemas (C5)', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('session start carries the optional 9 W13 modelOptions hint', () => {
+    expect(
+      chatSessionStartEventSchema.parse({
+        sessionId: 's1',
+        agentInstanceId: 'a1',
+        target: 'codex',
+        cwd: '/x',
+        modelOptions: ['gw-large', 'gw-mini'],
+      }),
+    ).toEqual({
+      sessionId: 's1',
+      agentInstanceId: 'a1',
+      target: 'codex',
+      cwd: '/x',
+      modelOptions: ['gw-large', 'gw-mini'],
+    });
+    // absent stays valid (no stored config / pre-W13 server)
+    expect(
+      chatSessionStartEventSchema.safeParse({
+        sessionId: 's1',
+        agentInstanceId: 'a1',
+        target: 'codex',
+        cwd: '/x',
+      }).success,
+    ).toBe(true);
+    expect(
+      chatSessionStartEventSchema.safeParse({
+        sessionId: 's1',
+        agentInstanceId: 'a1',
+        target: 'codex',
+        cwd: '/x',
+        modelOptions: [''],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('chat session config schemas (9 W9 A)', () => {
