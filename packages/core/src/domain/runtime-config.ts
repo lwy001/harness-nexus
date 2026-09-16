@@ -20,9 +20,11 @@ export interface RuntimeConfigSpecData {
    */
   providerId: string | null;
   /**
-   * W10 — extra switchable model ids beyond the default `model`. Only the
-   * dsh writer consumes them (its native per-provider `models:` list);
-   * codex/claude-code are single-default by construction.
+   * W10 — extra switchable model ids beyond the default `model`. Consumers:
+   * the dsh + opencode writers' native picker catalogs, the claude-code
+   * writer's `availableModels` (9 W13), and the server's
+   * `chat:session.start` hint for the daemon-side codex/opencode picker
+   * rewrite (9 W13). Codex persists only the single root `model`.
    */
   models: string[] | null;
   extra: Record<string, unknown> | null;

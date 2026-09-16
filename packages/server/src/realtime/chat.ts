@@ -1,5 +1,6 @@
 import { resolve as resolvePath } from 'node:path';
 import type { UnitOfWork } from '@harness-nexus/core';
+import { isRuntimeTarget } from '@harness-nexus/shared';
 import type {
   ChatChannelView,
   ChatStreamEvent,
@@ -254,12 +255,34 @@ export class ChatService {
     }, this.opts.readyTimeoutMs);
     this.live.set(sessionId, session);
 
+    // 9 W13 — the machine's configured model set for this target feeds the
+    // daemon-side model-option rewrite (codex bare ids, opencode
+    // `harness-nexus/<id>` values). The stored `spec.models` is extras-only;
+    // the default is prepended here, same as the W3 writers. Best-effort: a
+    // row we can't read must never block the open (the daemon then leaves
+    // adapter options untouched).
+    let modelOptions: string[] | undefined;
+    if (isRuntimeTarget(agent.target)) {
+      try {
+        const rc = await this.deps.uow.runtimeConfigs.findByMachineAndTarget(
+          machine.id,
+          agent.target,
+        );
+        if (rc !== null) {
+          modelOptions = [...new Set([rc.spec.model, ...(rc.spec.models ?? [])])];
+        }
+      } catch {
+        modelOptions = undefined;
+      }
+    }
+
     this.deps.io.toCtl(machine.id, 'chat:session.start', {
       sessionId,
       agentInstanceId: agent.id,
       target: agent.target,
       cwd,
       ...(resume !== undefined ? { resume } : {}),
+      ...(modelOptions !== undefined ? { modelOptions } : {}),
     });
     this.pushSnapshot(ownerId);
     return { ok: true, sessionId, joined: false, phase: 'starting' };
