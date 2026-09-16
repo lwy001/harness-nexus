@@ -80,8 +80,9 @@ const en = {
   pickFetchedModel: 'Pick from the fetched list…',
   fetchModelsFailed: 'Model list fetch failed',
   extraModelsLabel: 'Extra models ({count})',
+  extraModelsRemove: 'Remove {model}',
   extraModelsHint:
-    'Optional — written into DeepSeek’s switchable model list; other Agents keep a single default (switch in-session instead).',
+    'Optional extra model ids — together with the default they become the chat model selector options on every Agent.',
   viewConfigButton: 'View config',
   viewConfigTitle: '{target} effective config',
   viewConfigDesc: 'Read live from the machine — secret-looking values are masked before upload.',
@@ -246,8 +247,8 @@ const zh: typeof en = {
   pickFetchedModel: '从已获取列表选择…',
   fetchModelsFailed: '获取模型列表失败',
   extraModelsLabel: '附加模型（{count}）',
-  extraModelsHint:
-    '可选——写入 DeepSeek 的可切换模型列表；其他 Agent 仅保留单一默认模型（在会话内切换）。',
+  extraModelsRemove: '移除 {model}',
+  extraModelsHint: '可选的附加模型——与默认模型一起构成各 Agent 会话内模型下拉的选项。',
   viewConfigButton: '查看配置',
   viewConfigTitle: '{target} 生效配置',
   viewConfigDesc: '从机器实时读取 —— 形似密钥的值在上传前已由守护进程遮蔽。',
