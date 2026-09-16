@@ -30,6 +30,7 @@ const IDLE_LABEL_THRESHOLD_MS = 30 * 60 * 1000;
 function targetBadge(target: string): string {
   if (target === 'claude-code') return 'CC';
   if (target === 'deepseek') return 'DSH';
+  if (target === 'opencode') return 'OC';
   return target.slice(0, 4).toUpperCase();
 }
 

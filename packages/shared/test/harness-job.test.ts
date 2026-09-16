@@ -34,6 +34,13 @@ describe('harnessJobPayloadSchema', () => {
     ).toBe(true);
   });
 
+  it('accepts opencode as a harness job target (9 W12)', () => {
+    expect(
+      harnessJobPayloadSchema.safeParse({ type: 'harness', action: 'install', target: 'opencode' })
+        .success,
+    ).toBe(true);
+  });
+
   it('rejects pin without a version, non-runtime targets, and stray actions', () => {
     expect(
       harnessJobPayloadSchema.safeParse({ type: 'harness', action: 'pin', target: 'codex' })

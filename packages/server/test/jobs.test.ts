@@ -357,6 +357,20 @@ describe('gates', () => {
     }
   });
 
+  it('harness job accepts the opencode target (9 W12 — schema-driven, no route code)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { type: 'harness', action: 'install', target: 'opencode' },
+    });
+    // The suite's daemon is ONLINE without the 'harness' capability → the SOFT
+    // gate 409s. Reaching the gate (not 400) is the point: an unknown target
+    // fails schema parse BEFORE any gate — opencode passed the schema.
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('DAEMON_NO_HARNESS');
+  });
+
   it('harness job is owner-only — an admin may view the machine but not run installers', async () => {
     // Make the requesting user an admin (bootstrap 'root' already is — so use
     // a second user owning a second machine, and have root (admin) try).

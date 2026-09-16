@@ -33,7 +33,7 @@ export interface RuntimeConfig {
   machineId: string;
   ownerId: string;
   /** Runtime-managed target only (claude-code | codex | deepseek). */
-  target: 'claude-code' | 'codex' | 'deepseek';
+  target: 'claude-code' | 'codex' | 'deepseek' | 'opencode';
   spec: RuntimeConfigSpecData;
   createdAt: string;
   updatedAt: string;

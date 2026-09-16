@@ -29,6 +29,13 @@ export const PROVIDER_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApiKin
   'claude-code': ['anthropic'],
   codex: ['openai-responses'],
   deepseek: ['anthropic', 'openai-chat'],
+  // 9 W12 — opencode's provider `npm` key: anthropic → @ai-sdk/anthropic,
+  // openai-chat → @ai-sdk/openai-compatible. openai-responses is DELIBERATELY
+  // excluded: the W3 spec snapshot carries only the coarse flavor
+  // (anthropic-messages | openai), so the writer could not pick between
+  // @ai-sdk/openai and @ai-sdk/openai-compatible deterministically — the
+  // models.dev built-in 'openai' provider already covers OpenAI proper.
+  opencode: ['anthropic', 'openai-chat'],
 };
 
 /** Map a provider kind onto the W3 spec flavor (writers keyed on it stay untouched). */

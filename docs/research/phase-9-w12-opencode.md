@@ -77,6 +77,7 @@ registry used by Zed). No third-party wrapper (contrast: claude-code rides
   - `models` is an object map (not an array); unknown models default to
     `{}` entries. `limit.context` optional (unknown → opencode treats as
     unlimited; we do not invent numbers).
+
 - **Default model**: top-level **`model` = `"provider/model-id"`** (also
   `small_model` for cheap tasks — we leave that alone).
 - `/connect` credentials live in `~/.local/share/opencode/auth.json` —

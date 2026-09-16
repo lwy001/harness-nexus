@@ -32,6 +32,7 @@ export const HARNESS_PACKAGES: Record<string, string> = {
   'claude-code': '@anthropic-ai/claude-code',
   codex: '@openai/codex',
   deepseek: '@deepseek-ai/dsh',
+  opencode: 'opencode-ai',
 };
 
 /**
@@ -44,6 +45,7 @@ const CHANNEL_TAG: Record<string, string> = {
   'claude-code': 'stable',
   codex: 'latest',
   deepseek: 'latest',
+  opencode: 'latest',
 };
 
 /**

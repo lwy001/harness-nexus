@@ -314,6 +314,104 @@ describe('applyRuntimeConfig — deepseek', () => {
   });
 });
 
+describe('applyRuntimeConfig — opencode (9 W12)', () => {
+  const cfg = (): string => path.join(home, '.config/opencode/opencode.json');
+  const key = (): string => path.join(home, '.config/opencode/harness-nexus.key');
+
+  it('writes the provider block, model route, and 0600 key file; idempotent', () => {
+    applyRuntimeConfig(
+      'opencode',
+      spec({ api: 'openai', model: 'gw-large', models: ['gw-mini'] }),
+      'sk-test-1',
+      home,
+    );
+    const parsed = JSON.parse(readFileSync(cfg(), 'utf8')) as {
+      model: string;
+      provider: Record<
+        string,
+        {
+          npm: string;
+          name: string;
+          options: Record<string, string>;
+          models: Record<string, unknown>;
+        }
+      >;
+    };
+    expect(parsed.model).toBe('harness-nexus/gw-large');
+    const block = parsed.provider['harness-nexus']!;
+    expect(block.npm).toBe('@ai-sdk/openai-compatible'); // coarse openai → chat completions
+    expect(block.name).toBe('team gateway');
+    expect(block.options.baseURL).toBe('https://gw.example.com/v1');
+    expect(block.options.apiKey).toBe('{file:~/.config/opencode/harness-nexus.key}');
+    expect(Object.keys(block.models)).toEqual(['gw-large', 'gw-mini']); // default leads the switchable set
+    expect(readFileSync(key(), 'utf8')).toBe('sk-test-1\n');
+    expect(mode(cfg())).toBe(0o600);
+    expect(mode(key())).toBe(0o600);
+
+    applyRuntimeConfig(
+      'opencode',
+      spec({ api: 'openai', model: 'gw-large', models: ['gw-mini'] }),
+      'sk-test-2',
+      home,
+    );
+    expect(readFileSync(key(), 'utf8')).toBe('sk-test-2\n');
+    expect(JSON.parse(readFileSync(cfg(), 'utf8'))).toEqual(parsed); // byte-stable re-apply
+  });
+
+  it('preserves user config keys and other providers', () => {
+    writeRel(
+      '.config/opencode/opencode.json',
+      JSON.stringify(
+        {
+          $schema: 'https://opencode.ai/config.json',
+          theme: 'dark', // user key survives
+          provider: { openai: { npm: '@ai-sdk/openai', options: {} } }, // other provider survives
+          mcp: { myserver: { type: 'local', command: ['bun', 'x', 'mcp-thing'] } },
+        },
+        null,
+        2,
+      ),
+    );
+    applyRuntimeConfig('opencode', spec({ api: 'openai' }), 'sk-3', home);
+    const parsed = JSON.parse(readFileSync(cfg(), 'utf8')) as Record<string, unknown> & {
+      provider: Record<string, unknown>;
+    };
+    expect(parsed['$schema']).toBe('https://opencode.ai/config.json');
+    expect(parsed.theme).toBe('dark');
+    expect(Object.keys(parsed.provider)).toContain('openai');
+    expect((parsed.mcp as { myserver: unknown }).myserver).toBeDefined();
+  });
+
+  it('anthropic flavor maps to @ai-sdk/anthropic; a baseUrl-less re-apply REMOVES ours', () => {
+    applyRuntimeConfig('opencode', spec({ api: 'anthropic-messages' }), 'sk-4', home);
+    const withBase = JSON.parse(readFileSync(cfg(), 'utf8')) as {
+      provider: { 'harness-nexus'?: { npm: string; options: Record<string, string> } };
+    };
+    expect(withBase.provider['harness-nexus']!.npm).toBe('@ai-sdk/anthropic');
+    expect(withBase.provider['harness-nexus']!.options.baseURL).toBe('https://gw.example.com/v1');
+
+    applyRuntimeConfig(
+      'opencode',
+      spec({ api: 'anthropic-messages', baseUrl: undefined }),
+      'sk-4',
+      home,
+    );
+    const noBase = JSON.parse(readFileSync(cfg(), 'utf8')) as {
+      provider: { 'harness-nexus'?: { options: Record<string, string> } };
+    };
+    expect(noBase.provider['harness-nexus']!.options.baseURL).toBeUndefined();
+  });
+
+  it('refuses a commented (JSONC) config without touching it', () => {
+    const jsonc = '{\n  // my hand-written comments\n  "theme": "dark"\n}\n';
+    writeRel('.config/opencode/opencode.json', jsonc);
+    expect(() => applyRuntimeConfig('opencode', spec({ api: 'openai' }), 'sk-5', home)).toThrow(
+      /not valid JSON/,
+    );
+    expect(readFileSync(cfg(), 'utf8')).toBe(jsonc);
+  });
+});
+
 /** Minimal socket recorder (same trick as the W2 runtime-job tests). */
 class FakeSocket extends EventEmitter {
   sent: { event: string; payload: unknown }[] = [];

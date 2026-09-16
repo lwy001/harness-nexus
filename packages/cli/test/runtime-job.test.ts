@@ -98,6 +98,17 @@ describe('harnessCommand', () => {
       command: 'npm',
       args: ['install', '-g', '@deepseek-ai/dsh@0.1.2-rc.1'],
     });
+    // 9 W12 — opencode rides the plain npm arm (package `opencode-ai`).
+    expect(harnessCommand({ action: 'install', target: 'opencode' }, undefined)).toEqual({
+      command: 'npm',
+      args: ['install', '-g', 'opencode-ai@latest'],
+    });
+    expect(
+      harnessCommand({ action: 'pin', target: 'opencode', version: '1.18.31' }, 'npm'),
+    ).toEqual({
+      command: 'npm',
+      args: ['install', '-g', 'opencode-ai@1.18.31'],
+    });
     // The one native path: upgrading an already-native claude-code install.
     expect(harnessCommand({ action: 'upgrade', target: 'claude-code' }, 'native')).toEqual({
       command: 'claude',

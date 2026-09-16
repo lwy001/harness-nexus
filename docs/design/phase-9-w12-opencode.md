@@ -30,20 +30,20 @@ schema-driven and every UI surface lights up from the runtime arm alone.
 
 ## 1. Axes and registries touched
 
-| Axis / registry | File | Change |
-| --- | --- | --- |
-| `AgentTarget` | `shared/schemas/profile.ts` + `core/domain/resource.ts` | `+= 'opencode'` (chat + inventory need the target id) |
-| `RuntimeTarget` | `shared/schemas/inventory.ts` | `RUNTIME_TARGETS += 'opencode'` |
-| `RUNTIME_API_SUPPORT` | `shared/schemas/runtime-config.ts` | `opencode: ['anthropic-messages', 'openai']` |
-| `PROVIDER_API_SUPPORT` | `shared/schemas/llm-provider.ts` | `opencode: ['anthropic', 'openai-chat', 'openai-responses']` |
-| `HOOK_SUPPORT` | `shared/schemas/hooks.ts` | `opencode: null` |
-| `SCANNABLE_TARGETS` | `shared/schemas/inventory.ts` | `+= 'opencode'` |
-| Probe | `cli/inventory/runtime.ts` | `RUNTIME_PROBES += { target: 'opencode', bin: 'opencode' }` |
-| Harness packages | `cli/daemon/runtime.ts` | `HARNESS_PACKAGES['opencode'] = 'opencode-ai'` (npm channel, `latest` tag; no native self-update exception) |
-| ACP row | `cli/daemon/acp/adapters.ts` | `opencode: ['opencode', 'acp']` (native ACP; `HN_ACP_COMMAND_OPENCODE` override) |
-| W3 writer | `cli/daemon/runtime-config.ts` | `applyOpencodeConfig` + dispatch case |
-| W4 viewer | `cli/daemon/config-view.ts` | `TARGET_CONFIG_FILES['opencode']` |
-| C3 scanner | `cli/inventory/scanners/opencode.ts` (new) | registered in `scan.ts` |
+| Axis / registry        | File                                                    | Change                                                                                                                                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgentTarget`          | `shared/schemas/profile.ts` + `core/domain/resource.ts` | `+= 'opencode'` (chat + inventory need the target id)                                                                                                                                                                                                                                           |
+| `RuntimeTarget`        | `shared/schemas/inventory.ts`                           | `RUNTIME_TARGETS += 'opencode'`                                                                                                                                                                                                                                                                 |
+| `RUNTIME_API_SUPPORT`  | `shared/schemas/runtime-config.ts`                      | `opencode: ['anthropic-messages', 'openai']`                                                                                                                                                                                                                                                    |
+| `PROVIDER_API_SUPPORT` | `shared/schemas/llm-provider.ts`                        | `opencode: ['anthropic', 'openai-chat']` — `openai-responses` is deliberately excluded: the spec snapshot carries only the coarse flavor, so the writer could not pick `@ai-sdk/openai` vs `@ai-sdk/openai-compatible` deterministically (the models.dev built-in already covers OpenAI proper) |
+| `HOOK_SUPPORT`         | `shared/schemas/hooks.ts`                               | `opencode: null`                                                                                                                                                                                                                                                                                |
+| `SCANNABLE_TARGETS`    | `shared/schemas/inventory.ts`                           | `+= 'opencode'`                                                                                                                                                                                                                                                                                 |
+| Probe                  | `cli/inventory/runtime.ts`                              | `RUNTIME_PROBES += { target: 'opencode', bin: 'opencode' }`                                                                                                                                                                                                                                     |
+| Harness packages       | `cli/daemon/runtime.ts`                                 | `HARNESS_PACKAGES['opencode'] = 'opencode-ai'` (npm channel, `latest` tag; no native self-update exception)                                                                                                                                                                                     |
+| ACP row                | `cli/daemon/acp/adapters.ts`                            | `opencode: ['opencode', 'acp']` (native ACP; `HN_ACP_COMMAND_OPENCODE` override)                                                                                                                                                                                                                |
+| W3 writer              | `cli/daemon/runtime-config.ts`                          | `applyOpencodeConfig` + dispatch case                                                                                                                                                                                                                                                           |
+| W4 viewer              | `cli/daemon/config-view.ts`                             | `TARGET_CONFIG_FILES['opencode']`                                                                                                                                                                                                                                                               |
+| C3 scanner             | `cli/inventory/scanners/opencode.ts` (new)              | registered in `scan.ts`                                                                                                                                                                                                                                                                         |
 
 Server: **zero code** (jobs/routes are schema-driven). Storage: no
 migrations (`machine_inventory.runtime` is a JSON column; job payloads are
@@ -72,8 +72,8 @@ Two slots, both merge-preserving and idempotent:
      the in-session model picker can switch them — same multi-model story
      as dsh's switchable set),
    - `provider['harness-nexus']` = `{ npm, name: 'Harness Nexus',
-     options: { baseURL?, apiKey: '{file:~/.config/opencode/harness-nexus.key}' },
-     models: { <default>: {}, …extras } }`.
+options: { baseURL?, apiKey: '{file:~/.config/opencode/harness-nexus.key}' },
+models: { <default>: {}, …extras } }`.
    - `npm` maps from the provider kind: `anthropic` → `@ai-sdk/anthropic`,
      `openai-chat` → `@ai-sdk/openai-compatible`, `openai-responses` →
      `@ai-sdk/openai`. A **baseUrl-less re-apply REMOVES our `baseURL`**

@@ -27,6 +27,9 @@ export const RUNTIME_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApi[]> 
   'claude-code': ['anthropic-messages'],
   codex: ['openai'],
   deepseek: ['anthropic-messages', 'openai'],
+  // 9 W12 — the provider's `npm` AI-SDK key covers both wires
+  // (@ai-sdk/openai[-compatible] / @ai-sdk/anthropic).
+  opencode: ['anthropic-messages', 'openai'],
 };
 
 export const runtimeConfigSpecSchema = z.object({
