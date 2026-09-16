@@ -10,12 +10,12 @@
 
 ## 1. Per-target mechanism
 
-| Target | Mechanism | Where |
-| --- | --- | --- |
-| claude-code | W3 writer adds `availableModels: unique([model, ...extras])` to `~/.claude/settings.json`; the ACP wrapper applies the allowlist itself and synthesizes unknown ids verbatim (`applyAvailableModelsAllowlist`). | `cli/src/daemon/runtime-config.ts` |
-| codex | Daemon rewrites the `model` option list on OUR wire; `session/set_config_option` accepts raw ids (no list validation), so the set path is untouched. The model set rides `chat:session.start` (`modelOptions`), because the codex writer persists only the single root `model`. | `cli/src/daemon/model-options.ts` + `server/src/realtime/chat.ts` |
-| opencode | Same daemon rewrite; allowed values are `modelOptions` mapped to `${OPENCODE_PROVIDER_ID}/${id}` — those exist in the provider registry (the W12 writer's `models` map), so `set` stays valid (`parseSelectedModel` requires registry existence). | `cli/src/daemon/model-options.ts` |
-| deepseek | Nothing — W10 already ships `unique([model, ...extras])` into the provider's native picker catalog. | — |
+| Target      | Mechanism                                                                                                                                                                                                                                                                       | Where                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| claude-code | W3 writer adds `availableModels: unique([model, ...extras])` to `~/.claude/settings.json`; the ACP wrapper applies the allowlist itself and synthesizes unknown ids verbatim (`applyAvailableModelsAllowlist`).                                                                 | `cli/src/daemon/runtime-config.ts`                                |
+| codex       | Daemon rewrites the `model` option list on OUR wire; `session/set_config_option` accepts raw ids (no list validation), so the set path is untouched. The model set rides `chat:session.start` (`modelOptions`), because the codex writer persists only the single root `model`. | `cli/src/daemon/model-options.ts` + `server/src/realtime/chat.ts` |
+| opencode    | Same daemon rewrite; allowed values are `modelOptions` mapped to `${OPENCODE_PROVIDER_ID}/${id}` — those exist in the provider registry (the W12 writer's `models` map), so `set` stays valid (`parseSelectedModel` requires registry existence).                               | `cli/src/daemon/model-options.ts`                                 |
+| deepseek    | Nothing — W10 already ships `unique([model, ...extras])` into the provider's native picker catalog.                                                                                                                                                                             | —                                                                 |
 
 ## 2. Wire change (server → daemon)
 

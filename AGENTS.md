@@ -299,6 +299,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
   → `docs/design/phase-9-w9-sender-controls.md`
 - **LLM provider management + model discovery + multi-model (Phase 9 W10)**
   → `docs/design/phase-9-w10-llm-providers.md`
+- **Multi-model picker — dropdown = configured set (Phase 9 W13)**
+  → `docs/design/phase-9-w13-multi-model.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -1074,6 +1076,44 @@ with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
 - Daemon `0.17.0-p9w12`; rig E2E passed end to end (install job → detected
   Agent card → provider push → headless `opencode run` + portal ACP turn
   answering on the pushed route → viewer masked).
+
+## Multi-model picker (Phase 9 W13)
+
+Full design + adapter ground truth in `docs/design/phase-9-w13-multi-model.md`
+(research: `docs/research/phase-9-w13-multi-model-picker.md` — source-verified
+per adapter). Summary for daily work — **the session model dropdown lists ONLY
+platform-configured models (default + W10 `models` extras), per target**:
+
+- **claude-code — writer-side.** The W3 writer additionally writes top-level
+  `availableModels: unique([model, ...models])` into `~/.claude/settings.json`;
+  the ACP wrapper applies the allowlist itself and synthesizes unknown ids
+  verbatim, so the dropdown (and the machine's own terminal `/model` picker —
+  documented Claude Code semantics) shows only the configured set (+ the
+  wrapper's always-present `Default` row). The key is platform-owned while a
+  spec exists; re-apply overwrites a user array. ALWAYS written, even for a
+  single model — under a gateway the built-in catalog is dead entries.
+- **codex + opencode — daemon-side wire rewrite** (`cli/src/daemon/
+model-options.ts`, pure). codex takes RAW ids on `session/set_config_option`
+(no list validation — verified 0.16.0); opencode validates against its
+registry, which contains our W12 writer's provider `models` map, so allowed
+values are `${OPENCODE_PROVIDER_ID}/<id>` (const lives in
+`shared/schemas/runtime-config.ts`, single source with the W12 writer).
+Applied at ALL FOUR admission points: establishment snapshot, the live
+`config_option_update` push (the adapter re-emits its full list after every
+set — without the rewrite there the noise returns mid-session; idempotent),
+and the session/load capture-path history items. Empty intersection → row
+untouched (hand-managed install = full list is honest); an out-of-list
+`currentValue` stays selectable as a verbatim entry (out-of-picker
+semantics, e.g. resumed sessions). `chat:config.set` is untouched — the
+rewrite only hides entries, never invents values.
+- **deepseek — nothing** (W10's native `models:` list already feeds its
+  picker).
+- **The model set rides the open wire**: `chatSessionStartEventSchema` gained
+  optional `modelOptions: string[]` — ChatService.open reads the stored
+  RuntimeConfig (`findByMachineAndTarget`, best-effort — a read failure never
+  blocks the open) and sends `unique([model, ...models])`; omitted when no
+  row / non-runtime target. Old daemons strip the unknown key (non-strict
+  zod) — additive, no capability bump. Daemon `0.18.0-p9w13`.
 
 ## LLM provider management (Phase 9 W10)
 

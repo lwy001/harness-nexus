@@ -416,6 +416,16 @@ credentialName}` with the three kinds `openai-chat` / `openai-responses`
     list; codex/claude-code are single-default by construction — ground truth
     in the design doc §6).
     Design: `docs/design/phase-9-w10-llm-providers.md`.
+  - **W13 Multi-model picker — SHIPPED (2026-09)** — the session model
+    dropdown lists only platform-configured models (default + `models`
+    extras): claude-code via the writer's `availableModels` settings
+    allowlist (wrapper-native, unknown ids synthesized verbatim), codex +
+    opencode via a daemon-side option rewrite on our wire (codex accepts raw
+    ids on set; opencode's registry already holds our `harness-nexus/*`
+    values), deepseek native since W10. The configured set rides
+    `chat:session.start modelOptions` from the stored RuntimeConfig.
+    Research: `docs/research/phase-9-w13-multi-model-picker.md` · design:
+    `docs/design/phase-9-w13-multi-model.md`.
 - Non-goals v1: harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).
