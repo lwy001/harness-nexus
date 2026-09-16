@@ -43,20 +43,28 @@ Pure functions, applied at every point adapter options enter our wire:
 Rules (only `category === 'model'` select rows are touched):
 
 - claude-code / deepseek / everything else: identity.
-- codex: keep values in `modelOptions` (bare ids); no `modelOptions` →
-  identity (old server / no stored config).
-- opencode: keep values in `modelOptions.map(id => `${OPENCODE_PROVIDER_ID}/${id}`)`;
-  no `modelOptions` → identity.
-- If the filtered list is EMPTY, the row stays untouched — an empty
-  intersection means a hand-managed install (or a provider the config no
-  longer describes), where the full list is the honest state.
-- `currentValue` not represented in the filtered list is appended as a
+- codex: BUILD the list from `modelOptions` (bare ids) — keep the adapter's
+  entry when a value exists in its list (preserves display names), else
+  synthesize `{value, name: value}`. Building, not filtering, is load-bearing:
+  codex only ever advertises its remote presets plus the CURRENT model as a
+  verbatim entry, so configured extras never appear in its own list — an
+  intersection filter silently dropped every extra beyond the current model
+  (rig-found on 0.16.0). Raw ids are genuinely selectable on set (no list
+  validation). No `modelOptions` → identity (old server / no stored config).
+- opencode: INTERSECT with `modelOptions.map(id => `${OPENCODE_PROVIDER_ID}/${id}`)`
+  — set validates against the provider registry, so only values the adapter
+  itself offers are certain to be selectable. Empty intersection → the row
+  stays untouched: a hand-managed install (or a provider the config no longer
+  describes), where the full list is the honest state. No `modelOptions` →
+  identity.
+- `currentValue` not represented in the resulting list is appended as a
   verbatim entry — mirrors the adapters' own out-of-picker semantics (e.g. a
   resumed session running a model outside our set).
 
 `chat:config.set` is deliberately untouched: values forward verbatim and the
-optimistic merge matches by option id; the rewrite only HIDES entries and
-never invents values.
+optimistic merge matches by option id; the rewrite only narrows entries and
+never invents a VALUE the platform didn't configure (synthesized entries carry
+exactly the configured ids).
 
 `OPENCODE_PROVIDER_ID = 'harness-nexus'` is exported from
 `shared/src/schemas/runtime-config.ts` (single source; the W12 writer's

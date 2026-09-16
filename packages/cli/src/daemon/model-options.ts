@@ -46,18 +46,36 @@ function allowedModelValues(ctx: ModelOptionRewrite): readonly string[] | null {
 
 function rewriteModelOption(
   option: SessionConfigOption,
-  allowed: readonly string[] | null,
+  ctx: ModelOptionRewrite,
+  allowed: readonly string[],
 ): SessionConfigOption {
-  if (allowed === null || option.category !== 'model' || option.options === undefined) {
-    return option;
+  if (option.category !== 'model' || option.options === undefined) return option;
+
+  if (ctx.target === 'codex') {
+    // BUILD the list from the configured set, not filter the adapter's: codex
+    // only ever advertises its remote presets plus the CURRENT model as a
+    // verbatim entry, so configured extras never appear in its own list —
+    // yet set_config_option takes raw ids, so the entries are genuinely
+    // selectable (rig-found on 0.16.0: an intersection filter here silently
+    // dropped every extra beyond the current model).
+    const byValue = new Map(option.options.map((o) => [o.value, o]));
+    const options = allowed.map((v) => byValue.get(v) ?? { value: v, name: v });
+    const current = option.currentValue;
+    if (current !== undefined && !options.some((o) => o.value === current)) {
+      options.push({ value: current, name: current });
+    }
+    return { ...option, options };
   }
+
+  // opencode — intersect with the adapter's list: set validates against the
+  // provider registry, so only values the adapter itself offers are certain
+  // to be selectable. Empty intersection = a hand-managed install (or a set
+  // the live config no longer describes): the full list is the honest state.
   const kept = option.options.filter((o) => allowed.includes(o.value));
-  // Empty intersection = a hand-managed install (or a set the live config no
-  // longer describes): the adapter's full list is the honest state.
   if (kept.length === 0) return option;
-  // A currentValue outside the filtered list stays selectable verbatim —
-  // mirrors the adapters' own out-of-picker semantics (e.g. a resumed
-  // session running a model outside our set).
+  // A currentValue outside the kept list stays selectable verbatim — mirrors
+  // the adapters' own out-of-picker semantics (e.g. a resumed session
+  // running a model outside our set).
   const current = option.currentValue;
   const options =
     current !== undefined && !kept.some((o) => o.value === current)
@@ -73,7 +91,7 @@ export function rewriteSessionConfigOptions(
 ): SessionConfigOption[] {
   const allowed = allowedModelValues(ctx);
   if (allowed === null) return options.slice();
-  return options.map((o) => rewriteModelOption(o, allowed));
+  return options.map((o) => rewriteModelOption(o, ctx, allowed));
 }
 
 /**
@@ -95,7 +113,7 @@ export function rewriteHistoryItems(
       ...item,
       event: {
         ...event,
-        configOptions: event.configOptions.map((o) => rewriteModelOption(o, allowed)),
+        configOptions: event.configOptions.map((o) => rewriteModelOption(o, ctx, allowed)),
       },
     };
   });

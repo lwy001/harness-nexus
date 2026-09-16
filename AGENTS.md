@@ -1029,25 +1029,26 @@ Full design + adapter ground truth in `docs/design/phase-9-w9-sender-controls.md
 ## OpenCode runtime onboarding (Phase 9 W12)
 
 Full design + external ground truth in `docs/design/phase-9-w12-opencode.md`
-+ `docs/research/phase-9-w12-opencode.md` (verified against opencode 1.18.31
-on the rig). Summary for daily work — **opencode is a runtime-managed Agent
-with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
-→ W4 redacted viewer → ACP chat → C3 scan**:
 
-- **Zero new platform concepts**: every gate is schema-driven and every UI
+- `docs/research/phase-9-w12-opencode.md` (verified against opencode 1.18.31
+  on the rig). Summary for daily work — **opencode is a runtime-managed Agent
+  with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
+  → W4 redacted viewer → ACP chat → C3 scan**:
+
+* **Zero new platform concepts**: every gate is schema-driven and every UI
   surface lights up from the runtime arm alone. `opencode` joined
   `RUNTIME_TARGETS` + `AgentTarget` + `SCANNABLE_TARGETS`; harness jobs ride
   the plain npm arm (`HARNESS_PACKAGES['opencode'] = 'opencode-ai'`, `latest`
   tag); the probe bin is `opencode`; the ACP row is `['opencode','acp']`
   (opencode speaks ACP NATIVELY — no wrapper). Server code: none.
-- **`PROVIDER_API_SUPPORT['opencode'] = ['anthropic', 'openai-chat']`** —
+* **`PROVIDER_API_SUPPORT['opencode'] = ['anthropic', 'openai-chat']`** —
   `openai-responses` is deliberately EXCLUDED: the W3 spec snapshot carries
   only the coarse flavor (anthropic-messages | openai), so the writer could
   not pick `@ai-sdk/openai` vs `@ai-sdk/openai-compatible` deterministically
   (the models.dev built-in already covers OpenAI proper). `HOOK_SUPPORT` is
   null (plugins are TS code). The rail answers `supported:false` (no
   session/list over ACP) — the sessions handler needs no branch.
-- **W3 writer (`applyOpencodeConfig`)**: `~/.config/opencode/opencode.json`
+* **W3 writer (`applyOpencodeConfig`)**: `~/.config/opencode/opencode.json`
   merge-preserving — top-level `model: "harness-nexus/<model>"` (W10 extras
   become the provider's `models` map = the switchable set) +
   `provider['harness-nexus']` with the per-flavor AI SDK `npm`
@@ -1061,19 +1062,19 @@ with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
   trailing newline — opencode reads `{file:}` verbatim and a `\n` rides
   the key). `options.apiKey` IS wired for custom providers (verified
   against opencode source); auth.json is NOT part of our flow.
-- **W4 viewer**: `TARGET_CONFIG_FILES['opencode']` lists the JSON + the key
+* **W4 viewer**: `TARGET_CONFIG_FILES['opencode']` lists the JSON + the key
   file; the key file is WHOLESALE-redacted (bare secret, no key names —
   an explicit path check, extension rules would leak it).
-- **C3 scanner** (`inventory/scanners/opencode.ts`, home
+* **C3 scanner** (`inventory/scanners/opencode.ts`, home
   `~/.config/opencode`): the `mcp` block of opencode.json (local `command`
   ARRAY or string, `environment`/`env` both tolerated; remote `url`),
   `command/*.md` → commands, `agent/*.md` → sub_agents, `skill/<n>/SKILL.md`
   when present. JSONC parses as nothing (hand-managed = out of bounds).
-- **NOT done (deliberate)**: profile install adapter (opencode is NOT a
+* **NOT done (deliberate)**: profile install adapter (opencode is NOT a
   `DEPLOYABLE_TARGET`, the pick lists are unchanged), native sessions rail,
   `~/.local/share/opencode/auth.json` (the user's own `/connect` store).
   hermes runtime support was descoped with the user this wave.
-- Daemon `0.17.0-p9w12`; rig E2E passed end to end (install job → detected
+* Daemon `0.17.0-p9w12`; rig E2E passed end to end (install job → detected
   Agent card → provider push → headless `opencode run` + portal ACP turn
   answering on the pushed route → viewer masked).
 
@@ -1094,18 +1095,23 @@ platform-configured models (default + W10 `models` extras), per target**:
   single model — under a gateway the built-in catalog is dead entries.
 - **codex + opencode — daemon-side wire rewrite** (`cli/src/daemon/
 model-options.ts`, pure). codex takes RAW ids on `session/set_config_option`
-(no list validation — verified 0.16.0); opencode validates against its
-registry, which contains our W12 writer's provider `models` map, so allowed
-values are `${OPENCODE_PROVIDER_ID}/<id>` (const lives in
-`shared/schemas/runtime-config.ts`, single source with the W12 writer).
-Applied at ALL FOUR admission points: establishment snapshot, the live
-`config_option_update` push (the adapter re-emits its full list after every
-set — without the rewrite there the noise returns mid-session; idempotent),
-and the session/load capture-path history items. Empty intersection → row
-untouched (hand-managed install = full list is honest); an out-of-list
-`currentValue` stays selectable as a verbatim entry (out-of-picker
-semantics, e.g. resumed sessions). `chat:config.set` is untouched — the
-rewrite only hides entries, never invents values.
+  (no list validation — verified 0.16.0), so its row is BUILT from the
+  configured set (adapter entry kept when present, else a verbatim `{value,
+name: value}`) — building, not intersecting, is load-bearing: codex only
+  advertises presets + the CURRENT model, so an intersection filter silently
+  dropped every extra beyond the current model (rig-found on 0.16.0).
+  opencode validates against its registry (which contains our W12 writer's
+  provider `models` map), so its row is INTERSECTED with
+  `${OPENCODE_PROVIDER_ID}/<id>` values (const lives in
+  `shared/schemas/runtime-config.ts`, single source with the W12 writer) —
+  empty intersection → row untouched (hand-managed install = full list is
+  honest). Applied at ALL FOUR admission points: establishment snapshot, the
+  live `config_option_update` push (the adapter re-emits its full list after
+  every set — without the rewrite there the noise returns mid-session;
+  idempotent), and the session/load capture-path history items. An out-of-list
+  `currentValue` stays selectable as a verbatim entry (out-of-picker
+  semantics, e.g. resumed sessions). `chat:config.set` is untouched — the
+  rewrite only narrows to platform-configured ids, never invents one.
 - **deepseek — nothing** (W10's native `models:` list already feeds its
   picker).
 - **The model set rides the open wire**: `chatSessionStartEventSchema` gained

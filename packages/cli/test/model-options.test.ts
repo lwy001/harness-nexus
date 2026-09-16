@@ -74,10 +74,35 @@ describe('rewriteSessionConfigOptions (9 W13)', () => {
     ]);
   });
 
-  it('empty intersection leaves the row untouched (hand-managed install)', () => {
-    const row = modelRow();
-    const out = rewriteSessionConfigOptions([row], { target: 'codex', modelOptions: ['other'] });
-    expect(out[0]!.options?.map((o) => o.value)).toEqual(['gw-large', 'builtin-1', 'gw-mini']);
+  it('codex: builds entries for configured extras the adapter never listed', () => {
+    // codex only advertises presets + the CURRENT model verbatim — a custom
+    // extra id is absent from its own list, yet selectable (raw ids accepted
+    // on set; rig-found: an intersection filter here dropped every extra).
+    const row = modelRow({
+      options: [
+        { value: 'gw-large', name: 'GW Large' },
+        { value: 'gpt-5-pro', name: 'GPT' },
+      ],
+    });
+    const out = rewriteSessionConfigOptions([row], {
+      target: 'codex',
+      modelOptions: ['gw-large', 'gw-mini'],
+    });
+    expect(out[0]!.options).toEqual([
+      { value: 'gw-large', name: 'GW Large' },
+      { value: 'gw-mini', name: 'gw-mini' },
+    ]);
+  });
+
+  it('opencode: empty intersection leaves the row untouched (hand-managed install)', () => {
+    const row = modelRow({
+      options: [{ value: 'anthropic/claude-x', name: 'Claude' }],
+    });
+    const out = rewriteSessionConfigOptions([row], {
+      target: 'opencode',
+      modelOptions: ['gw-large'],
+    });
+    expect(out[0]!.options?.map((o) => o.value)).toEqual(['anthropic/claude-x']);
   });
 
   it('no configured set → identity (old server / no stored config)', () => {
