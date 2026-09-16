@@ -113,9 +113,38 @@ describe('rewriteSessionConfigOptions (9 W13)', () => {
     }
   });
 
-  it('claude-code / deepseek / chat-only targets are identity (writer/native own it)', () => {
+  it('deepseek: intersects on the JSON [provider, model] tuple values', () => {
+    // dsh-acp's model row after daemon-side group flattening (9 W13)
+    const row = modelRow({
+      currentValue: '["harness-nexus","gw-large"]',
+      options: [
+        { value: '["deepseek-official","deepseek-chat"]', name: 'DeepSeek Chat' },
+        { value: '["harness-nexus","gw-large"]', name: 'GW Large', group: 'harness-nexus' },
+        { value: '["harness-nexus","gw-mini"]', name: 'GW Mini', group: 'harness-nexus' },
+      ],
+    });
+    const out = rewriteSessionConfigOptions([row], {
+      target: 'deepseek',
+      modelOptions: ['gw-large', 'gw-mini'],
+    });
+    expect(out[0]!.options?.map((o) => o.value)).toEqual([
+      '["harness-nexus","gw-large"]',
+      '["harness-nexus","gw-mini"]',
+    ]);
+    // empty intersection (serialization drift / hand-managed catalog) → untouched
+    const row2 = modelRow({
+      options: [{ value: '["deepseek-official","deepseek-chat"]', name: 'DeepSeek Chat' }],
+    });
+    const out2 = rewriteSessionConfigOptions([row2], {
+      target: 'deepseek',
+      modelOptions: ['gw-large'],
+    });
+    expect(out2[0]!.options?.length).toBe(1);
+  });
+
+  it('claude-code / chat-only targets are identity (writer/native own it)', () => {
     const row = modelRow();
-    for (const target of ['claude-code', 'deepseek', 'hermes', 'zcode', 'generic']) {
+    for (const target of ['claude-code', 'hermes', 'zcode', 'generic']) {
       const out = rewriteSessionConfigOptions([row], { target, modelOptions: ['gw-large'] });
       expect(out[0]!.options?.length).toBe(3);
     }

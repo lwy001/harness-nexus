@@ -685,94 +685,112 @@ export function AgentSessionPage() {
                 </p>
               ) : rail.state === 'error' ? (
                 <p className="text-muted-foreground px-2 py-4 text-xs">{rail.message}</p>
-              ) : !rail.supported ? (
+              ) : !rail.supported && rail.sessions.length === 0 ? (
                 <p className="text-muted-foreground px-2 py-4 text-xs">
                   {t('chat.sessionsUnsupported')}
                 </p>
-              ) : groups.length === 0 ? (
-                <p className="text-muted-foreground px-2 py-4 text-xs">{t('chat.noSessions')}</p>
               ) : (
-                groups.map((group) => (
-                  <div key={group.cwd} className="mb-3">
-                    <div
-                      className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
-                      title={group.cwd}
-                    >
-                      <FolderIcon className="size-3 shrink-0" />
-                      <span className="truncate">{cwdBasename(group.cwd)}</span>
-                    </div>
-                    {group.sessions.map((s) => {
-                      const active = s.sessionId === nativeSessionId;
-                      const stale = s.staleReason !== undefined;
-                      // A live channel is attached (W11: the PUSH overlay wins,
-                      // the listing stamps are just the initial paint): clicking
-                      // REJOINS it — a fresh resume would spawn a second channel
-                      // for the same agent session (dsh refuses that outright).
-                      const attached = channelByNative.get(s.sessionId);
-                      const openChannelId = attached?.sessionId ?? s.openChannelId;
-                      const open = attached !== undefined || openChannelId !== undefined;
-                      return (
-                        <button
-                          key={s.sessionId}
-                          type="button"
-                          disabled={stale && !active}
-                          onClick={() =>
-                            active || stale
-                              ? undefined
-                              : open
-                                ? void openChannel(openChannelId, undefined, {
-                                    sessionId: s.sessionId,
-                                    cwd: s.cwd,
-                                  })
-                                : void openChannel(undefined, undefined, {
-                                    sessionId: s.sessionId,
-                                    cwd: s.cwd,
-                                  })
-                          }
-                          className={cn(
-                            'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
-                            active ? 'bg-accent' : stale ? 'cursor-default' : 'hover:bg-accent/60',
-                            stale && !active && 'opacity-50',
-                          )}
-                          title={
-                            stale
-                              ? t('chat.staleModel', { model: s.model ?? '?' })
-                              : open && !active
-                                ? t('chat.channelOpenHint')
-                                : (s.title ?? s.cwd)
-                          }
+                <>
+                  {/* 9 W13 — even where the agent keeps no listable native
+                      history (opencode), live channels are real, rejoinable
+                      rows: render them instead of hiding the rail. */}
+                  {!rail.supported ? (
+                    <p className="text-muted-foreground px-2 pt-2 text-[11px]">
+                      {t('chat.sessionsUnsupportedPartial')}
+                    </p>
+                  ) : null}
+                  {groups.length === 0 ? (
+                    <p className="text-muted-foreground px-2 py-4 text-xs">
+                      {t('chat.noSessions')}
+                    </p>
+                  ) : (
+                    groups.map((group) => (
+                      <div key={group.cwd} className="mb-3">
+                        <div
+                          className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
+                          title={group.cwd}
                         >
-                          <span className="flex w-full items-center justify-between gap-2">
-                            <span className="truncate">{s.title ?? t('chat.untitled')}</span>
-                            <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                              {relativeTime(s.updatedAt, dateLocale(lang))}
-                            </span>
-                          </span>
-                          <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
-                            {active ? (
-                              <>
-                                <span className="bg-signal inline-block size-1.5 rounded-full" />
-                                {t('chat.working')}
-                              </>
-                            ) : stale ? (
-                              t('chat.staleModel', { model: s.model ?? '?' })
-                            ) : open ? (
-                              <>
-                                <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
-                                {t('chat.channelOpen')}
-                              </>
-                            ) : (
-                              <>
-                                <PlayIcon className="size-2.5" />
-                                {t('chat.resumeSession')}
-                              </>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))
+                          <FolderIcon className="size-3 shrink-0" />
+                          <span className="truncate">{cwdBasename(group.cwd)}</span>
+                        </div>
+                        {group.sessions.map((s) => {
+                          const active = s.sessionId === nativeSessionId;
+                          const stale = s.staleReason !== undefined;
+                          // A live channel is attached (W11: the PUSH overlay wins,
+                          // the listing stamps are just the initial paint): clicking
+                          // REJOINS it — a fresh resume would spawn a second channel
+                          // for the same agent session (dsh refuses that outright).
+                          const attached = channelByNative.get(s.sessionId);
+                          const openChannelId = attached?.sessionId ?? s.openChannelId;
+                          const open = attached !== undefined || openChannelId !== undefined;
+                          return (
+                            <button
+                              key={s.sessionId}
+                              type="button"
+                              disabled={stale && !active}
+                              onClick={() =>
+                                active || stale
+                                  ? undefined
+                                  : open
+                                    ? void openChannel(openChannelId, undefined, {
+                                        sessionId: s.sessionId,
+                                        cwd: s.cwd,
+                                      })
+                                    : void openChannel(undefined, undefined, {
+                                        sessionId: s.sessionId,
+                                        cwd: s.cwd,
+                                      })
+                              }
+                              className={cn(
+                                'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
+                                active
+                                  ? 'bg-accent'
+                                  : stale
+                                    ? 'cursor-default'
+                                    : 'hover:bg-accent/60',
+                                stale && !active && 'opacity-50',
+                              )}
+                              title={
+                                stale
+                                  ? t('chat.staleModel', { model: s.model ?? '?' })
+                                  : open && !active
+                                    ? t('chat.channelOpenHint')
+                                    : (s.title ?? s.cwd)
+                              }
+                            >
+                              <span className="flex w-full items-center justify-between gap-2">
+                                <span className="truncate">{s.title ?? t('chat.untitled')}</span>
+                                <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
+                                  {relativeTime(s.updatedAt, dateLocale(lang))}
+                                </span>
+                              </span>
+                              <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
+                                {active ? (
+                                  <>
+                                    <span className="bg-signal inline-block size-1.5 rounded-full" />
+                                    {t('chat.working')}
+                                  </>
+                                ) : stale ? (
+                                  t('chat.staleModel', { model: s.model ?? '?' })
+                                ) : open ? (
+                                  <>
+                                    <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
+                                    {t('chat.channelOpen')}
+                                  </>
+                                ) : (
+                                  <>
+                                    <PlayIcon className="size-2.5" />
+                                    {t('chat.resumeSession')}
+                                  </>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))
+                  )}
+                </>
               )}
             </div>
           </aside>

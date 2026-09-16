@@ -42,6 +42,14 @@ export const RUNTIME_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApi[]> 
  */
 export const OPENCODE_PROVIDER_ID = 'harness-nexus';
 
+/**
+ * 9 W13 — dsh's pi-ai provider key in `~/.dsh/settings.yaml` (same spelling
+ * as opencode's id, but a different slot). dsh's ACP model option values are
+ * JSON `[provider, model]` tuples; the daemon-side filter allows exactly
+ * `["harness-nexus", <model>]` for the configured set.
+ */
+export const DSH_PROVIDER_ID = 'harness-nexus';
+
 export const runtimeConfigSpecSchema = z.object({
   /** Display label only — surfaces in the harness's own config UI. */
   providerLabel: z.string().min(1).max(64),

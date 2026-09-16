@@ -1,4 +1,4 @@
-import { OPENCODE_PROVIDER_ID } from '@harness-nexus/shared';
+import { DSH_PROVIDER_ID, OPENCODE_PROVIDER_ID } from '@harness-nexus/shared';
 import type { HistoryItem, SessionConfigOption } from '@harness-nexus/shared';
 
 /**
@@ -39,6 +39,11 @@ function allowedModelValues(ctx: ModelOptionRewrite): readonly string[] | null {
       // opencode validates against its provider registry — our W12 writer's
       // `models` map IS that registry for these ids.
       return ctx.modelOptions.map((id) => `${OPENCODE_PROVIDER_ID}/${id}`);
+    case 'deepseek':
+      // dsh's model option values are JSON [provider, model] tuples (compact
+      // serialization, verified against dsh-acp 0.1.2-rc.1); its catalog also
+      // carries the built-in deepseek-official group, so intersect to ours.
+      return ctx.modelOptions.map((id) => JSON.stringify([DSH_PROVIDER_ID, id]));
     default:
       return null;
   }
