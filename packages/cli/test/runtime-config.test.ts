@@ -122,10 +122,31 @@ describe('applyRuntimeConfig — claude-code', () => {
       'https://gw.example.com/v1',
     );
     expect(first.model).toBe('gw-large');
+    // 9 W13 — the picker allowlist rides along (single model = just it).
+    expect(first.availableModels).toEqual(['gw-large']);
     expect(mode(file)).toBe(0o600);
 
     applyRuntimeConfig('claude-code', spec({ api: 'anthropic-messages' }), 'sk-ant-secret', home);
     expect(readFileSync(file, 'utf8')).toBe(JSON.stringify(first, null, 2) + '\n');
+  });
+
+  it('availableModels = unique([model, ...models]) and REPLACES a user array (9 W13)', () => {
+    // a user's own allowlist is platform-owned while a spec exists (env kept —
+    // later tests in this describe assert it survives re-applies)
+    writeRel(
+      '.claude/settings.json',
+      JSON.stringify({ env: { CUSTOM: 'keep' }, availableModels: ['old-thing'] }),
+    );
+    applyRuntimeConfig(
+      'claude-code',
+      spec({ api: 'anthropic-messages', models: ['gw-mini', 'gw-large', 'gw-flash'] }),
+      'k',
+      home,
+    );
+    const settings = JSON.parse(readFileSync(path.join(home, '.claude/settings.json'), 'utf8')) as {
+      availableModels: string[];
+    };
+    expect(settings.availableModels).toEqual(['gw-large', 'gw-mini', 'gw-flash']);
   });
 
   it('a baseUrl-less re-apply REMOVES the managed base URL but keeps user env', () => {

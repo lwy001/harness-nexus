@@ -36,6 +36,7 @@ import {
 import { AcpAgentConnection, type JsonRpcId } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import { auditAdapterLedger, writeAdapterLedgerEntry } from './adapter-ledger.js';
+import { rewriteHistoryItems, rewriteSessionConfigOptions } from './model-options.js';
 import {
   createDshLiveMapper,
   decodeTranscript,
@@ -112,6 +113,12 @@ interface DaemonSession {
     modes?: SessionModeState;
     options: SessionConfigOption[];
   };
+  /**
+   * 9 W13 — the configured model set from `chat:session.start`
+   * (`unique([model, ...models])`), feeding the model-option rewrite.
+   * Undefined = no stored config: adapter options pass through untouched.
+   */
+  modelOptions?: readonly string[];
   /** 9 W7 — the history ring (user items + mapped events), newest last. */
   history: HistoryItem[];
   /**
@@ -405,7 +412,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       return;
     }
     ack?.({ accepted: true });
-    const { sessionId, target, cwd, resume } = parsed.data;
+    const { sessionId, target, cwd, resume, modelOptions } = parsed.data;
     void (async () => {
       inFlightStarts.add(sessionId);
       const cmd = resolveAcpCommand(target, env);
@@ -515,7 +522,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
                 mcpServers: [],
               })) as { sessionId?: string };
               acpSessionId = loaded?.sessionId ?? resume.sessionId;
-              history = finishCaptured(captured);
+              history = rewriteHistoryItems(finishCaptured(captured), { target, modelOptions });
               establishedConfig = takeSessionConfig(loaded);
             } finally {
               stopCapture();
@@ -538,6 +545,17 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
         // connection. Re-check the close flag here — there is no await between
         // this test and `sessions.set`, so no interleaving can slip past.
         if (abortIfClosed()) return;
+        // 9 W13 — narrow the model-category options to the configured set
+        // BEFORE they reach any wire surface (snapshot, ring, resync).
+        if (establishedConfig !== null) {
+          establishedConfig = {
+            ...establishedConfig,
+            options: rewriteSessionConfigOptions(establishedConfig.options, {
+              target,
+              modelOptions,
+            }),
+          };
+        }
         const session: DaemonSession = {
           sessionId,
           acpSessionId,
@@ -548,6 +566,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           busy: false,
           permissions: new Map(),
           config: establishedConfig ?? { options: [] },
+          ...(modelOptions !== undefined ? { modelOptions } : {}),
           history: [],
           wireTextEmitted: false,
           tailReplayEligible: resume === undefined,
@@ -986,8 +1005,11 @@ function wireSession(
     if (update.sessionUpdate === 'config_option_update') {
       const options = takeConfigOptions(update.configOptions);
       if (options !== null) {
-        session.config.options = options;
-        emitEvent(session, { kind: 'session_config', configOptions: options });
+        // 9 W13 — the adapter re-emits its FULL list after every set; the
+        // rewrite must ride here too or the built-in noise comes back
+        // mid-session. Idempotent by construction.
+        session.config.options = rewriteSessionConfigOptions(options, session);
+        emitEvent(session, { kind: 'session_config', configOptions: session.config.options });
       }
       return;
     }

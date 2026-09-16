@@ -395,6 +395,72 @@ describe('workspace directories (9 W6)', () => {
       d.close();
     }
   }, 15000);
+
+  it('session start carries modelOptions from the stored RuntimeConfig (9 W13)', async () => {
+    const now = new Date().toISOString();
+    const ownerId = (await app.uow.users.findByUsername('chatter'))!.id;
+    await app.uow.agentInstances.save({
+      id: 'agent-chat-codex',
+      machineId,
+      ownerId,
+      target: 'codex',
+      profileId: 'profile-chat-1',
+      profileVersion: '1.0.0',
+      name: 'codex agent',
+      directory: '/home/tester/.codex',
+      jobId: 'job-chat-1',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await app.uow.runtimeConfigs.save({
+      id: 'rc-chat-1',
+      machineId,
+      ownerId,
+      target: 'codex',
+      spec: {
+        providerLabel: 'gw',
+        baseUrl: 'https://gw.example.com/v1',
+        api: 'openai',
+        model: 'gw-large',
+        credentialName: 'gw-key',
+        providerId: null,
+        // 'gw-large' repeated on purpose: the hint must dedupe extras against
+        // the default (stored extras are normalized route-side; belt+braces).
+        models: ['gw-mini', 'gw-large'],
+        extra: null,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const d = await connectDaemon(['chat']);
+    try {
+      const startPromise = once(d, 'chat:session.start');
+      const res = await openSession(browser, 'agent-chat-codex');
+      expect(res.sessionId).toBeTruthy();
+      const start = (await startPromise) as { modelOptions?: string[] };
+      expect(start.modelOptions).toEqual(['gw-large', 'gw-mini']);
+      await emitAck(d, 'chat:session.closed', { sessionId: res.sessionId!, reason: 'user' });
+
+      // No stored row → the field is omitted entirely.
+      await app.uow.runtimeConfigs.deleteByMachine(machineId);
+      const p2 = once(d, 'chat:session.start');
+      const res2 = await openSession(browser, 'agent-chat-codex');
+      expect(res2.sessionId).toBeTruthy();
+      const start2 = (await p2) as { modelOptions?: string[] };
+      expect(start2.modelOptions).toBeUndefined();
+      await emitAck(d, 'chat:session.closed', { sessionId: res2.sessionId!, reason: 'user' });
+
+      // A non-runtime target (hermes) never carries the hint.
+      const p3 = once(d, 'chat:session.start');
+      const res3 = await openSession(browser, agentId);
+      expect(res3.sessionId).toBeTruthy();
+      const start3 = (await p3) as { modelOptions?: string[] };
+      expect(start3.modelOptions).toBeUndefined();
+      await emitAck(d, 'chat:session.closed', { sessionId: res3.sessionId!, reason: 'user' });
+    } finally {
+      d.close();
+    }
+  }, 15000);
 });
 
 describe('session lifecycle', () => {
