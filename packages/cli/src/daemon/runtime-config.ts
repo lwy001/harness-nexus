@@ -351,18 +351,36 @@ const OPENCODE_SDK: Record<RuntimeConfigSpec['api'], string> = {
 };
 
 /**
+ * The AI SDK baseURL convention (rig-found 2026-09-16): `@ai-sdk/anthropic`
+ * and `@ai-sdk/openai-compatible` both expect the base to END WITH `/v1`
+ * (their defaults do) and append only the method path (`/messages`,
+ * `/chat/completions`). A gateway base without `/v1` — e.g. Ark's
+ * `/api/coding`, which claude-code takes VERBATIM (it appends `/v1/…`
+ * itself) — posts to a nonexistent path and the gateway auth-checks BEFORE
+ * routing, so the failure reads "Unauthorized", not 404. Normalize: append
+ * `/v1` unless the base already ends with it.
+ */
+export function opencodeSdkBaseURL(url: string): string {
+  const trimmed = url.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+/**
  * Two merge-preserving slots (research §3):
  *
  *  1. `~/.config/opencode/opencode.json` — top-level `model` =
  *     `harness-nexus/<model>` (the active route; W10 extras become sibling
  *     keys in the provider's `models` map = the in-session switchable set),
  *     and `provider['harness-nexus']` with the per-flavor AI SDK `npm`,
- *     `options.baseURL` (a baseUrl-less re-apply REMOVES ours), and
- *     `options.apiKey` referencing the key file via `{file:…}` substitution —
- *     which EVERY opencode invocation resolves (TUI, ACP, headless), unlike
- *     `{env:…}` (only opencode's own process env). A commented (JSONC) config
- *     fails `JSON.parse` → the job errors without touching the file.
- *  2. `~/.config/opencode/harness-nexus.key` — the secret, 0600.
+ *     `options.baseURL` (`/v1`-normalized; a baseUrl-less re-apply REMOVES
+ *     ours), and `options.apiKey` referencing the key file via `{file:…}`
+ *     substitution — which EVERY opencode invocation resolves (TUI, ACP,
+ *     headless), unlike `{env:…}` (only opencode's own process env). A
+ *     commented (JSONC) config fails `JSON.parse` → the job errors without
+ *     touching the file.
+ *  2. `~/.config/opencode/harness-nexus.key` — the secret, 0600, NO
+ *     trailing newline (opencode reads the file RAW — a `\n` would ride
+ *     the key and the gateway rejects it).
  */
 function applyOpencodeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string): string[] {
   const dir = join(homeDir, '.config', 'opencode');
@@ -376,7 +394,9 @@ function applyOpencodeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: s
       npm: OPENCODE_SDK[spec.api],
       name: spec.providerLabel,
       options: {
-        ...(spec.baseUrl !== undefined ? { baseURL: spec.baseUrl } : {}),
+        ...(spec.baseUrl !== undefined
+          ? { baseURL: opencodeSdkBaseURL(spec.baseUrl) }
+          : {}),
         apiKey: `{file:~/.config/opencode/${OPENCODE_KEY_NAME}}`,
       },
       // W10 — the default model leads the switchable set; the server already
@@ -398,7 +418,7 @@ function applyOpencodeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: s
       2,
     )}\n`,
   );
-  writeSecretFile(keyPath, `${secret}\n`);
+  writeSecretFile(keyPath, secret);
   return [display(homeDir, cfgPath), display(homeDir, keyPath)];
 }
 

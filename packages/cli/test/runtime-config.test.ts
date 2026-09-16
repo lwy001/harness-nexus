@@ -344,7 +344,9 @@ describe('applyRuntimeConfig — opencode (9 W12)', () => {
     expect(block.options.baseURL).toBe('https://gw.example.com/v1');
     expect(block.options.apiKey).toBe('{file:~/.config/opencode/harness-nexus.key}');
     expect(Object.keys(block.models)).toEqual(['gw-large', 'gw-mini']); // default leads the switchable set
-    expect(readFileSync(key(), 'utf8')).toBe('sk-test-1\n');
+    // RAW secret, no trailing newline — opencode reads the {file:} target
+    // verbatim; a `\n` would ride the key and the gateway rejects it.
+    expect(readFileSync(key(), 'utf8')).toBe('sk-test-1');
     expect(mode(cfg())).toBe(0o600);
     expect(mode(key())).toBe(0o600);
 
@@ -354,7 +356,7 @@ describe('applyRuntimeConfig — opencode (9 W12)', () => {
       'sk-test-2',
       home,
     );
-    expect(readFileSync(key(), 'utf8')).toBe('sk-test-2\n');
+    expect(readFileSync(key(), 'utf8')).toBe('sk-test-2');
     expect(JSON.parse(readFileSync(cfg(), 'utf8'))).toEqual(parsed); // byte-stable re-apply
   });
 
@@ -400,6 +402,24 @@ describe('applyRuntimeConfig — opencode (9 W12)', () => {
       provider: { 'harness-nexus'?: { options: Record<string, string> } };
     };
     expect(noBase.provider['harness-nexus']!.options.baseURL).toBeUndefined();
+  });
+
+  it('normalizes a /v1-less gateway base onto the AI SDK convention (rig-found)', () => {
+    // claude-code takes Ark's `/api/coding` VERBATIM; the AI SDK appends only
+    // the method path, so without `/v1` the request hits a nonexistent route
+    // and the gateway auth-checks BEFORE routing — "Unauthorized", not 404.
+    applyRuntimeConfig(
+      'opencode',
+      spec({ api: 'anthropic-messages', baseUrl: 'https://ark.example.com/api/coding' }),
+      'sk-6',
+      home,
+    );
+    const parsed = JSON.parse(readFileSync(cfg(), 'utf8')) as {
+      provider: { 'harness-nexus'?: { options: Record<string, string> } };
+    };
+    expect(parsed.provider['harness-nexus']!.options.baseURL).toBe(
+      'https://ark.example.com/api/coding/v1',
+    );
   });
 
   it('refuses a commented (JSONC) config without touching it', () => {

@@ -98,19 +98,37 @@ Global (OPENCODE_CONFIG_DIR default) `~/.config/opencode/`:
 
 ## 5. Rig verification (2026-09-16, machine container `hnx-cc-machine`)
 
-Recorded after the W12 E2E pass — see `docs/dev/test-rig.md` for rig
-mechanics. Summary of what the live install confirmed:
+See `docs/dev/test-rig.md` for rig mechanics. What the live E2E confirmed
+— including two corrections to the docs-derived assumptions:
 
 - `npm i -g opencode-ai` lands `opencode` on PATH; `opencode --version`
   prints a clean semver line (probe shape OK); realpath classifies `npm`.
 - `opencode acp` initializes over stdio with the standard dialect; a chat
-  turn streams message chunks + usage through our unmodified
-  `mapAcpUpdate`.
-- The provider block + `{file:~/.config/opencode/harness-nexus.key}` key
-  file drive live turns (verified via the machine page provider-config
-  push + a chat turn on the pushed route).
-- The viewer shows `opencode.json` masked where secrets appear and the
-  `.key` file wholesale-redacted.
+  turn streams through our unmodified `mapAcpUpdate` (portal + headless).
+- **baseURL must end with `/v1` (rig-found, the session's one real bug).**
+  `@ai-sdk/anthropic` / `@ai-sdk/openai-compatible` expect the base to end
+  with `/v1` (their defaults do) and append only the method path. Ark's
+  `/api/coding` — which claude-code takes VERBATIM, it appends `/v1/…`
+  itself — therefore posted to `/api/coding/messages` and the gateway
+  auth-checks BEFORE routing, so the failure reads "Unauthorized", not
+  404. The writer now normalizes (`opencodeSdkBaseURL`). Verified by
+  curling both paths with the same key: right path 200, `/v1`-less 401
+  with the EXACT error opencode surfaced.
+- **The key file must be the RAW secret, no trailing newline.** opencode
+  reads the `{file:…}` target verbatim; a `
+` rides the key and the
+  gateway rejects it (46-byte key + `
+` = 47 bytes = 401).
+- `options.apiKey` IS wired for custom providers (provider.ts:1774 —
+  config apiKey with `provider.key` fallback); auth.json is NOT needed
+  for our flow. (`~/.local/share/opencode/auth.json` remains the user's
+  own `/connect` store; `{type:"api", key}` shape, 0600 — read from
+  source packages/opencode/src/auth/index.ts, which also documents the
+  `OPENCODE_AUTH_CONTENT` env override.)
+- The provider block + `{file:}` key reference drive live turns on the
+  pushed route (headless `opencode run` + a portal ACP turn both
+  answered), and the viewer shows `opencode.json` masked where secrets
+  appear with the `.key` file wholesale-redacted.
 
 ## 6. What we deliberately do NOT do (deferred / out of scope)
 

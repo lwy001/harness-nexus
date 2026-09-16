@@ -75,16 +75,22 @@ Two slots, both merge-preserving and idempotent:
 options: { baseURL?, apiKey: '{file:~/.config/opencode/harness-nexus.key}' },
 models: { <default>: {}, …extras } }`.
    - `npm` maps from the provider kind: `anthropic` → `@ai-sdk/anthropic`,
-     `openai-chat` → `@ai-sdk/openai-compatible`, `openai-responses` →
-     `@ai-sdk/openai`. A **baseUrl-less re-apply REMOVES our `baseURL`**
-     (the claude-code `ANTHROPIC_BASE_URL` semantic — stale endpoints must
-     not linger). Only OUR provider block + `model` key are touched.
-2. **`~/.config/opencode/harness-nexus.key`** — the secret, 0600. The
-   config references it via `{file:…}` substitution, which EVERY opencode
-   invocation resolves (TUI, ACP, headless) — unlike `{env:…}`, which only
-   sees opencode's own process env. The secret therefore never rides in
-   the JSON (the W4 viewer still masks any that do) and never depends on
-   our spawn environment.
+     `openai-chat` → `@ai-sdk/openai-compatible` (see PROVIDER_API_SUPPORT
+     for the responses exclusion). `baseURL` is **`/v1`-normalized**
+     (`opencodeSdkBaseURL`, rig-found: the AI SDK appends only the method
+     path, and a `/v1`-less gateway base fails the gateway's pre-routing
+     auth check as "Unauthorized" — NOT a 404). A **baseUrl-less re-apply
+     REMOVES our `baseURL`** (the claude-code `ANTHROPIC_BASE_URL`
+     semantic — stale endpoints must not linger). Only OUR provider block
+     + `model` key are touched.
+2. **`~/.config/opencode/harness-nexus.key`** — the secret, 0600, RAW
+   (no trailing newline — opencode reads the `{file:…}` target verbatim, a
+   `\n` rides the key and the gateway rejects it). The config references
+   it via `{file:…}` substitution, which EVERY opencode invocation
+   resolves (TUI, ACP, headless) — unlike `{env:…}`, which only sees
+   opencode's own process env. The secret therefore never rides in the
+   JSON (the W4 viewer still masks any that do) and never depends on our
+   spawn environment.
 
 ## 4. W4 — redacted viewer
 
