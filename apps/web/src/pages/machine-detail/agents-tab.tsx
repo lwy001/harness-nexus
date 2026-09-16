@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { FileCogIcon, LaptopIcon, RefreshCwIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { useI18n, dateLocale } from '@/i18n';
+import { cn } from '@/lib/utils';
 import {
   HarnessNexusError,
   PROVIDER_API_SUPPORT,
@@ -337,6 +338,33 @@ function ViewConfigButton({
  */
 const MANUAL_PROVIDER = '__manual__';
 
+/**
+ * A read-only fact cell shaped exactly like the editable cells around it —
+ * label on top, h-9 mono body — so the preset-provider summary (api / base
+ * URL / credential) aligns row-for-row with the manual arm and the other
+ * form cells. Values are data, not decoration: muted fill, no focus ring.
+ */
+function ReadonlyField({
+  label,
+  title,
+  className,
+  children,
+}: {
+  label: string;
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn('grid min-w-0 gap-2', className)}>
+      <span className="text-sm leading-none font-medium select-none">{label}</span>
+      <div title={title} className="bg-muted/50 flex h-9 items-center rounded-md border px-3">
+        <span className="truncate font-mono text-xs">{children}</span>
+      </div>
+    </div>
+  );
+}
+
 function ProviderConfigForm({
   machineId,
   target,
@@ -518,24 +546,41 @@ function ProviderConfigForm({
         </div>
 
         {selectedProvider !== null ? (
-          <div className="grid gap-1">
-            <span className="text-muted-foreground text-xs">
-              {t('machineDetail.providerPickLabel')}
-            </span>
-            <p className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="outline" className="font-mono text-[10px]">
-                {selectedProvider.api}
-              </Badge>
-              <span className="font-mono">
-                {selectedProvider.baseUrl ?? t('machineDetail.baseUrlPlaceholder')}
-              </span>
-              <span className="text-muted-foreground">·</span>
-              <span className="font-mono">{selectedProvider.credentialName}</span>
-            </p>
-          </div>
-        ) : null}
-        {needBaseUrlNote && managedTarget === 'deepseek' ? (
-          <p className="text-warn text-xs">{t('machineDetail.baseUrlNeeded')}</p>
+          <>
+            <ReadonlyField label={t('machineDetail.apiLabel')} className="min-w-36">
+              {selectedProvider.api}
+            </ReadonlyField>
+            {selectedProvider.baseUrl !== null ? (
+              <ReadonlyField
+                label={t('machineDetail.baseUrlLabel')}
+                className="min-w-52 max-w-full"
+                title={selectedProvider.baseUrl}
+              >
+                {selectedProvider.baseUrl}
+              </ReadonlyField>
+            ) : (
+              <div className="grid min-w-52 gap-2">
+                <Label htmlFor={`pc-url2-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
+                <Input
+                  id={`pc-url2-${target}`}
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={t('machineDetail.baseUrlPlaceholder')}
+                  className="font-mono text-xs"
+                  autoComplete="off"
+                  spellCheck={false}
+                  inputMode="url"
+                />
+              </div>
+            )}
+            <ReadonlyField
+              label={t('machineDetail.credentialLabel')}
+              className="min-w-44"
+              title={selectedProvider.credentialName}
+            >
+              {selectedProvider.credentialName}
+            </ReadonlyField>
+          </>
         ) : null}
 
         {manual ? (
@@ -603,22 +648,6 @@ function ProviderConfigForm({
           </>
         ) : null}
 
-        {selectedProvider !== null && selectedProvider.baseUrl === null ? (
-          <div className="grid min-w-52 gap-2">
-            <Label htmlFor={`pc-url2-${target}`}>{t('machineDetail.baseUrlLabel')}</Label>
-            <Input
-              id={`pc-url2-${target}`}
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={t('machineDetail.baseUrlPlaceholder')}
-              className="font-mono text-xs"
-              autoComplete="off"
-              spellCheck={false}
-              inputMode="url"
-            />
-          </div>
-        ) : null}
-
         <div className="grid min-w-44 gap-2">
           <Label htmlFor={`pc-model-${target}`}>{t('machineDetail.modelLabel')}</Label>
           <div className="flex gap-2">
@@ -649,6 +678,9 @@ function ProviderConfigForm({
         </Button>
       </div>
 
+      {needBaseUrlNote && managedTarget === 'deepseek' ? (
+        <p className="text-warn text-xs">{t('machineDetail.baseUrlNeeded')}</p>
+      ) : null}
       {providers !== null && usableProviders.length === 0 && manual ? (
         <p className="text-muted-foreground text-xs">{t('machineDetail.noProviders')}</p>
       ) : null}
