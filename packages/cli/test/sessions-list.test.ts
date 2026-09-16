@@ -75,6 +75,7 @@ function makeCountedAdapter(): { command: string; spawns: () => number } {
 const ENV = (command: string): NodeJS.ProcessEnv => ({
   HN_ACP_COMMAND_CLAUDE_CODE: command,
   HN_ACP_COMMAND_CODEX: command,
+  HN_ACP_COMMAND_OPENCODE: command,
   PATH: process.env.PATH ?? '',
 });
 
@@ -137,6 +138,21 @@ describe('sessions:list TTL cache (9 W11 D)', () => {
       return r.sessions !== undefined ? r : undefined;
     });
     expect(adapter.spawns()).toBe(2);
+  });
+
+  it('opencode rides the adapter arm (9 W13 — its ACP has list/load/resume)', async () => {
+    const socket = new FakeSocket();
+    attachSessionsHandlers(socket as never, {
+      env: ENV(`node ${FIXTURE}`),
+      homeDir: mkdtempSync(join(tmpdir(), 'hnx-sessions-home-')),
+    });
+
+    socket.receive('sessions:list', { requestId: 'oc1', target: 'opencode' });
+    const r = await waitFor(() => {
+      const res = socket.resultOf('oc1');
+      return res.sessions !== undefined ? res : undefined;
+    });
+    expect(r.sessions).toHaveLength(1);
   });
 
   it('concurrent requests share one in-flight computation', async () => {

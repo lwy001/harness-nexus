@@ -1071,9 +1071,13 @@ Full design + external ground truth in `docs/design/phase-9-w12-opencode.md`
   `command/*.md` → commands, `agent/*.md` → sub_agents, `skill/<n>/SKILL.md`
   when present. JSONC parses as nothing (hand-managed = out of bounds).
 * **NOT done (deliberate)**: profile install adapter (opencode is NOT a
-  `DEPLOYABLE_TARGET`, the pick lists are unchanged), native sessions rail,
+  `DEPLOYABLE_TARGET`, the pick lists are unchanged),
   `~/.local/share/opencode/auth.json` (the user's own `/connect` store).
-  hermes runtime support was descoped with the user this wave.
+  hermes runtime support was descoped with the user this wave. ~~native
+  sessions rail~~ — CORRECTED 9 W13: opencode's ACP DOES expose
+  `session/list` + `load` + `resume` with full SessionInfo (verified against
+  1.18.31 on the rig; the W12 "no session/list" finding was wrong) — the
+  sessions arm now spawns `opencode acp` like claude/codex.
 * Daemon `0.17.0-p9w12`; rig E2E passed end to end (install job → detected
   Agent card → provider push → headless `opencode run` + portal ACP turn
   answering on the pushed route → viewer masked).

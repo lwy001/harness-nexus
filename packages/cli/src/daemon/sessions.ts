@@ -12,8 +12,12 @@ import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-session
  * platform persists nothing session-shaped; this answers `sessions:list` from
  * whatever the TARGET itself holds:
  *
- *   claude-code / codex — a short-lived ACP adapter spawn + `session/list`
- *     (the adapter IS the vendor's session list; no storage-format coupling).
+ *   claude-code / codex / opencode — a short-lived ACP adapter spawn +
+ *     `session/list` (the adapter IS the vendor's session list; no
+ *     storage-format coupling). opencode joined 9 W13: its ACP surface has
+ *     list + load + resume with full SessionInfo (title/cwd/updatedAt) —
+ *     verified against 1.18.31 on the rig; the W12 "no session/list" note
+ *     was wrong.
  *   deepseek — a pure file scan of `~/.dsh/sessions` (no spawn, no auth; dsh's
  *     own list returns neither title nor time, so both come from the
  *     transcript header + mtime).
@@ -82,7 +86,7 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
     const { requestId, target, refresh } = parsed.data;
     void (async () => {
       try {
-        if (target === 'claude-code' || target === 'codex') {
+        if (target === 'claude-code' || target === 'codex' || target === 'opencode') {
           socket.emit('sessions:list:result', {
             requestId,
             sessions: await listCached(target, refresh === true, () => listViaAdapter(target, env)),
@@ -156,7 +160,7 @@ function listDsh(home: string): NativeSessionView[] {
 
 /** Spawn the target's adapter, `session/list`, kill. Bounded, best-effort. */
 async function listViaAdapter(
-  target: 'claude-code' | 'codex',
+  target: 'claude-code' | 'codex' | 'opencode',
   env: NodeJS.ProcessEnv,
 ): Promise<NativeSessionView[]> {
   const cmd = resolveAcpCommand(target, env);
