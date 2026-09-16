@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { FileCogIcon, LaptopIcon, RefreshCwIcon } from 'lucide-react';
+import { FileCogIcon, LaptopIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { useI18n, dateLocale } from '@/i18n';
@@ -547,9 +547,6 @@ function ProviderConfigForm({
 
         {selectedProvider !== null ? (
           <>
-            <ReadonlyField label={t('machineDetail.apiLabel')} className="min-w-36">
-              {selectedProvider.api}
-            </ReadonlyField>
             {selectedProvider.baseUrl !== null ? (
               <ReadonlyField
                 label={t('machineDetail.baseUrlLabel')}
@@ -573,6 +570,9 @@ function ProviderConfigForm({
                 />
               </div>
             )}
+            <ReadonlyField label={t('machineDetail.apiLabel')} className="min-w-36">
+              {selectedProvider.api}
+            </ReadonlyField>
             <ReadonlyField
               label={t('machineDetail.credentialLabel')}
               className="min-w-44"
@@ -609,9 +609,9 @@ function ProviderConfigForm({
                 inputMode="url"
               />
             </div>
-            <div className="grid min-w-24 gap-2">
-              <Label htmlFor={`pc-api-${target}`}>{t('machineDetail.apiLabel')}</Label>
-              {apiOptions.length > 1 ? (
+            {apiOptions.length > 1 ? (
+              <div className="grid min-w-24 gap-2">
+                <Label htmlFor={`pc-api-${target}`}>{t('machineDetail.apiLabel')}</Label>
                 <Select value={apiFlavor} onValueChange={setApiFlavor}>
                   <SelectTrigger id={`pc-api-${target}`} className="font-mono text-xs">
                     <SelectValue />
@@ -624,12 +624,14 @@ function ProviderConfigForm({
                     ))}
                   </SelectContent>
                 </Select>
-              ) : (
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  {apiOptions[0]}
-                </Badge>
-              )}
-            </div>
+              </div>
+            ) : (
+              // Single-flavor target — same read-only h-9 cell as the preset
+              // arm, so the row heights match (was a tiny standalone badge).
+              <ReadonlyField label={t('machineDetail.apiLabel')} className="min-w-36">
+                {apiOptions[0]}
+              </ReadonlyField>
+            )}
             <div className="grid min-w-44 gap-2">
               <Label htmlFor={`pc-cred-${target}`}>{t('machineDetail.credentialLabel')}</Label>
               <Select value={credentialName} onValueChange={setCredentialName}>
@@ -680,6 +682,26 @@ function ProviderConfigForm({
 
       {needBaseUrlNote && managedTarget === 'deepseek' ? (
         <p className="text-warn text-xs">{t('machineDetail.baseUrlNeeded')}</p>
+      ) : null}
+      {extraModels.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm leading-none font-medium">
+            {t('machineDetail.extraModelsLabel', { count: extraModels.length })}
+          </span>
+          {extraModels.map((m) => (
+            <Badge key={m} variant="outline" className="gap-1 pr-1 font-mono text-xs">
+              {m}
+              <button
+                type="button"
+                className="hover:text-danger -mr-1 rounded-sm p-0.5"
+                onClick={() => setExtraModels((prev) => prev.filter((x) => x !== m))}
+                aria-label={t('machineDetail.extraModelsRemove', { model: m })}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
       ) : null}
       {providers !== null && usableProviders.length === 0 && manual ? (
         <p className="text-muted-foreground text-xs">{t('machineDetail.noProviders')}</p>
