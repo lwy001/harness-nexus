@@ -92,12 +92,17 @@ description clamped 512, `input.hint` clamped 256, malformed rows skipped)
 
 ## 4. Rig results (2026-09-17, daemon `0.20.0-p9w15`)
 
-- codex: catalog arrives on open (`review` with hint, `review-branch`,
-  `review-commit`, `init`, `compact`, `logout`); palette opens on `/`,
-  filters, selects, and a `/init`-style bare command turn executes
-  end-to-end (browser-verified).
-- claude-code: catalog incl. `deep-research`; the `mcp:` rename path rides
-  verbatim names.
-- opencode: catalog from its `Command.Info` list (platform-deployed custom
-  commands surface here).
-- dsh: no catalog — typing `/` shows nothing (honest absence).
+- **Catalogs, all four targets**: codex 6 (`review` + `input.hint`,
+  `review-branch`, `review-commit`, `init`, `compact`, `logout`); claude-code
+  **46** (incl. `deep-research` AND the emitter-installed `cc-test-kit:…`
+  plugin commands — platform-deployed commands surface through the agent's
+  own catalog; `mcp:`/plugin names ride verbatim); opencode 3 (`init`,
+  `review`, `customize-opencode`); dsh NONE — typing `/` shows no palette.
+- **Palette (browser)**: opens on `/`; first-word filter (`/ini` narrows to
+  exactly `/init`; a non-matching prefix shows the 无匹配命令 empty state);
+  ArrowUp/ArrowDown cycle; bare Enter SELECTS and fills `/name ` (trailing
+  space verified); click selects.
+- **Execution E2E**: `/review ` sent as a plain prompt → codex ran its
+  review command (1m17s turn, honest verdict — the rig container has no
+  bubblewrap so its sandbox can't launch; environment limit, not a pipeline
+  issue; clean turn end, composer re-enabled).

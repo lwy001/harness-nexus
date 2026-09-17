@@ -426,6 +426,27 @@ credentialName}` with the three kinds `openai-chat` / `openai-responses`
     `chat:session.start modelOptions` from the stored RuntimeConfig.
     Research: `docs/research/phase-9-w13-multi-model-picker.md` · design:
     `docs/design/phase-9-w13-multi-model.md`.
+  - **W14 Plan/todo panel + verification — SHIPPED (2026-09-17)** — the
+    agent's ACP `plan` snapshots (FULL replace; claude wrapper surfaces
+    TodoWrite/Task* exclusively this way, codex maps update_plan) became a
+    `plan` stream kind + a TodoPanel above the composer (collapsed by
+    default, progress summary, status glyphs). The wave's second
+    deliverable — verification — confirmed the subagent (`Agent`-tool card)
+    and permission (claude allow-once / opencode once-always-reject) flows
+    E2E; rig truth: codex is the live plan producer today, claude's
+    task-lane dormant on CLI 2.1.263 (headless sessions expose no task
+    tools — the wire+panel are ready for when they do).
+    Research: `docs/research/phase-9-w14-w15-plan-commands.md` · design:
+    `docs/design/phase-9-w14-plan-todo.md`.
+  - **W15 Slash commands — SHIPPED (2026-09-17)** — the composer's `/`
+    palette lists the agent's OWN advertised commands
+    (`available_commands_update` → a `commands` stream kind; claude 46 on
+    the rig incl. emitter-installed plugin commands, codex 6, opencode 3,
+    dsh none — honest absence, no fallback table). Invoking one is just a
+    `/name args` prompt (no new RPC); palette interaction per the portal
+    reference (first-word filter, bare Enter selects + fills, Enter-with-
+    args sends). Research: `docs/research/phase-9-w14-w15-plan-commands.md`
+    · design: `docs/design/phase-9-w15-commands.md`.
 - Non-goals v1: harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).
