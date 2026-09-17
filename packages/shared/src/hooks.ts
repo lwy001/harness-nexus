@@ -67,6 +67,9 @@ export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> |
   // 9 W12 — opencode's plugin/extension surface is TS code, not a declarative
   // hooks.json — null, like Hermes/Codex/deepseek.
   opencode: null,
+  // 9 W16 — pi's extension surface is TS code (tools/sub-agents/hooks ride
+  // extensions), not a declarative hooks.json — null, like the class above.
+  pi: null,
   // 'generic' assumes the full set — a permissive default for unknown targets.
   generic: new Set<HookEvent>(HOOK_EVENTS),
 };

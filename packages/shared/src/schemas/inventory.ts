@@ -23,6 +23,7 @@ export const SCANNABLE_TARGETS = [
   'hermes',
   'deepseek',
   'opencode',
+  'pi',
 ] as const;
 
 /**
@@ -31,7 +32,7 @@ export const SCANNABLE_TARGETS = [
  * the user 2026-09-17; it stays scan + profile-deploy + ACP-chat only).
  * Kept in lockstep with `packages/cli/src/inventory/runtime.ts`.
  */
-export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek', 'opencode'] as const;
+export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek', 'opencode', 'pi'] as const;
 export const runtimeTargetSchema = z.enum(RUNTIME_TARGETS);
 export type RuntimeTarget = z.infer<typeof runtimeTargetSchema>;
 

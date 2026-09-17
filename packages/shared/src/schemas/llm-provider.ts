@@ -36,6 +36,13 @@ export const PROVIDER_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApiKin
   // @ai-sdk/openai and @ai-sdk/openai-compatible deterministically — the
   // models.dev built-in 'openai' provider already covers OpenAI proper.
   opencode: ['anthropic', 'openai-chat'],
+  // 9 W16 — pi's models.json `api` enum natively names all three wires
+  // (anthropic-messages / openai-completions / openai-responses) — the FIRST
+  // target with the full set; no flavor had to be excluded for writer
+  // ambiguity. Unlike opencode above, the coarse 'openai' flavor still cannot
+  // distinguish chat vs responses, so pi ALSO honors openai-responses only
+  // when the fine kind is present (see applyPiConfig's mapping).
+  pi: ['anthropic', 'openai-chat', 'openai-responses'],
 };
 
 /** Map a provider kind onto the W3 spec flavor (writers keyed on it stay untouched). */

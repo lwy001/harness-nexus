@@ -44,6 +44,8 @@ describe('runtimeSpecUnsupportedReason', () => {
     expect(RUNTIME_API_SUPPORT['claude-code']).toEqual(['anthropic-messages']);
     expect(RUNTIME_API_SUPPORT.codex).toEqual(['openai']);
     expect(RUNTIME_API_SUPPORT.deepseek).toContain('openai');
+    // 9 W16 — pi's models.json api enum covers both coarse flavors.
+    expect(RUNTIME_API_SUPPORT.pi).toEqual(['anthropic-messages', 'openai']);
   });
 
   it('rejects flavor mismatches (claude-code cannot speak openai)', () => {
@@ -68,6 +70,12 @@ describe('runtimeSpecUnsupportedReason', () => {
       }),
     ).toBeNull();
     expect(runtimeSpecUnsupportedReason('codex', { ...validSpec, baseUrl: undefined })).toBeNull();
+  });
+
+  it('demands a baseUrl for pi (the writer defines a custom models.json provider)', () => {
+    const spec = { ...validSpec, baseUrl: undefined };
+    expect(runtimeSpecUnsupportedReason('pi', spec)).toContain('baseUrl');
+    expect(runtimeSpecUnsupportedReason('pi', validSpec)).toBeNull();
   });
 });
 
