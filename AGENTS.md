@@ -301,6 +301,8 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
   → `docs/design/phase-9-w10-llm-providers.md`
 - **Multi-model picker — dropdown = configured set (Phase 9 W13)**
   → `docs/design/phase-9-w13-multi-model.md`
+- **pi agent onboarding + the self-developed ACP↔pi-RPC bridge (Phase 9 W16)**
+  → `docs/design/phase-9-w16-pi-agent.md`
 - **Plan/todo panel + subagent/permission verification (Phase 9 W14)**
   → `docs/design/phase-9-w14-plan-todo.md` ·
   research: `docs/research/phase-9-w14-w15-plan-commands.md`
@@ -1220,7 +1222,7 @@ Summary for daily work:
   `clientCapabilities: { elicitation: { form: {} } }` — **url mode is
   deliberately NOT advertised** (OAuth-jump class; no UI for it).
 - **Wire**: `{kind:'elicitation_request', requestId, message, fields,
-  toolCallId?}` + `{kind:'elicitation_resolved', outcome}` stream events,
+toolCallId?}` + `{kind:'elicitation_resolved', outcome}` stream events,
   `chat:elicitation.respond {sessionId, requestId, action, values?}`
   browser→server→daemon — the permission lifecycle mirrored exactly
   (server watchdog + daemon 75s backstop both cancel on timeout; the
@@ -1284,6 +1286,81 @@ commands; invoking one is just a prompt**:
   an agent that never pushed commands shows no palette (honest absence).
 - Fixture: `FIXTURE_COMMANDS=1` (spawnEnv!) pushes a 2-command catalog
   after `session/new`.
+
+## pi agent onboarding (Phase 9 W16)
+
+Full design + rig results in `docs/design/phase-9-w16-pi-agent.md`; ground
+truth in `docs/research/phase-9-w16-pi-agent.md`. Summary for daily work —
+**pi (Earendil Works, `@earendil-works/pi-coding-agent`, ex `@mariozechner`
+— deprecated scope, never pin it) is the fifth runtime-managed Agent with
+the FULL surface**:
+
+- **Zero new platform concepts** (the W12 property): `pi` joined
+  `AgentTarget`/`RUNTIME_TARGETS`/`SCANNABLE_TARGETS` + `DEPLOYABLE_TARGETS`;
+  harness jobs ride the npm arm (`HARNESS_PACKAGES['pi']`, `latest` tag);
+  the probe bin is `pi`. **Node ≥22.19 engine** — the highest floor;
+  installs/apply-config carry a `piNodeWarning` result on older daemons
+  (dsh precedent). Server code: only the deployable list.
+- **W3 writer (`applyPiConfig`)**: `~/.pi/agent/models.json`
+  `providers['harness-nexus']` (`PI_PROVIDER_ID` in shared) with the
+  endpoint, the pi-ai `api` value (coarse openai→`openai-completions`,
+  anthropic→`anthropic-messages`), an `apiKey` of `!cat "<abs keyfile>"`
+  (pi's request-time command syntax — works for TUI + bridge + headless),
+  and the models array (default leads the W10 extras); `settings.json`
+  `defaultProvider`/`defaultModel` (BARE id — verified) +
+  `enabledModels`; `~/.pi/agent/harness-nexus.key` 0600 raw no newline.
+  Strict-JSON merge-preserving (hand-mangled files refuse untouched);
+  baseUrl is taken VERBATIM (rig: Ark `/api/coding/v3` needs NO `/v1`
+  normalization — not the opencode case) and is REQUIRED (route gate +
+  daemon double-check). W4 viewer: settings/models/trust + `auth.json`
+  (wholesale — the user's /login store) + our key file (wholesale).
+- **The chat bridge is SELF-DEVELOPED and IN-PROCESS**: pi speaks NO ACP,
+  so `PiRpcConnection` (`daemon/acp/pi-connection.ts`) implements the
+  extracted `AgentConnection` surface (agent-connection.ts — chat.ts is
+  now dialect-agnostic; `DaemonSession.conn` is that interface) while
+  translating: ACP requests → pi `--mode rpc` JSONL commands, pi events →
+  ACP `session/update`s. Load-bearing dialect facts (ALL rig-captured
+  against 0.85.1): **responses are `{id, type:'response', command,
+success, data}` — payload under `data`**; **message deltas ride
+  `assistantMessageEvent {type:'text_delta'|'thinking_delta',
+contentIndex, delta}`**; `get_session_stats.data.sessionId`; usage
+  `{input, output}`; `agent_settled` ends the turn. **The `session/prompt`
+  ACP response is HELD until `agent_settled`/abort** (pi ACKs immediately
+  — ACP resolves at turn end). Line codec splits on `\n` ONLY (readline
+  splits U+2028/U+2029 inside JSON strings). Command override:
+  `HN_ACP_COMMAND_PI` (fixture/pins). `session/load` = `switch_session` +
+  file-replayed history emitted BEFORE the response resolves (the
+  wireCapture path); resume advertises `loadSession: true` only. Model
+  values are `harness-nexus/<id>` refs; W13 rewrites intersect to them
+  (opencode stance). Permissions/elicitation: pi has NEITHER — the
+  handlers never fire (honest absence). bash/tool_execution event arms ride
+  documented shapes + defensive picks (live tool events not yet
+  rig-exercised).
+- **W7 sessions rail**: pure file scan of
+  `~/.pi/agent/sessions/--<cwd>--/<ts>_<uuid>.jsonl` (plain JSONL, no
+  zstd): header `{type:'session', id, timestamp, cwd}` for identity, last
+  `session_info.name` for title, last `model_change` for the model, mtime
+  recency. `piSessionReplay` walks the ACTIVE leaf chain (branch-safe) —
+  the same parser feeds the bridge's load replay. `piFindSessionFile`
+  resolves partial ids (pi's own convention).
+- **Deploy adapter + scanner**: skills → `~/.pi/agent/skills/<kebab>/`
+  with GUARANTEED `name`+`description` frontmatter (pi warns and skips
+  files without both; `ensurePiFrontmatter`); commands →
+  `~/.pi/agent/prompts/<kebab>.md` (the FILENAME is the `/name` command —
+  prompt templates, frontmatter optional so bodies pass verbatim);
+  mcp/sub_agent/hook/rule SKIPPED with reasons (MCP is extension-based —
+  NO declarative surface; rules are project-cwd `AGENTS.md`). Scanner:
+  skills (frontmatter `name` WINS over the dirname — pi allows the
+  mismatch) + prompts; no MCP arm.
+- **Fixture** `test/fixtures/pi-rpc-agent.mjs` speaks the rig-verified
+  dialect (data-nested responses, assistantMessageEvent deltas, scripted
+  turns incl. `fail-turn` NACK and `hang`+abort); `pi-chat.test.ts` covers
+  the pure mappers + full round-trips through `attachChatHandlers`.
+- Daemon `0.22.0-p9w16`; rig E2E passed end to end (install 0.85.1 →
+  detected card → provider push (PONG headless) → viewer masked → rail
+  rows → streamed chat turn (W16OK) → live model switch to doubao → leak
+  scan clean). Open: image attach on the `prompt.images` arm (V4) and live
+  `tool_execution_*` events.
 
 ## LLM provider management (Phase 9 W10)
 
