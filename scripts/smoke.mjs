@@ -1228,7 +1228,7 @@ r = await req('POST', `/api/machines/${c3MachineId}/inventory/scan`, {
   body: {},
 });
 expect('scan status', r.status, 200);
-expect('scanned 4 targets', r.json.inventory.length, 4);
+expect('scanned 6 targets', r.json.inventory.length, 6); // claude-code/codex/hermes/deepseek/opencode/pi
 const ccSnap = r.json.inventory.find((i) => i.target === 'claude-code');
 expect('cc snapshot has an agent', ccSnap.agents.length, 1);
 const ccItems = ccSnap.agents[0].items;
@@ -1976,7 +1976,7 @@ r = await req('POST', `/api/machines/${w1MachineId}/inventory/scan`, {
 });
 expect('w1 scan status', r.status, 200);
 const w1Rows = r.json.inventory;
-expect('w1 scanned 4 targets', w1Rows.length, 4);
+expect('w1 scanned 6 targets', w1Rows.length, 6);
 const w1Cc = w1Rows.find((i) => i.target === 'claude-code');
 expect('cc runtime installed', w1Cc.runtime?.installed, true);
 expect('cc runtime version', w1Cc.runtime?.version, '9.9.7-fake (Claude Code)');
