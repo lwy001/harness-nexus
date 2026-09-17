@@ -33,6 +33,9 @@ export const HARNESS_PACKAGES: Record<string, string> = {
   codex: '@openai/codex',
   deepseek: '@deepseek-ai/dsh',
   opencode: 'opencode-ai',
+  // 9 W16 — the earendil org took over from @mariozechner (deprecated at
+  // 0.73.1); pin this name, never the old scope.
+  pi: '@earendil-works/pi-coding-agent',
 };
 
 /**
@@ -46,6 +49,7 @@ const CHANNEL_TAG: Record<string, string> = {
   codex: 'latest',
   deepseek: 'latest',
   opencode: 'latest',
+  pi: 'latest',
 };
 
 /**
@@ -124,6 +128,16 @@ export function dshNodeWarning(): string | null {
   return ok
     ? null
     : `deepseek's ACP profile needs Node >=22.15 (this daemon runs ${process.versions.node}) — chat sessions will fail until Node is upgraded`;
+}
+
+/** pi's engine floor (registry manifest 0.85.1) — the highest of our targets. */
+export function piNodeWarning(): string | null {
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major === undefined) return null;
+  const ok = major > 22 || (major === 22 && (minor ?? 0) >= 19);
+  return ok
+    ? null
+    : `pi needs Node >=22.19 (this daemon runs ${process.versions.node}) — its CLI refuses to start until Node is upgraded`;
 }
 
 export interface HarnessJobOptions {
@@ -234,6 +248,9 @@ export async function runHarnessJob(
   }
   if (warning === null && payload.target === 'deepseek') {
     warning = dshNodeWarning();
+  }
+  if (warning === null && payload.target === 'pi') {
+    warning = piNodeWarning();
   }
 
   // Re-probe so the job RESULT reports what actually landed, then auto-report
