@@ -36,8 +36,8 @@ run with, and cannot view the harness's effective config from the UI.
 - Session-level model overrides, per-profile model routing.
 - Uninstalling harness software (reversal = pin an older version; full removal
   stays manual — destructive and cheap to add later if asked).
-- `zcode` / `hermes` runtime management (unlisted targets; the job table is
-  extensible when they matter).
+- `zcode` / `hermes` runtime management (unlisted targets; hermes was
+  CANCELLED with the user 2026-09-17 — dropped, not deferred).
 - Enterprise managed-settings hierarchies (Claude Code managed settings,
 - OS packaging beyond npm + claude native + brew detection).
 - ECC / Superpower import (still Phase 3) and orchestration (C6).
