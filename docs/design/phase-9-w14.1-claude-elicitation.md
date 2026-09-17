@@ -124,14 +124,24 @@ never the raw JSON schema on the wire:
 
 ## 7. Rig results (2026-09-17, daemon `0.21.0-p9w14.1`)
 
-- claude-code: prompt asking the agent to question the user → the card
-  renders (enum radio + custom text + note/boolean fields), answering
-  `Red` continues the turn with the selection echoed by the model; decline
-  settles as a denied tool use. The MCP-elicitation path was not exercised
-  (no MCP server mounted under the chat adapter on the rig).
-- Plan lane (env fix, same deploy): a "create todos alpha/beta" turn lights
-  the TodoPanel and marks entries off as the model completes them.
-- codex / opencode / dsh: unchanged — no elicitation producers (research §1).
+Browser E2E on a fresh claude-code channel (`/root`, gateway model
+deepseek-v4-flash, wrapper 0.78.0 → SDK-bundled CLI 2.1.270):
+
+- **Ask User ✓** — "Use the AskUserQuestion tool to ask me: which color do
+  you prefer, red or blue?" → the question card rendered inline (running
+  tool row + Red/Blue radios with descriptions + the `Other` custom text
+  field + 回答/拒绝/取消). Selecting Red + 回答 settled the card (it
+  VANISHES per §5) and the turn continued with the model acknowledging
+  **"You prefer red. 👍"** (turn tail 41.4s · ctx 22k/200k) — the values
+  round-tripped verbatim into the tool input.
+- **Plan lane ✓ (companion env fix, same deploy)** — "Use TaskCreate to
+  create two todos alpha/beta, mark alpha completed" → the model replied
+  DONE and the TodoPanel lit up above the composer: 已完成 1 · 待办 1 (1/2),
+  expanded list showing alpha + beta. The W14 claude column is live.
+- The MCP-elicitation path was not exercised (no MCP server mounted under
+  the chat adapter on the rig); codex / opencode / dsh unchanged — no
+  elicitation producers (research §1).
+- Screenshot: `/tmp/w14.1-rig-e2e.png` (ephemeral).
 
 ## Out of scope
 
