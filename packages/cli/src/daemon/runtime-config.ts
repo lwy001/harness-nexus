@@ -6,13 +6,14 @@ import {
   harnessJobPayloadSchema,
   harnessResultDataSchema,
   OPENCODE_PROVIDER_ID,
+  PI_PROVIDER_ID,
   type JobView,
   type RuntimeConfigSpec,
 } from '@harness-nexus/shared';
 import { HarnessNexusClient } from '@harness-nexus/sdk';
 import { beginMarker, endMarker, DSH_PATCH_FILENAME } from '../install/adapters/deepseek.js';
 import { mergeTomlSection } from '../install/adapters/codex.js';
-import { dshNodeWarning } from './runtime.js';
+import { dshNodeWarning, piNodeWarning } from './runtime.js';
 
 /**
  * Provider-config apply (Phase 9 W3) — the daemon half of
@@ -433,9 +434,81 @@ function applyOpencodeConfig(spec: RuntimeConfigSpec, secret: string, homeDir: s
   return [display(homeDir, cfgPath), display(homeDir, keyPath)];
 }
 
+// ---- pi (9 W16) ----
+
+/** The raw-secret key file under `~/.pi/agent/` (0600, no trailing newline). */
+const PI_KEY_NAME = 'harness-nexus.key';
+
+/** models.json `api` value per spec coarse flavor (pi-ai names the wire). */
+const PI_API: Record<RuntimeConfigSpec['api'], string> = {
+  'anthropic-messages': 'anthropic-messages',
+  openai: 'openai-completions',
+};
+
+/**
+ * Three merge-preserving slots (research §3 / design §S3):
+ *
+ *  1. `~/.pi/agent/models.json` — `providers['harness-nexus']` with the
+ *     endpoint, the pi-ai `api` wire, an `apiKey` that READS the key file at
+ *     request time via pi's `!command` value syntax (resolved per request —
+ *     TUI, bridge, and headless alike), and a `models` array of bare ids
+ *     (pi MERGES custom ids over built-ins per provider).
+ *  2. `~/.pi/agent/settings.json` — `defaultProvider`/`defaultModel` (the
+ *     active route) + `enabledModels` = `unique([model, ...extras])` (the
+ *     W10/W13 switchable set).
+ *  3. `~/.pi/agent/harness-nexus.key` — the secret, 0600, NO trailing
+ *     newline (`!cat` hands the bytes to pi verbatim).
+ *
+ * Both JSON files fail `JSON.parse` if hand-mangled → the job errors without
+ * touching them (same stance as opencode). A baseUrl-less spec is rejected
+ * at the route AND re-checked here — pi's custom provider REQUIRES an
+ * endpoint, so a stale queued job fails honestly instead of writing a
+ * dead route.
+ */
+function applyPiConfig(spec: RuntimeConfigSpec, secret: string, homeDir: string): string[] {
+  if (spec.baseUrl === undefined) {
+    throw new Error('pi provider routes require a baseUrl');
+  }
+  const dir = join(homeDir, '.pi', 'agent');
+  const modelsPath = join(dir, 'models.json');
+  const settingsPath = join(dir, 'settings.json');
+  const keyPath = join(dir, PI_KEY_NAME);
+
+  const modelsDoc = readJson(modelsPath); // absent → fresh; malformed → throws, untouched
+  const modelIds = [...new Set([spec.model, ...(spec.models ?? [])])];
+  const providers = {
+    ...((modelsDoc.providers as Record<string, unknown> | undefined) ?? {}),
+    [PI_PROVIDER_ID]: {
+      name: spec.providerLabel,
+      baseUrl: spec.baseUrl,
+      api: PI_API[spec.api],
+      apiKey: `!cat ${JSON.stringify(keyPath)}`,
+      models: modelIds.map((id) => ({ id })),
+    },
+  };
+  writeSecretFile(modelsPath, `${JSON.stringify({ ...modelsDoc, providers }, null, 2)}\n`);
+
+  const settings = readJson(settingsPath);
+  writeSecretFile(
+    settingsPath,
+    `${JSON.stringify(
+      {
+        ...settings,
+        defaultProvider: PI_PROVIDER_ID,
+        defaultModel: spec.model,
+        enabledModels: modelIds,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeSecretFile(keyPath, secret);
+  return [display(homeDir, modelsPath), display(homeDir, settingsPath), display(homeDir, keyPath)];
+}
+
 /** The per-target native writer — pure file surgery, no I/O beyond the harness homes. */
 export function applyRuntimeConfig(
-  target: 'claude-code' | 'codex' | 'deepseek' | 'opencode',
+  target: 'claude-code' | 'codex' | 'deepseek' | 'opencode' | 'pi',
   spec: RuntimeConfigSpec,
   secret: string,
   homeDir: string,
@@ -454,6 +527,8 @@ export function applyRuntimeConfig(
       return { files: applyDshConfig(spec, secret, homeDir) };
     case 'opencode':
       return { files: applyOpencodeConfig(spec, secret, homeDir) };
+    case 'pi':
+      return { files: applyPiConfig(spec, secret, homeDir) };
   }
 }
 
@@ -484,7 +559,8 @@ export async function runApplyConfigJob(
     const bundle = await client.getRuntimeConfigBundle(target);
     progress('apply', `writing ${target} config`);
     const { files } = applyRuntimeConfig(target, bundle.spec, bundle.secret, homeDir);
-    const nodeWarning = target === 'deepseek' ? dshNodeWarning() : null;
+    const nodeWarning =
+      target === 'deepseek' ? dshNodeWarning() : target === 'pi' ? piNodeWarning() : null;
     const data = harnessResultDataSchema.parse({
       target,
       action: 'apply-config',

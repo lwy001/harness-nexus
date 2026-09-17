@@ -453,6 +453,85 @@ describe('applyRuntimeConfig — opencode (9 W12)', () => {
   });
 });
 
+describe('applyRuntimeConfig — pi (9 W16)', () => {
+  const models = (): string => path.join(home, '.pi/agent/models.json');
+  const settings = (): string => path.join(home, '.pi/agent/settings.json');
+  const key = (): string => path.join(home, '.pi/agent/harness-nexus.key');
+
+  it('writes the provider entry, settings defaults, and 0600 key file; idempotent', () => {
+    applyRuntimeConfig(
+      'pi',
+      spec({ api: 'openai', model: 'gw-large', models: ['gw-mini'] }),
+      'sk-pi-1',
+      home,
+    );
+    const modelsDoc = JSON.parse(readFileSync(models(), 'utf8')) as {
+      providers: Record<string, Record<string, unknown>>;
+    };
+    const block = modelsDoc.providers['harness-nexus']!;
+    expect(block.baseUrl).toBe('https://gw.example.com/v1');
+    expect(block.api).toBe('openai-completions'); // coarse openai → chat completions
+    // The key is read at REQUEST time via pi's !command syntax — TUI, bridge,
+    // and headless all resolve it, quoting the absolute path for the shell.
+    expect(block.apiKey).toBe(`!cat ${JSON.stringify(key())}`);
+    expect(block.models).toEqual([{ id: 'gw-large' }, { id: 'gw-mini' }]); // default leads
+
+    const settingsDoc = JSON.parse(readFileSync(settings(), 'utf8')) as Record<string, unknown>;
+    expect(settingsDoc.defaultProvider).toBe('harness-nexus');
+    expect(settingsDoc.defaultModel).toBe('gw-large');
+    expect(settingsDoc.enabledModels).toEqual(['gw-large', 'gw-mini']);
+
+    // RAW secret, no trailing newline — `!cat` hands the bytes over verbatim.
+    expect(readFileSync(key(), 'utf8')).toBe('sk-pi-1');
+    expect(mode(models())).toBe(0o600);
+    expect(mode(settings())).toBe(0o600);
+    expect(mode(key())).toBe(0o600);
+
+    const before = readFileSync(models(), 'utf8');
+    applyRuntimeConfig(
+      'pi',
+      spec({ api: 'openai', model: 'gw-large', models: ['gw-mini'] }),
+      'sk-pi-2',
+      home,
+    );
+    expect(readFileSync(key(), 'utf8')).toBe('sk-pi-2');
+    expect(readFileSync(models(), 'utf8')).toBe(before); // byte-stable re-apply
+  });
+
+  it('maps the anthropic flavor and preserves user keys + other providers', () => {
+    writeRel(
+      '.pi/agent/settings.json',
+      JSON.stringify({ theme: 'light', enabledModels: ['user-model'] }, null, 2),
+    );
+    writeRel(
+      '.pi/agent/models.json',
+      JSON.stringify({ providers: { openai: { baseUrl: 'https://api.openai.com/v1' } } }, null, 2),
+    );
+    applyRuntimeConfig('pi', spec({ api: 'anthropic-messages' }), 'sk-pi-3', home);
+    const modelsDoc = JSON.parse(readFileSync(models(), 'utf8')) as {
+      providers: Record<string, Record<string, unknown>>;
+    };
+    expect(modelsDoc.providers['harness-nexus']!.api).toBe('anthropic-messages');
+    expect(modelsDoc.providers.openai).toBeDefined(); // other provider survives
+    const settingsDoc = JSON.parse(readFileSync(settings(), 'utf8')) as Record<string, unknown>;
+    expect(settingsDoc.theme).toBe('light'); // user key survives
+    expect(settingsDoc.enabledModels).toEqual(['gw-large']); // platform-owned key
+  });
+
+  it('refuses a baseUrl-less or malformed-JSON state without touching files', () => {
+    const beforeModels = readFileSync(models(), 'utf8');
+    expect(() => applyRuntimeConfig('pi', spec({ baseUrl: undefined }), 'k', home)).toThrow(
+      /baseUrl/,
+    );
+    expect(readFileSync(models(), 'utf8')).toBe(beforeModels);
+
+    const junk = '{\n  // hand-written\n}\n';
+    writeRel('.pi/agent/models.json', junk);
+    expect(() => applyRuntimeConfig('pi', spec(), 'k', home)).toThrow(/not valid JSON/);
+    expect(readFileSync(models(), 'utf8')).toBe(junk);
+  });
+});
+
 /** Minimal socket recorder (same trick as the W2 runtime-job tests). */
 class FakeSocket extends EventEmitter {
   sent: { event: string; payload: unknown }[] = [];

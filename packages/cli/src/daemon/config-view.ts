@@ -26,13 +26,27 @@ export const TARGET_CONFIG_FILES: Record<RuntimeTarget, readonly string[]> = {
   // 9 W12 — the global config + OUR key file (the `{file:…}` target the
   // provider block references; a bare secret with no key names).
   opencode: ['.config/opencode/opencode.json', '.config/opencode/harness-nexus.key'],
+  // 9 W16 — pi's three platform-relevant JSON files + our key file + the
+  // user's own /login store. auth.json is wholesale-redacted (bare token
+  // store); models.json's `!cat` apiKey masks by key name too.
+  pi: [
+    '.pi/agent/settings.json',
+    '.pi/agent/models.json',
+    '.pi/agent/trust.json',
+    '.pi/agent/auth.json',
+    '.pi/agent/harness-nexus.key',
+  ],
 };
 
 /**
  * Bare-secret files — no `KEY=`/`"key":` shapes for the pair rules to catch,
  * so the WHOLE body masks (same stance as `.env`, minus the line format).
  */
-const WHOLESALE_SECRET_FILES: ReadonlySet<string> = new Set(['.config/opencode/harness-nexus.key']);
+const WHOLESALE_SECRET_FILES: ReadonlySet<string> = new Set([
+  '.config/opencode/harness-nexus.key',
+  '.pi/agent/harness-nexus.key',
+  '.pi/agent/auth.json',
+]);
 
 function redactWholeFile(text: string, redacted: Redacted): string {
   if (text.trim().length === 0) return text;
