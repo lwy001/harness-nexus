@@ -463,16 +463,19 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
             startedAt: ledgerStartedAt,
           });
         };
+        // 9 W14.1 — target-scoped adapter env (claude-code's todo-tool
+        // opt-in) layers UNDER the daemon spawn env and the tap vars.
+        const baseEnv = { ...(cmd.env ?? {}), ...(opts.spawnEnv ?? {}) };
         const spawnOpts = {
           cwd,
           onSpawned,
           ...(tapArmed === null
-            ? opts.spawnEnv !== undefined
-              ? { env: opts.spawnEnv }
+            ? Object.keys(baseEnv).length > 0
+              ? { env: baseEnv }
               : {}
             : {
                 env: {
-                  ...(opts.spawnEnv ?? {}),
+                  ...baseEnv,
                   HNX_TAP_PORT: String(tapArmed.listener.port),
                   HNX_TAP_TOKEN: tapArmed.listener.token,
                 },

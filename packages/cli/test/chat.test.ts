@@ -356,10 +356,12 @@ describe('resolveAcpCommand', () => {
       args: ['-m', 'acp_adapter'],
     });
     // The official ACP-project wrapper (thinking streams on gateway models —
-    // the pre-2026-09 @zed-industries 0.23.x never requested it).
+    // the pre-2026-09 @zed-industries 0.23.x never requested it). 9 W14.1 —
+    // the claude row additionally carries the todo-tool opt-in env.
     expect(resolveAcpCommand('claude-code', {})).toEqual({
       command: 'npx',
       args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+      env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
     });
     // 9 W12 — opencode speaks ACP NATIVELY (`opencode acp`).
     expect(resolveAcpCommand('opencode', {})).toEqual({
@@ -371,7 +373,12 @@ describe('resolveAcpCommand', () => {
       resolveAcpCommand('claude-code', {
         HN_ACP_COMMAND_CLAUDE_CODE: 'node /tmp/adapter.js --flag',
       }),
-    ).toEqual({ command: 'node', args: ['/tmp/adapter.js', '--flag'] });
+    ).toEqual({
+      command: 'node',
+      args: ['/tmp/adapter.js', '--flag'],
+      // env keys off the TARGET, so a pinned wrapper still gets the opt-in.
+      env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+    });
     expect(resolveAcpCommand('hermes', { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}` })).toEqual({
       command: 'node',
       args: [FIXTURE],
