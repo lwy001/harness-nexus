@@ -27,9 +27,9 @@ export const SCANNABLE_TARGETS = [
 
 /**
  * Targets whose harness RUNTIME the daemon probes (Phase 9 W1) — a subset of
- * SCANNABLE_TARGETS: hermes is unlisted (no runtime management; its ACP chat
- * row exists, only native sessions are unverified). Kept in lockstep with
- * `packages/cli/src/inventory/runtime.ts`.
+ * SCANNABLE_TARGETS: hermes is unlisted (runtime management CANCELLED with
+ * the user 2026-09-17; it stays scan + profile-deploy + ACP-chat only).
+ * Kept in lockstep with `packages/cli/src/inventory/runtime.ts`.
  */
 export const RUNTIME_TARGETS = ['claude-code', 'codex', 'deepseek', 'opencode'] as const;
 export const runtimeTargetSchema = z.enum(RUNTIME_TARGETS);

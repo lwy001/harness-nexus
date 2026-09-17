@@ -1082,7 +1082,9 @@ Full design + external ground truth in `docs/design/phase-9-w12-opencode.md`
 * **NOT done (deliberate)**: profile install adapter (opencode is NOT a
   `DEPLOYABLE_TARGET`, the pick lists are unchanged),
   `~/.local/share/opencode/auth.json` (the user's own `/connect` store).
-  hermes runtime support was descoped with the user this wave. ~~native
+  hermes runtime support was CANCELLED with the user (2026-09-17 — dropped,
+  not deferred; hermes stays profile-deploy + inventory-scan + ACP-chat
+  only). ~~native
   sessions rail~~ — CORRECTED 9 W13: opencode's ACP DOES expose
   `session/list` + `load` + `resume` with full SessionInfo (verified against
   1.18.31 on the rig; the W12 "no session/list" finding was wrong) — the
@@ -1739,7 +1741,8 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   selectors + image/file attachments (W9), and LLM provider management with
   server-side model discovery + the dsh multi-model list (W10).** Remaining
   in P9: none scoped;
-  C6 (orchestration) and hermes native sessions are the open follow-ups.
+  C6 (orchestration) is the open follow-up (hermes runtime management AND
+  native sessions were cancelled with the user 2026-09-17).
   Read `docs/research/phase-9-harness-runtime.md` +
   `docs/design/phase-9-harness-runtime.md` (W1–W4) and
   `docs/design/phase-9-portal-ui.md` (W5+W6) +

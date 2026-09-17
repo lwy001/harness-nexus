@@ -8,7 +8,8 @@ import type { RuntimeInfo, RuntimeTarget } from '@harness-nexus/shared';
 /**
  * Harness runtime probe (Phase 9 W1) — is the Agent's own software installed,
  * where, at which version, installed how? Kept in lockstep with
- * `RUNTIME_TARGETS` in shared (hermes is unlisted — no runtime management).
+ * `RUNTIME_TARGETS` in shared (hermes is unlisted — runtime management
+ * cancelled with the user 2026-09-17).
  *
  * Metadata only: the probe reads paths and `<bin> --version` output; it never
  * opens config files (those are W4's redacted viewer).

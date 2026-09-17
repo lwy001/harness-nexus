@@ -3,7 +3,8 @@
 > Status: **SHIPPED 2026-09-16** (daemon `0.17.0-p9w12`). External ground
 > truth in [`docs/research/phase-9-w12-opencode.md`](../research/phase-9-w12-opencode.md).
 > Scope decided with the user: **opencode only** (hermes runtime support
-> deferred), **full surface** (probe + install/upgrade/pin jobs + W3
+> later CANCELLED with the user, 2026-09-17 — dropped, not deferred),
+> **full surface** (probe + install/upgrade/pin jobs + W3
 > provider push + W4 redacted viewer + ACP chat + C3 scan).
 
 ## Problem

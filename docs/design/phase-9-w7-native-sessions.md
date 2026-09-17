@@ -223,7 +223,6 @@ user's own machine.
 ## Out of scope
 
 - Surfacing `session/delete` / `session/fork`.
-- hermes native sessions (unverified adapter surface).
 - Cross-agent session import/export; editing or annotating history.
 - Multi-viewer history fanout beyond the rejoin resync (single re-syncing
   viewer per channel).
