@@ -111,6 +111,8 @@ interface LiveSession {
   openerSocketId: string | null;
   readyTimer: NodeJS.Timeout | null;
   permissionTimers: Map<string, NodeJS.Timeout>;
+  /** 9 W14.1 — elicitation watchdogs, same policy as permissions. */
+  elicitationTimers: Map<string, NodeJS.Timeout>;
 }
 
 export class ChatService {
@@ -249,6 +251,7 @@ export class ChatService {
       openerSocketId,
       readyTimer: null,
       permissionTimers: new Map(),
+      elicitationTimers: new Map(),
     };
     session.readyTimer = setTimeout(() => {
       void this.closeInternal(session, 'spawn-timeout', { notifyDaemon: true, failed: true });
@@ -494,6 +497,25 @@ export class ChatService {
           });
         }, this.opts.permissionTimeoutMs),
       );
+    } else if (event.kind === 'elicitation_request') {
+      // 9 W14.1 — same policy and latency budget as permissions: an
+      // unanswered question must not wedge the agent forever.
+      const { requestId } = event;
+      session.elicitationTimers.set(
+        requestId,
+        setTimeout(() => {
+          session.elicitationTimers.delete(requestId);
+          this.deps.io.toCtl(session.machineId, 'chat:elicitation.respond', {
+            sessionId,
+            requestId,
+            action: 'cancel',
+          });
+          this.deps.io.toChannel(sessionId, 'chat:event', {
+            sessionId,
+            event: { kind: 'elicitation_resolved', requestId, outcome: 'timeout' },
+          });
+        }, this.opts.permissionTimeoutMs),
+      );
     } else if (event.kind === 'session_status') {
       const wasBusy = session.busy;
       session.busy = event.state === 'active';
@@ -598,6 +620,40 @@ export class ChatService {
         requestId,
         outcome: optionId !== undefined ? 'selected' : 'cancelled',
         ...(optionId !== undefined ? { optionId } : {}),
+      },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Browser's `chat:elicitation.respond` (9 W14.1) — forward verbatim (the
+   * values are the ACP `content`, keyed by the schema's property names).
+   */
+  onElicitationRespond(
+    ownerId: string,
+    sessionId: string,
+    requestId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    values: Record<string, string | number | boolean | string[]> | undefined,
+  ): ChatSimpleResult {
+    const session = this.live.get(sessionId);
+    if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
+    const timer = session.elicitationTimers.get(requestId);
+    if (timer === undefined) return { ok: false, code: 'ELICITATION_NOT_FOUND' };
+    clearTimeout(timer);
+    session.elicitationTimers.delete(requestId);
+    this.deps.io.toCtl(session.machineId, 'chat:elicitation.respond', {
+      sessionId,
+      requestId,
+      action,
+      ...(values !== undefined ? { values } : {}),
+    });
+    this.deps.io.toChannel(sessionId, 'chat:event', {
+      sessionId,
+      event: {
+        kind: 'elicitation_resolved',
+        requestId,
+        outcome: action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'cancelled',
       },
     });
     return { ok: true };
@@ -753,6 +809,8 @@ export class ChatService {
     if (session.readyTimer !== null) clearTimeout(session.readyTimer);
     for (const timer of session.permissionTimers.values()) clearTimeout(timer);
     session.permissionTimers.clear();
+    for (const timer of session.elicitationTimers.values()) clearTimeout(timer);
+    session.elicitationTimers.clear();
 
     if (opts.failed === true) {
       this.deps.io.toChannel(session.sessionId, 'chat:session.failed', {

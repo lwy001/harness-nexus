@@ -20,6 +20,7 @@ import {
   chatHistoryEventSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
+  chatElicitationRespondRequestSchema,
   chatConfigSetRequestSchema,
   chatSessionCloseRequestSchema,
   chatSessionClosedEventSchema,
@@ -625,6 +626,24 @@ export async function registerRealtime(
         parsed.data.sessionId,
         parsed.data.requestId,
         parsed.data.optionId,
+      );
+      ack?.(result.ok ? { accepted: true } : { error: result.code });
+    });
+
+    // 9 W14.1 — answer an elicitation (values verbatim; ownership in the service).
+    socket.on('chat:elicitation.respond', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatElicitationRespondRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const { sessionId, requestId, action, values } = parsed.data;
+      const result = realtime.chat.onElicitationRespond(
+        socket.data.userId as string,
+        sessionId,
+        requestId,
+        action,
+        values,
       );
       ack?.(result.ok ? { accepted: true } : { error: result.code });
     });

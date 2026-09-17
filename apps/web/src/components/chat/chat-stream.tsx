@@ -5,6 +5,7 @@ import type { FoldState } from './fold.js';
 import { AssistantStepRow, SystemNote, TurnTail, UserMessage } from './rows.js';
 import { ToolCallRow } from './tool-card.js';
 import { PermissionCards } from './permission-cards.js';
+import { ElicitationCards } from './elicitation-cards.js';
 
 /**
  * Scroll container + row dispatch (Phase 9 W6) — stick-to-bottom ONLY while
@@ -12,7 +13,8 @@ import { PermissionCards } from './permission-cards.js';
  * flag suppresses the between-frames misjudgment, a ResizeObserver follows
  * late height growth (highlight/images), and a session load jumps to the
  * bottom with one catch-up tick. Unsettled permission cards render inline at
- * the stream tail — from the payload's options, never hardcoded.
+ * the stream tail — from the payload's options, never hardcoded; unsettled
+ * agent questions (9 W14.1 elicitations) render right after them.
  */
 
 const BOTTOM_THRESHOLD = 80;
@@ -21,9 +23,19 @@ interface ChatStreamProps {
   state: FoldState;
   cwd?: string;
   onPermissionRespond: (requestId: string, optionId?: string) => void;
+  onElicitationRespond: (
+    requestId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    values?: Record<string, string | number | boolean | string[]>,
+  ) => void;
 }
 
-export function ChatStream({ state, cwd, onPermissionRespond }: ChatStreamProps) {
+export function ChatStream({
+  state,
+  cwd,
+  onPermissionRespond,
+  onElicitationRespond,
+}: ChatStreamProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -83,6 +95,7 @@ export function ChatStream({ state, cwd, onPermissionRespond }: ChatStreamProps)
   }, [state.rows, jumpToBottom]);
 
   const unsettled = state.permissions.filter((p) => !p.settled);
+  const openQuestions = state.elicitations.filter((e) => !e.settled);
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -95,7 +108,7 @@ export function ChatStream({ state, cwd, onPermissionRespond }: ChatStreamProps)
         aria-label={t('chat.streamLabel')}
       >
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-          {state.rows.length === 0 && unsettled.length === 0 ? (
+          {state.rows.length === 0 && unsettled.length === 0 && openQuestions.length === 0 ? (
             <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-2 py-16 text-sm">
               <p>{t('chat.emptyConversation')}</p>
             </div>
@@ -118,6 +131,9 @@ export function ChatStream({ state, cwd, onPermissionRespond }: ChatStreamProps)
           })}
           {unsettled.length > 0 ? (
             <PermissionCards permissions={unsettled} onRespond={onPermissionRespond} />
+          ) : null}
+          {openQuestions.length > 0 ? (
+            <ElicitationCards elicitations={openQuestions} onRespond={onElicitationRespond} />
           ) : null}
         </div>
       </div>

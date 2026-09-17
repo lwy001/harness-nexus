@@ -128,6 +128,12 @@ Rig E2E on the live machine (`docs/dev/test-rig.md`, git-ignored):
   ready for when the CLI ships task tools to SDK sessions. The subagent
   tool is `Agent` (ex-`Task`) and still rides an ordinary tool_call → the
   existing TaskCard.
+  > **CORRECTED 9 W14.1** (see `phase-9-w14.1-claude-ground-truth.md`):
+  > right symptom, wrong cause — portal sessions run the SDK-BUNDLED CLI
+  > 2.1.270 (not the native 2.1.263), and ≥2.1.233 ships the Task tools
+  > disabled by default. The daemon's claude adapter now sets
+  > `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`; TaskCreate fires and plan snapshots
+  > flow E2E. The lane is LIVE.
 - **Permissions ✓** — claude-code (options allow-once / allow-with-updates /
   reject → allow-once → tool proceeds → clean turn end) and opencode
   (once / always / reject → allow_once → clean end). The browser permission

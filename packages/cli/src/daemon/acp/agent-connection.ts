@@ -93,6 +93,8 @@ export class AcpAgentConnection {
   private onNotification: ((method: string, params: Record<string, unknown>) => void) | null = null;
   private onPermission: ((jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void) | null =
     null;
+  private onElicitation: ((jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void) | null =
+    null;
   private exited = false;
 
   private constructor(proc: ChildProcess) {
@@ -179,7 +181,12 @@ export class AcpAgentConnection {
     try {
       result = (await conn.request(
         'initialize',
-        { protocolVersion: 1, clientCapabilities: {} },
+        // 9 W14.1 — advertise form-elicitation support: claude-agent-acp
+        // keeps AskUserQuestion in `disallowedTools` unless the client can
+        // render elicitations, and only forwards MCP-server elicitations for
+        // advertised modes. Other adapters ignore the capability. url mode is
+        // deliberately NOT advertised (no OAuth-jump UI in the portal).
+        { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } },
         initializeTimeoutMs,
       )) as typeof result;
     } catch (e) {
@@ -228,6 +235,20 @@ export class AcpAgentConnection {
     this.send({ jsonrpc: '2.0', id: jsonrpcId, result: { outcome } });
   }
 
+  /**
+   * Answer the agent's `elicitation/create`. An accept carries the form
+   * values verbatim as the ACP `content` (keyed by property name).
+   */
+  respondElicitation(
+    jsonrpcId: JsonRpcId,
+    response:
+      | { action: 'accept'; content: Record<string, unknown> }
+      | { action: 'decline' }
+      | { action: 'cancel' },
+  ): void {
+    this.send({ jsonrpc: '2.0', id: jsonrpcId, result: response });
+  }
+
   setNotificationHandler(handler: (method: string, params: Record<string, unknown>) => void): void {
     this.onNotification = handler;
   }
@@ -236,6 +257,12 @@ export class AcpAgentConnection {
     handler: (jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void,
   ): void {
     this.onPermission = handler;
+  }
+
+  setElicitationHandler(
+    handler: (jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void,
+  ): void {
+    this.onElicitation = handler;
   }
 
   /** Fires when the subprocess exits on its own (crash/quit) — not on kill(). */
@@ -297,6 +324,14 @@ export class AcpAgentConnection {
 
     if (msg.method === 'session/request_permission' && msg.id !== undefined) {
       this.onPermission?.(msg.id, msg.params ?? {});
+      return;
+    }
+    // 9 W14.1 — ACP elicitation rides a TOP-LEVEL `elicitation/create`
+    // request (not the session/request envelope); probe-captured against
+    // claude-agent-acp 0.78.0. Only form-mode requests reach us (we
+    // advertise `elicitation.form` alone).
+    if (msg.method === 'elicitation/create' && msg.id !== undefined) {
+      this.onElicitation?.(msg.id, msg.params ?? {});
       return;
     }
     if (msg.method !== undefined) {

@@ -3,6 +3,7 @@ import type {
   ChatStreamEvent,
   ChatToolCallView,
   CommandView,
+  ElicitationField,
   HistoryItem,
   PlanEntry,
   PromptBlock,
@@ -93,6 +94,15 @@ export interface PermissionCardState {
   settled: boolean;
 }
 
+/** 9 W14.1 — an open agent question (ACP elicitation, form mode). */
+export interface ElicitationCardState {
+  requestId: string;
+  message: string;
+  fields: ElicitationField[];
+  toolCallId?: string;
+  settled: boolean;
+}
+
 export interface FoldState {
   rows: ConversationRow[];
   toolRowIndex: Map<string, number>;
@@ -129,6 +139,7 @@ export interface FoldState {
     contextSize?: number;
   } | null;
   permissions: PermissionCardState[];
+  elicitations: ElicitationCardState[];
   turnActive: boolean;
 }
 
@@ -154,6 +165,7 @@ export function createFoldState(): FoldState {
     commands: [],
     usage: null,
     permissions: [],
+    elicitations: [],
     turnActive: false,
   };
 }
@@ -327,6 +339,27 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
         ...state,
         permissions: state.permissions.map((p) =>
           p.requestId === event.requestId ? { ...p, settled: true } : p,
+        ),
+      };
+    case 'elicitation_request':
+      return {
+        ...state,
+        elicitations: [
+          ...state.elicitations.filter((e) => e.requestId !== event.requestId),
+          {
+            requestId: event.requestId,
+            message: event.message,
+            fields: event.fields,
+            ...(event.toolCallId !== undefined ? { toolCallId: event.toolCallId } : {}),
+            settled: false,
+          },
+        ],
+      };
+    case 'elicitation_resolved':
+      return {
+        ...state,
+        elicitations: state.elicitations.map((e) =>
+          e.requestId === event.requestId ? { ...e, settled: true } : e,
         ),
       };
     case 'turn_result': {

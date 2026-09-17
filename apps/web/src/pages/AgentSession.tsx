@@ -548,6 +548,21 @@ export function AgentSessionPage() {
     });
   }
 
+  /** 9 W14.1 — answer an agent question; values ride verbatim as ACP content. */
+  async function respondElicitation(
+    requestId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    values?: Record<string, string | number | boolean | string[]>,
+  ): Promise<void> {
+    if (sessionId === '') return;
+    await emitWithAck('chat:elicitation.respond', {
+      sessionId,
+      requestId,
+      action,
+      ...(values !== undefined ? { values } : {}),
+    });
+  }
+
   /** Channel-only teardown — the native session survives (9 W7). The pane
    *  returns to its welcome state (the pane is "empty", not "closed"). */
   async function disconnectChannel(): Promise<void> {
@@ -845,6 +860,9 @@ export function AgentSessionPage() {
               cwd={currentCwd}
               onPermissionRespond={(requestId, optionId) =>
                 void respondPermission(requestId, optionId)
+              }
+              onElicitationRespond={(requestId, action, values) =>
+                void respondElicitation(requestId, action, values)
               }
             />
 
