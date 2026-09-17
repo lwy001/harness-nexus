@@ -123,6 +123,43 @@ describe('mapAcpUpdate', () => {
     expect(map({ sessionUpdate: 'plan' })).toMatchObject({ kind: 'raw' });
   });
 
+  it('maps available_commands_update catalogs (9 W15): verbatim names, hint, clamp, drop', () => {
+    expect(
+      map({
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'review', description: 'Review my changes', input: { hint: 'focus areas' } },
+          { name: 'mcp:deploy', description: 'Deploy via MCP' },
+        ],
+      }),
+    ).toEqual({
+      kind: 'commands',
+      commands: [
+        { name: 'review', description: 'Review my changes', hint: 'focus areas' },
+        { name: 'mcp:deploy', description: 'Deploy via MCP' },
+      ],
+    });
+    // Description clamps, malformed rows skip, empty catalog passes as cleared.
+    expect(
+      map({
+        sessionUpdate: 'available_commands_update',
+        availableCommands: [
+          { name: 'x', description: 'd'.repeat(900) },
+          null,
+          { description: 'y' },
+        ],
+      }),
+    ).toEqual({ kind: 'commands', commands: [{ name: 'x', description: 'd'.repeat(512) }] });
+    expect(map({ sessionUpdate: 'available_commands_update', availableCommands: [] })).toEqual({
+      kind: 'commands',
+      commands: [],
+    });
+    expect(map({ sessionUpdate: 'available_commands_update', availableCommands: 'nope' })).toEqual({
+      kind: 'commands',
+      commands: [],
+    });
+  });
+
   it('maps usage defensively', () => {
     expect(
       map({ sessionUpdate: 'usage_update', usage: { inputTokens: 3, outputTokens: 4 } }),
@@ -485,6 +522,48 @@ describe('session round-trip vs the fixture agent', () => {
     expect(history.items.some((i) => i.type === 'event' && i.event?.kind === 'plan')).toBe(true);
 
     socket.receive('chat:session.close', { sessionId: 'sess-plan', reason: 'user' });
+  }, 15000);
+
+  it('a commands catalog pushed after establishment rides the stream and the ring (9 W15)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      spawnEnv: { FIXTURE_COMMANDS: '1' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-cmd',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready'));
+    const cmd = await waitFor(() => socket.chatEvents().find((e) => e.kind === 'commands'));
+    if (cmd.kind !== 'commands') throw new Error('not a commands event');
+    expect(cmd.commands).toEqual([
+      { name: 'deploy', description: 'Deploy the current profile', hint: 'profile name' },
+      { name: 'mcp:status', description: 'MCP server status' },
+    ]);
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-cmd',
+      prompt: [{ type: 'text', text: '/deploy my-profile' }],
+    });
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    // The slash prompt rides verbatim (the agent parses it)…
+    const echoed = socket.chatEvents().find((e) => e.kind === 'message_delta');
+    expect(echoed).toMatchObject({ delta: 'echo: /deploy my-profile' });
+    // …and the catalog survives the resync ring replay.
+    socket.receive('chat:session.resync', { sessionId: 'sess-cmd' });
+    const history = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:history')?.payload as
+          { items: { type: string; event?: { kind: string } }[] } | undefined,
+    );
+    expect(history.items.some((i) => i.type === 'event' && i.event?.kind === 'commands')).toBe(
+      true,
+    );
+    socket.receive('chat:session.close', { sessionId: 'sess-cmd', reason: 'user' });
   }, 15000);
 
   it('a permission request with a UUID-STRING id resolves (codex-acp dialect)', async () => {

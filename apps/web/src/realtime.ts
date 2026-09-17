@@ -78,6 +78,7 @@ export type ChatStreamEvent =
   | { kind: 'session_status'; state: 'active' | 'idle' }
   | ({ kind: 'session_config' } & SessionConfigPatch)
   | ({ kind: 'plan' } & PlanPatch)
+  | ({ kind: 'commands' } & CommandsPatch)
   | { kind: 'raw'; method: string; params: unknown };
 
 // ---- 9 W14 — ACP plan (todo) snapshots (mirrors shared/realtime.ts) ----
@@ -97,6 +98,23 @@ export interface PlanEntry {
 
 export interface PlanPatch {
   entries: PlanEntry[];
+}
+
+// ---- 9 W15 — the agent's slash-command catalog (mirrors shared/realtime.ts) ----
+
+/**
+ * One advertised slash command (`available_commands_update`, full replace).
+ * `name` is the VERBATIM adapter name (may carry `mcp:`); the UI adds the
+ * `/`. Invocation is an ordinary prompt `/name args` — no dedicated RPC.
+ */
+export interface CommandView {
+  name: string;
+  description: string;
+  hint?: string;
+}
+
+export interface CommandsPatch {
+  commands: CommandView[];
 }
 
 // ---- 9 W9 A — ACP session modes & configuration (mirrors shared/realtime.ts) ----

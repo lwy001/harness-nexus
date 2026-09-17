@@ -446,6 +446,24 @@ export const planEntrySchema = z.object({
   priority: z.enum(['high', 'medium', 'low']).optional(),
 });
 
+// ---- 9 W15: ACP available-commands catalogs ----
+//
+// `session/update {sessionUpdate:'available_commands_update',
+// availableCommands}` is the agent's slash-command catalog, pushed after
+// session/new|load|resume by claude-agent-acp (custom + MCP commands — the
+// latter renamed `mcp:<name>`), codex-acp (review family + init/compact/
+// logout) and opencode (its Command.Info list — platform-deployed custom
+// commands surface here). dsh/hermes never push one. Invocation needs no
+// protocol: an ordinary prompt whose text is `/name args`.
+
+export const availableCommandViewSchema = z.object({
+  /** VERBATIM adapter name (may carry the `mcp:` prefix) — the web adds the `/`. */
+  name: z.string().min(1).max(128),
+  description: z.string().max(512),
+  /** From the command's unstructured `input.hint` (args placeholder). */
+  hint: z.string().max(256).optional(),
+});
+
 /**
  * The `session_config` stream event — PATCH semantics: `availableModes` /
  * `configOptions` replace when present; a lone `currentModeId` patches the
@@ -505,6 +523,11 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('session_config') }).merge(sessionConfigPatchSchema),
   // 9 W14 — the agent's todo/task plan (full-replace snapshot; empty = cleared).
   z.object({ kind: z.literal('plan'), entries: z.array(planEntrySchema).max(128) }),
+  // 9 W15 — the agent's slash-command catalog (full replace; empty = none).
+  z.object({
+    kind: z.literal('commands'),
+    commands: z.array(availableCommandViewSchema).max(64),
+  }),
   z.object({ kind: z.literal('raw'), method: z.string().min(1).max(64), params: z.unknown() }),
 ]);
 
@@ -888,6 +911,7 @@ export type SessionConfigOption = z.infer<typeof sessionConfigOptionSchema>;
 export type SessionConfigPatch = z.infer<typeof sessionConfigPatchSchema>;
 export type PlanEntryStatus = z.infer<typeof planEntryStatusSchema>;
 export type PlanEntry = z.infer<typeof planEntrySchema>;
+export type AvailableCommandView = z.infer<typeof availableCommandViewSchema>;
 export type PromptCapabilities = z.infer<typeof promptCapabilitiesSchema>;
 export type ChatConfigSetRequest = z.infer<typeof chatConfigSetRequestSchema>;
 export type ChatConfigSetEvent = z.infer<typeof chatConfigSetEventSchema>;

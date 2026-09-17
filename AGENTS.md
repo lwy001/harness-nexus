@@ -301,6 +301,12 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
   → `docs/design/phase-9-w10-llm-providers.md`
 - **Multi-model picker — dropdown = configured set (Phase 9 W13)**
   → `docs/design/phase-9-w13-multi-model.md`
+- **Plan/todo panel + subagent/permission verification (Phase 9 W14)**
+  → `docs/design/phase-9-w14-plan-todo.md` ·
+  research: `docs/research/phase-9-w14-w15-plan-commands.md`
+- **Slash commands in the composer (Phase 9 W15)**
+  → `docs/design/phase-9-w15-commands.md` ·
+  research: `docs/research/phase-9-w14-w15-plan-commands.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -1140,6 +1146,76 @@ name: value}`) — building, not intersecting, is load-bearing: codex only
   no /models), apply normalizes (trim/dedupe/drop default). The chat rail
   renders live-channel rows even where `supported:false` (opencode) with a
   "open channels only" note instead of hiding the rail.
+
+## Plan/todo panel + verification (Phase 9 W14)
+
+Full design + rig results in `docs/design/phase-9-w14-plan-todo.md`; adapter
+ground truth in `docs/research/phase-9-w14-w15-plan-commands.md`
+(source-verified against claude-agent-acp 0.78.0 / ACP SDK 1.4.0, codex-acp
+0.16.0, opencode, dsh-acp 0.1.2-rc.1). Summary for daily work:
+
+- **ACP `plan` is a FULL-REPLACE snapshot** (`{sessionUpdate:'plan',
+entries: PlanEntry[]}`, `PlanEntry = {content, priority?, status}`) —
+  claude-agent-acp surfaces TodoWrite AND TaskCreate/TaskUpdate/TaskList
+  EXCLUSIVELY this way (the tool calls are suppressed, `isTaskTool`/
+  `shouldEmitToolCall` in the wrapper), codex-acp maps its `update_plan`
+  tool to it, opencode/dsh never emit one. Before W14 both landed in the
+  daemon's `raw` fallback and the web dropped them — the agent's todo list
+  was INVISIBLE.
+- **Wire**: `chatStreamEventSchema` gained `{kind:'plan', entries}` (≤128
+  rows, content ≤512 — clamped, malformed rows dropped, empty = cleared).
+  Daemon arm is STATELESS (`mapAcpUpdate` → `takePlanEntries`; the pre-1.0
+  draft shape `plan.steps` keeps the raw fallback) so the load-capture and
+  resync-ring paths work for free. Daemon `0.19.0-p9w14`.
+- **Web**: the fold carries `plan: PlanEntry[] | null` (last-wins); the
+  **TodoPanel** (`components/chat/todo-panel.tsx`) renders ABOVE the
+  composer — hidden when empty, collapsed by default, header = icon + title
+  - progress summary (已完成 N · 进行中 N · 待办 N, zero segments omitted) +
+    `done/total`; expanded = per-entry status glyphs (`--ok` check /
+    `--warn` pulse / muted dashed). The W6 TodoCard (registry `TodoWrite`)
+    STAYS as the fallback for adapters that still emit a todo tool call.
+- **Rig truth (2026-09-17)**: codex is the LIVE plan producer today (its
+  `update_plan` tool fired E2E; the panel converged to 已完成 3 3/3).
+  claude's task-lane is DORMANT on CLI 2.1.263 — headless sessions expose
+  NEITHER TodoWrite NOR TaskCreate to the model (verified by listing its
+  tools verbatim); the wire+panel are ready for when the CLI ships task
+  tools to SDK sessions. The subagent tool is `Agent` (ex-`Task`) and rides
+  an ordinary tool_call → the existing TaskCard. Permissions verified E2E
+  on claude (allow-once → tool proceeds) and opencode (once/always/reject).
+- The draft subagent protocol (ACP PR #1992, `subagent_spawned` + child
+  stream rerouting behind a client `subagents` capability) is deliberately
+  NOT advertised — unstable draft, and our single-channel fold would fold
+  child output into the main transcript. Revisit when the SDK ships it.
+
+## Slash commands (Phase 9 W15)
+
+Full design + rig results in `docs/design/phase-9-w15-commands.md`; ground
+truth in `docs/research/phase-9-w14-w15-plan-commands.md`. Summary for
+daily work — **the composer's `/` palette lists the agent's OWN advertised
+commands; invoking one is just a prompt**:
+
+- **`available_commands_update` is the catalog** (full replace,
+  `{name, description, input?: {hint}}`, names VERBATIM incl. `mcp:*` and
+  plugin prefixes). Producers: claude-agent-acp (after new/load/resume —
+  includes the emitter-installed plugin commands, 46 on the rig), codex-acp
+  (review family + init/compact/logout with hints), opencode (its
+  `Command.Info` — platform-deployed `command/*.md` surface here). dsh/
+  hermes never push one. NO invocation RPC exists — a command runs as an
+  ordinary prompt `/name args` (verified per adapter).
+- **Wire**: `{kind:'commands', commands}` (≤64 rows, name ≤128, description
+  clamp 512, `input.hint` clamp 256 — `takeAvailableCommands` in the
+  daemon, stateless like `plan`). Daemon `0.20.0-p9w15`. NOTE the SERVER
+  must carry the kind too — its zod relay drops unknown stream kinds
+  (deploy server and cli overlay together).
+- **Web**: fold `commands: CommandView[]`; the Composer palette opens while
+  the draft starts with `/` and a catalog exists (ready + not mid-turn).
+  First word after `/` filters name/description; ↑/↓ cycle; Esc dismisses;
+  bare Enter SELECTS and fills `/name ` (trailing space — second Enter
+  sends); Enter WITH args falls through to the normal send; a non-matching
+  filter shows the 无匹配命令 empty state. **No fallback command table** —
+  an agent that never pushed commands shows no palette (honest absence).
+- Fixture: `FIXTURE_COMMANDS=1` (spawnEnv!) pushes a 2-command catalog
+  after `session/new`.
 
 ## LLM provider management (Phase 9 W10)
 

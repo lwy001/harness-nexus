@@ -152,6 +152,13 @@ describe('chat stream schemas (C5)', () => {
           { content: 'Write the patch', status: 'completed' },
         ],
       },
+      {
+        kind: 'commands',
+        commands: [
+          { name: 'review', description: 'Review my changes', hint: 'focus areas' },
+          { name: 'mcp:deploy', description: 'Deploy via MCP' },
+        ],
+      },
     ];
     for (const event of events) {
       expect(chatStreamEventSchema.safeParse(event).success, JSON.stringify(event)).toBe(true);
@@ -177,6 +184,22 @@ describe('chat stream schemas (C5)', () => {
     const tooMany = {
       kind: 'plan' as const,
       entries: Array.from({ length: 129 }, () => ({ content: 'x', status: 'pending' })),
+    };
+    expect(chatStreamEventSchema.safeParse(tooMany).success).toBe(false);
+  });
+
+  it('commands catalogs: empty clears, missing name rejects, cap holds (9 W15)', () => {
+    expect(chatStreamEventSchema.safeParse({ kind: 'commands', commands: [] }).success).toBe(true);
+    expect(
+      chatStreamEventSchema.safeParse({ kind: 'commands', commands: [{ description: 'x' }] })
+        .success,
+    ).toBe(false);
+    const tooMany = {
+      kind: 'commands' as const,
+      commands: Array.from({ length: 65 }, (_, i) => ({
+        name: `cmd-${i}`,
+        description: 'x',
+      })),
     };
     expect(chatStreamEventSchema.safeParse(tooMany).success).toBe(false);
   });

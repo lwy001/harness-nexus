@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUpIcon, CircleStopIcon, ImageIcon, PaperclipIcon, PlusIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowUpIcon,
+  CircleStopIcon,
+  ImageIcon,
+  PaperclipIcon,
+  PlusIcon,
+  SquareSlashIcon,
+} from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { DraftAttachment } from './image-attach.js';
-import type { ChatConfigSetPayload, SessionConfigOption } from '@/realtime';
+import type { ChatConfigSetPayload, CommandView, SessionConfigOption } from '@/realtime';
 
 /**
  * The chat Sender (Phase 9 W8; controls added 9 W9). One card: the attachment
@@ -70,6 +77,8 @@ interface ComposerProps {
   imageSupported: boolean;
   config: ComposerConfig;
   onConfigSet: (set: ChatConfigSetPayload) => void;
+  /** 9 W15 — the agent's advertised slash commands (fold slice). */
+  commands: CommandView[];
 }
 
 /** Mode ids that WEAKEN the permission gate — confirm before switching. */
@@ -197,6 +206,75 @@ function ConfigSelect({
   );
 }
 
+/**
+ * 9 W15 — the `/`-prefix slash-command palette (portal-reference shape).
+ * Opens while the draft starts with `/` and the agent advertised commands;
+ * the FIRST word filters (name OR description). Keyboard: ↑/↓ cycle, Esc
+ * dismisses, bare Enter SELECTS (fills `/name ` — the user reviews, then a
+ * second Enter sends), Enter with args falls through to the normal send.
+ * NO fallback table: an agent that never pushed commands shows no palette.
+ */
+function CommandPalette({
+  commands,
+  activeIdx,
+  onPick,
+  onHover,
+}: {
+  commands: CommandView[];
+  activeIdx: number;
+  onPick: (c: CommandView) => void;
+  onHover: (idx: number) => void;
+}) {
+  const { t } = useI18n();
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    listRef.current
+      ?.querySelector(`[data-idx="${activeIdx}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [activeIdx]);
+  return (
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label={t('chat.commandsAria')}
+      className="bg-background absolute bottom-full left-0 right-0 z-20 mb-2 max-h-64 overflow-y-auto rounded-xl border shadow-lg"
+    >
+      {commands.length === 0 ? (
+        <p className="text-muted-foreground px-3 py-2.5 text-xs">{t('chat.commandsNone')}</p>
+      ) : (
+        commands.map((c, i) => (
+          <button
+            key={c.name}
+            type="button"
+            role="option"
+            data-idx={i}
+            aria-selected={i === activeIdx}
+            onClick={() => onPick(c)}
+            onMouseEnter={() => onHover(i)}
+            className={cn(
+              'flex w-full items-start gap-2.5 px-3 py-2 text-left text-xs',
+              i === activeIdx ? 'bg-accent' : 'hover:bg-accent/50',
+            )}
+          >
+            <SquareSlashIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">
+              <span className="font-mono font-medium">/{c.name}</span>
+              {c.hint !== undefined && c.hint !== '' ? (
+                <span className="text-muted-foreground/70 font-mono"> {c.hint}</span>
+              ) : null}
+              {c.description !== '' ? (
+                <span className="text-muted-foreground block truncate" title={c.description}>
+                  {c.description}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 export function Composer({
   value,
   onChange,
@@ -214,6 +292,7 @@ export function Composer({
   imageSupported,
   config,
   onConfigSet,
+  commands,
 }: ComposerProps) {
   const { t } = useI18n();
   const textRef = useRef<HTMLTextAreaElement | null>(null);
@@ -225,6 +304,34 @@ export function Composer({
     !disabled &&
     !turnActive &&
     (value.trim() !== '' || attachments.length > 0 || fileRefs.length > 0);
+
+  // 9 W15 — the `/` palette: open while the draft starts with '/', the agent
+  // advertised commands, the channel is usable, and the user hasn't dismissed
+  // it for this draft. The first word after '/' filters (portal-reference).
+  const [paletteDismissed, setPaletteDismissed] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const slashDraft = value.startsWith('/') && !controlsDisabled && commands.length > 0;
+  const keyword = useMemo(() => value.slice(1).split(/\s/)[0]?.toLowerCase() ?? '', [value]);
+  const filteredCommands = useMemo(() => {
+    if (!slashDraft) return [];
+    if (keyword === '') return commands;
+    return commands.filter(
+      (c) =>
+        c.name.toLowerCase().includes(keyword) || c.description.toLowerCase().includes(keyword),
+    );
+  }, [commands, keyword, slashDraft]);
+  const paletteOpen = slashDraft && !paletteDismissed;
+  const hasArg = /\s/.test(value.slice(1));
+  useEffect(() => {
+    setPaletteDismissed(false);
+  }, [keyword]);
+  useEffect(() => {
+    if (activeIdx >= filteredCommands.length) setActiveIdx(0);
+  }, [filteredCommands.length, activeIdx]);
+  const pickCommand = (c: CommandView): void => {
+    onChange(`/${c.name} `);
+    textRef.current?.focus();
+  };
 
   // Autogrow: 1 row resting, ~10 rows max, then scroll internally.
   useEffect(() => {
@@ -270,7 +377,7 @@ export function Composer({
   return (
     <div
       className={cn(
-        'bg-background focus-within:border-ring focus-within:ring-ring/50 rounded-xl border shadow-sm transition-[border-color,box-shadow] focus-within:ring-[3px]',
+        'bg-background focus-within:border-ring focus-within:ring-ring/50 relative rounded-xl border shadow-sm transition-[border-color,box-shadow] focus-within:ring-[3px]',
         disabled && 'opacity-60',
         dragOver && 'border-ring',
       )}
@@ -346,12 +453,53 @@ export function Composer({
         </div>
       ) : null}
 
+      {paletteOpen ? (
+        <CommandPalette
+          commands={filteredCommands}
+          activeIdx={activeIdx}
+          onPick={pickCommand}
+          onHover={setActiveIdx}
+        />
+      ) : null}
+
       <textarea
         ref={textRef}
         rows={1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          // 9 W15 — the palette owns the keys first while open (portal
+          // reference): arrows cycle, Esc dismisses, a bare Enter SELECTS;
+          // Enter WITH args (space after the first word) falls through to
+          // the ordinary send. IME composition guards as everywhere else.
+          if (paletteOpen && filteredCommands.length > 0 && !e.nativeEvent.isComposing) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setActiveIdx((i) => (i + 1) % filteredCommands.length);
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setActiveIdx((i) => (i - 1 + filteredCommands.length) % filteredCommands.length);
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopPropagation();
+              setPaletteDismissed(true);
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !hasArg) {
+              e.preventDefault();
+              const cmd = filteredCommands[activeIdx];
+              if (cmd !== undefined) pickCommand(cmd);
+              return;
+            }
+          } else if (paletteOpen && e.key === 'Escape' && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            setPaletteDismissed(true);
+            return;
+          }
           // Enter sends, Shift+Enter breaks the line; a composing Enter (IME
           // candidate confirm) must never send.
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
