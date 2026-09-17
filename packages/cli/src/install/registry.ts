@@ -14,12 +14,14 @@ import { stubAdapter } from './adapters/stub.js';
 import { hermesAdapter } from './adapters/hermes.js';
 import { codexAdapter } from './adapters/codex.js';
 import { deepseekAdapter } from './adapters/deepseek.js';
+import { piAdapter } from './adapters/pi.js';
 
 const ADAPTERS: readonly TargetAdapter[] = Object.freeze([
   stubAdapter,
   hermesAdapter,
   codexAdapter,
   deepseekAdapter,
+  piAdapter,
 ]);
 
 /** List every registered adapter (for `--help` / discovery). */

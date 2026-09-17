@@ -39,8 +39,13 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from '@harness-nexus/shared';
-import { AcpAgentConnection, type JsonRpcId } from './acp/agent-connection.js';
+import {
+  AcpAgentConnection,
+  type AgentConnection,
+  type JsonRpcId,
+} from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
+import { PiRpcConnection, resolvePiCommand } from './acp/pi-connection.js';
 import { auditAdapterLedger, writeAdapterLedgerEntry } from './adapter-ledger.js';
 import { rewriteHistoryItems, rewriteSessionConfigOptions } from './model-options.js';
 import {
@@ -105,7 +110,7 @@ interface DaemonSession {
   command: string;
   /** 9 W11 C — spawn time (also the report's uptime base). */
   startedAt: number;
-  conn: AcpAgentConnection;
+  conn: AgentConnection;
   busy: boolean;
   /** In-flight permission requests by our wire requestId. */
   permissions: Map<string, { jsonrpcId: JsonRpcId; timer: NodeJS.Timeout }>;
@@ -425,7 +430,10 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     const { sessionId, target, cwd, resume, modelOptions } = parsed.data;
     void (async () => {
       inFlightStarts.add(sessionId);
-      const cmd = resolveAcpCommand(target, env);
+      // 9 W16 — pi rides the in-daemon ACP façade (PiRpcConnection), not an
+      // ACP adapter subprocess; everything downstream is shared verbatim.
+      const isPi = target === 'pi';
+      const cmd = isPi ? resolvePiCommand(env) : resolveAcpCommand(target, env);
       if (cmd === null) {
         socket.emit('chat:session.ready', {
           sessionId,
@@ -437,7 +445,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       // the startup race giving up, initialize timeout) must NOT leave the
       // spawned adapter running: the channel dies server-side, so nothing
       // would ever kill it. Track the connection from spawn to outcome.
-      let liveConn: AcpAgentConnection | null = null;
+      let liveConn: AgentConnection | null = null;
       // 9 W7.1 — arm the tap before the spawn (the child needs the port/token
       // env); the spawn and the plugin's hello then race in parallel.
       const tapArmed = await armTap(target);
@@ -488,9 +496,17 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
               }),
         };
         const args = tapArmed === null ? cmd.args : [...cmd.args, '--patch', tapArmed.patchPath];
-        let started: Awaited<ReturnType<typeof AcpAgentConnection.start>>;
+        let started:
+          | Awaited<ReturnType<typeof AcpAgentConnection.start>>
+          | Awaited<ReturnType<typeof PiRpcConnection.start>>;
         let tapLive = false;
-        if (tapArmed === null) {
+        if (isPi) {
+          // The tap is dsh-only, so args are bare here by construction.
+          started = await PiRpcConnection.start(cmd.command, args, {
+            ...spawnOpts,
+            sessionsDir: join(home, '.pi', 'agent', 'sessions'),
+          });
+        } else if (tapArmed === null) {
           started = await AcpAgentConnection.start(cmd.command, args, spawnOpts);
         } else {
           [started, tapLive] = await Promise.all([
@@ -947,7 +963,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
  * adapter finishes registering moments later.
  */
 async function establish(
-  conn: AcpAgentConnection,
+  conn: AgentConnection,
   method: string,
   params: unknown,
   attempt = 1,
@@ -971,7 +987,7 @@ async function establish(
  * item (on the live path it is dropped as a browser echo); everything else
  * maps through the ordinary update mapping. Returns the deactivation.
  */
-function wireCapture(conn: AcpAgentConnection, items: HistoryItem[]): () => void {
+function wireCapture(conn: AgentConnection, items: HistoryItem[]): () => void {
   const handler = (method: string, params: Record<string, unknown>): void => {
     if (method !== 'session/update') return;
     const update = (params.update ?? {}) as Record<string, unknown>;

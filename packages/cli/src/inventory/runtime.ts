@@ -33,6 +33,8 @@ export const RUNTIME_PROBES: readonly RuntimeProbe[] = [
   { target: 'deepseek', bin: 'dsh', knownPaths: () => [] },
   // 9 W12 — npm package `opencode-ai` ships the `opencode` binary.
   { target: 'opencode', bin: 'opencode', knownPaths: () => [] },
+  // 9 W16 — npm package `@earendil-works/pi-coding-agent` ships `pi`.
+  { target: 'pi', bin: 'pi', knownPaths: () => [] },
 ];
 
 export interface ProbeOptions {

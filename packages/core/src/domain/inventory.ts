@@ -37,7 +37,7 @@ export interface InventoryAgentData {
 
 /** Plain mirror of `RuntimeInfo` in shared (Phase 9 W1). */
 export interface RuntimeInfoData {
-  target: 'claude-code' | 'codex' | 'deepseek' | 'opencode';
+  target: 'claude-code' | 'codex' | 'deepseek' | 'opencode' | 'pi';
   installed: boolean;
   binPath?: string | undefined;
   version?: string | undefined;

@@ -1,12 +1,12 @@
 # Design: Phase 9 W16 — pi agent onboarding (runtime + self-developed ACP bridge)
 
-> Status: **PLANNED (2026-09-17)** — feasibility confirmed, user green-lit;
-> implementation not started. External ground truth:
-> [`docs/research/phase-9-w16-pi-agent.md`](../research/phase-9-w16-pi-agent.md)
-> (pi.dev docs + npm manifests, verified 2026-09-17). User decisions locked:
-> **full T-wave surface**, and the C5 chat bridge is **SELF-DEVELOPED
-> in-daemon** — svkozak/pi-acp and victor-software-house/pi-acp (both MIT)
-> are dialect REFERENCES only, no runtime dependency on them.
+> Status: **SHIPPED 2026-09-17** (daemon `0.22.0-p9w16`). External ground
+> truth: [`docs/research/phase-9-w16-pi-agent.md`](../research/phase-9-w16-pi-agent.md)
+> (pi.dev docs + npm manifests); §9 below records the rig E2E and the
+> live-captured dialect. User decisions locked: **full T-wave surface**, and
+> the C5 chat bridge is **SELF-DEVELOPED in-daemon** — svkozak/pi-acp and
+> victor-software-house/pi-acp (both MIT) are dialect REFERENCES only, no
+> runtime dependency on them.
 
 ## 1. Scope
 
@@ -58,16 +58,16 @@ and the whole mapping is unit-testable against a fixture.
 
 ### 2.1 Request translation (ACP in → pi out)
 
-| ACP request | pi command(s) | Notes |
-| --- | --- | --- |
-| `session/new {cwd}` | spawn in cwd → `get_state` (+ `get_session_stats`) for the session id | Respond ACP-shaped: `{sessionId, modes: [], configOptions, loadSession: true, promptCapabilities: {image: true}}`. `configOptions` synthesized from `get_available_models` (a `model` select — values are `provider/id` refs) + `get_available_thinking_levels` (`thought_level`) + current values from `get_state`; `loadSession: true` makes the daemon's `deriveSessionCaps` prefer `session/load` on resume (session/resume stays unimplemented — unreachable). |
-| `session/load {sessionId}` | `switch_session` | Then SYNTHESIZE the replay: parse the session file (S4's parser), emit `user_message_chunk` / `agent_message_chunk` (+ `tool_call`) `session/update`s, THEN resolve — mirrors claude's replay-on-load; the daemon's `wireCapture` path collects them into history. |
-| `session/prompt {prompt}` | `prompt {message, images?}` | Flatten blocks: `text` → concatenated message, `resource_link` → text marker (dsh-like), `image` → `images` (exact pi image format verified on the rig). **HOLD the ACP response until `agent_settled` / abort** — pi acknowledges `{success:true}` immediately, ACP semantics resolve at turn end (same class as the W7 dsh `turn_result` wait); reject on `extension_error` / failed turn. |
-| `session/cancel` | `abort` | pi responds once idle → forward. |
-| `session/set_config_option` (model) | `set_model` | Values `harness-nexus/<id>` after the S6.4 rewrite narrows the picker. |
-| (thought_level option) | `set_thinking_level` | pi levels `off…max` map directly. |
-| `session/set_mode` | — | pi has no modes; the selector does not render (`modes: []`, data-driven honesty). |
-| `session/close` | `abort`, then exit | chat.ts kills the group anyway. |
+| ACP request                         | pi command(s)                                                         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session/new {cwd}`                 | spawn in cwd → `get_state` (+ `get_session_stats`) for the session id | Respond ACP-shaped: `{sessionId, modes: [], configOptions, loadSession: true, promptCapabilities: {image: true}}`. `configOptions` synthesized from `get_available_models` (a `model` select — values are `provider/id` refs) + `get_available_thinking_levels` (`thought_level`) + current values from `get_state`; `loadSession: true` makes the daemon's `deriveSessionCaps` prefer `session/load` on resume (session/resume stays unimplemented — unreachable). |
+| `session/load {sessionId}`          | `switch_session`                                                      | Then SYNTHESIZE the replay: parse the session file (S4's parser), emit `user_message_chunk` / `agent_message_chunk` (+ `tool_call`) `session/update`s, THEN resolve — mirrors claude's replay-on-load; the daemon's `wireCapture` path collects them into history.                                                                                                                                                                                                  |
+| `session/prompt {prompt}`           | `prompt {message, images?}`                                           | Flatten blocks: `text` → concatenated message, `resource_link` → text marker (dsh-like), `image` → `images` (exact pi image format verified on the rig). **HOLD the ACP response until `agent_settled` / abort** — pi acknowledges `{success:true}` immediately, ACP semantics resolve at turn end (same class as the W7 dsh `turn_result` wait); reject on `extension_error` / failed turn.                                                                        |
+| `session/cancel`                    | `abort`                                                               | pi responds once idle → forward.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `session/set_config_option` (model) | `set_model`                                                           | Values `harness-nexus/<id>` after the S6.4 rewrite narrows the picker.                                                                                                                                                                                                                                                                                                                                                                                              |
+| (thought_level option)              | `set_thinking_level`                                                  | pi levels `off…max` map directly.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `session/set_mode`                  | —                                                                     | pi has no modes; the selector does not render (`modes: []`, data-driven honesty).                                                                                                                                                                                                                                                                                                                                                                                   |
+| `session/close`                     | `abort`, then exit                                                    | chat.ts kills the group anyway.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 After `session/new`, the façade also pushes one
 `available_commands_update` from `get_commands` — the W15 `/` palette
@@ -99,7 +99,7 @@ flight is already the daemon's rule; mid-turn sends queue at the busy gate.
   `schemas/inventory.ts` `RUNTIME_TARGETS`/`SCANNABLE_TARGETS` += `'pi'`;
   `hooks.ts` `HOOK_SUPPORT['pi'] = null`; `schemas/runtime-config.ts`
   `RUNTIME_API_SUPPORT['pi'] = ['anthropic','openai-chat',
-  'openai-responses']` (first target with all three) and
+'openai-responses']` (first target with all three) and
   `runtimeSpecUnsupportedReason`: pi requires a `baseUrl` (the writer
   always defines the `harness-nexus` provider; there is no built-in
   endpoint to ride). shared schema tests. Adding to `RUNTIME_TARGETS`
@@ -113,9 +113,9 @@ flight is already the daemon's rule; mid-turn sends queue at the busy gate.
 - **S3 — W3 writer + W4 viewer files.** `applyPiConfig` in
   `daemon/runtime-config.ts`:
   `~/.pi/agent/models.json` → `providers['harness-nexus'] = { baseUrl, api
-  (mapped: anthropic→anthropic-messages, openai-chat→openai-completions,
-  openai-responses→openai-responses), apiKey: '!cat
-  ~/.pi/agent/harness-nexus.key', models: [{id: model}, ...extras] }` —
+(mapped: anthropic→anthropic-messages, openai-chat→openai-completions,
+openai-responses→openai-responses), apiKey: '!cat
+~/.pi/agent/harness-nexus.key', models: [{id: model}, ...extras] }` —
   merge-preserving strict JSON (refuse on parse failure without touching);
   `~/.pi/agent/settings.json` → `defaultProvider: 'harness-nexus'`,
   `defaultModel`, `enabledModels: unique([model, ...extras])` (the W10/W13
@@ -172,9 +172,9 @@ flight is already the daemon's rule; mid-turn sends queue at the busy gate.
   models.json/settings.json/key file, terminal `/model` shows
   `harness-nexus`; viewer masked (auth.json + key wholesale); rail lists
   real pi sessions; chat E2E — real turn with thought stream + tool cards
-  + model selector + `/` palette, cancel mid-turn, rejoin/resync history,
-  adapter panel row, kill + leak scan. AGENTS.md W16 section, roadmap
-  SHIPPED, docs/README design entry. Daemon `0.22.0-p9w16`.
+  - model selector + `/` palette, cancel mid-turn, rejoin/resync history,
+    adapter panel row, kill + leak scan. AGENTS.md W16 section, roadmap
+    SHIPPED, docs/README design entry. Daemon `0.22.0-p9w16`.
 
 ## 4. Out of scope (explicit)
 
@@ -196,19 +196,24 @@ extend: shared schema tests, cli runtime-config/chat/sessions/model-options
 tests, server chat relay (target-agnostic, no new cases expected), smoke
 line for the scanner/deploy surfaces.
 
-## 6. Open verifications (rig, before/while S3+S6 land)
+## 6. Open verifications (all settled on the rig, §9)
 
-- **V1** model id format in settings (`defaultModel`/`enabledModels` —
-  bare `id` vs `provider/id`) and the shape `get_available_models`
-  returns; the rewrite rule keys off the observed shape.
-- **V2** prompt-template user-level directory (else the settings
-  `prompts` fallback).
-- **V3** `baseUrl` `/v1` normalization — how pi-ai joins method paths
-  (the opencode rig-find class; Ark-style `/api/coding` gateways).
-- **V4** `images` field format on the `prompt` command (data URL vs raw
-  base64).
-
-None block S1/S2; V1/V3 gate the writer details, V4 gates image attach.
+- **V1 model id format — SETTLED**: `get_available_models` returns objects
+  `{id, provider, name, api, baseUrl, …}` and refs are `provider/id`
+  (`harness-nexus/deepseek-v4-flash`); settings `defaultModel` stays a BARE
+  id with `defaultProvider` naming ours. Both verified live.
+- **V2 prompt-template dir — SETTLED from docs**: `~/.pi/agent/prompts/*.md`,
+  filename = the `/name` command (adapter + scanner shipped on it).
+- **V3 baseUrl — SETTLED**: pi takes the gateway base VERBATIM (Ark's
+  `/api/coding/v3` worked headless with NO `/v1` normalization — unlike the
+  opencode AI-SDK case).
+- **V4 `images` format — still open**: no image turn was exercised on the
+  rig; the façade forwards base64 strings as-is pending one live test.
+- **V5 dialect — SETTLED by live capture** (§9): response payloads nest
+  under `data`; message deltas ride `assistantMessageEvent`. Live
+  `tool_execution_*` events were NOT exercised (the rig turn answered in
+  plain text) — those arms ride the documented shapes plus defensive picks,
+  covered by the fixture.
 
 ## 7. Risks
 
@@ -228,3 +233,41 @@ None block S1/S2; V1/V3 gate the writer details, V4 gates image attach.
 ## 8. Effort
 
 S1–S5 ≈ 1 day · S6 ≈ 1.5–2 days · S7–S8 ≈ 0.5 day · **total ≈ 3–4 days**.
+
+## 9. Rig results (2026-09-17, daemon `0.22.0-p9w16`)
+
+All green end to end against REAL pi:
+
+- **Install**: harness job `install pi` → `succeeded, version 0.85.1,
+/usr/local/bin/pi, npm`. Detected-instance sync registered the pi Agent
+  (`source: 'detected'`) with no rescan.
+- **Provider push**: apply-config wrote `~/.pi/agent/models.json` (provider
+  `harness-nexus`, `api: openai-completions`, `apiKey: !cat "<abs path>"`,
+  models default-leading), `settings.json` (defaults + `enabledModels`),
+  and the 0600 raw key (46 bytes, no newline) — byte-identical to the
+  design. Headless `pi -p` through the Ark gateway answered `PONG`
+  (V3: baseUrl verbatim; `!cat` key resolution works for TUI + headless).
+- **Real dialect captured** (docker-exec probe of `pi --mode rpc`):
+  responses `{id, type:'response', command, success, data}` (payload under
+  `data`; bare acks carry none); `message_update` carries
+  `assistantMessageEvent {type:'text_delta'|'thinking_delta',
+contentIndex, delta}`; `message_end.message.usage` uses
+  `{input, output}`; `get_session_stats.data.sessionId/sessionFile`;
+  `get_commands.data.commands`; `agent_settled` ends the turn; user
+  messages also produce `message_start/end` pairs (no usage — dropped).
+  The façade + fixture were aligned the same day (commit f29e5da).
+- **Chat E2E** (over `/app`): open → READY with `agentName: pi`, a real
+  pi UUID `nativeSessionId`, `promptCapabilities.image`; `session_config`
+  showed exactly the W13-configured set
+  (`harness-nexus/deepseek-v4-flash` + `harness-nexus/doubao-seed-code-1-6`);
+  the W15 catalog arrived (pi's built-in `llama` command); a prompt
+  streamed `W`+`16`+`OK` deltas → usage → `turn_result end_turn` → idle.
+- **Model switch**: `chat:config.set {kind:'option', configId:'model',
+value:'harness-nexus/doubao-seed-code-1-6'}` → accepted, the push
+  confirmed `currentValue` switched, and the next turn answered on doubao.
+- **Sessions rail**: `GET /api/agent-instances/:id/sessions` listed the
+  real store (4 files) with `model` (from `model_change`) and `cwd` (from
+  the header).
+- **Viewer**: settings/models shown; `models.json …apiKey` masked by key
+  name; `auth.json` + `harness-nexus.key` wholesale `${redacted}`.
+- **Leak scan**: no orphan `--mode rpc` processes after the turns.

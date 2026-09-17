@@ -47,6 +47,11 @@ const DEFAULT_ACP_COMMANDS: Record<AgentTarget, AcpAdapterSpec | null> = {
   // 9 W12 — OpenCode speaks ACP NATIVELY: `opencode acp` (official docs
   // /docs/acp; no wrapper needed, needs `opencode` on PATH).
   opencode: { command: ['opencode', 'acp'] },
+  // 9 W16 — pi speaks NO ACP: the chat factory branches to PiRpcConnection
+  // (daemon/acp/pi-connection.ts), an in-daemon façade over `pi --mode rpc`.
+  // This null row only keeps the record exhaustive — resolveAcpCommand is
+  // never consulted for pi (and would answer null anyway).
+  pi: null,
   zcode: null, // no adapter exists (also no install adapter — 3.x)
   generic: null,
 };

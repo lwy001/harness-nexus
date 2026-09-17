@@ -465,18 +465,25 @@ credentialName}` with the three kinds `openai-chat` / `openai-responses`
     verified to have none). Research:
     `docs/research/phase-9-w14.1-claude-ground-truth.md` · design:
     `docs/design/phase-9-w14.1-claude-elicitation.md`.
-  - **pi agent onboarding — GREEN-LIT (2026-09-17), plan ready, not yet
-    implemented** — feasibility confirmed at the user's request:
-    `@earendil-works/pi-coding-agent` (ex `@mariozechner/pi-coding-agent`,
-    deprecated). Verdict: runtime management + W3 provider push + W4 viewer
-    are near-free (npm arm, documented JSON configs, all three provider api
-    kinds; Node ≥22.19 gate), the W7 sessions rail is cheap (plain JSONL
-    file scan), C5 chat rides a SELF-DEVELOPED in-daemon ACP↔pi-RPC bridge
-    (pi has NO native ACP; open-source adapters are dialect references
-    only — user decision), and profile deploy is partial (skills/
-    prompt-templates only; MCP is extension-based, no declarative surface).
-    Research: `docs/research/phase-9-w16-pi-agent.md` · development plan:
-    `docs/design/phase-9-w16-pi-agent.md`.
+  - **W16 pi agent onboarding — SHIPPED (2026-09-17)** — pi (Earendil
+    Works' minimal coding harness, `@earendil-works/pi-coding-agent`; the
+    old `@mariozechner` scope is deprecated) is the fifth runtime-managed
+    Agent, full surface: npm install/upgrade/pin jobs (Node ≥22.19 result
+    warning), the W3 writer (models.json `harness-nexus` provider +
+    `!cat` 0600 keyfile + settings defaults/enabledModels — baseUrl
+    VERBATIM, rig-proven on Ark), the W4 viewer (auth.json + key file
+    wholesale-redacted), the W7 sessions rail (plain-JSONL file scan +
+    leaf-chain replay), the C3 scanner + deploy adapter (skills with
+    guaranteed frontmatter, prompt-template commands; mcp/rules/sub_agents
+    skipped — no declarative surface), and the SELF-DEVELOPED in-daemon
+    ACP bridge (`PiRpcConnection`: ACP requests ⇄ pi `--mode rpc` JSONL,
+    prompt responses held until `agent_settled`, rig-captured dialect —
+    payload under `data`, deltas under `assistantMessageEvent`).
+    Rig E2E end to end: install 0.85.1 → detected card → provider push
+    (headless PONG) → masked viewer → rail rows → streamed chat turn →
+    live model switch. Research:
+    `docs/research/phase-9-w16-pi-agent.md` · design:
+    `docs/design/phase-9-w16-pi-agent.md`. Daemon `0.22.0-p9w16`.
 - Non-goals v1: harness uninstall, zcode runtimes, managed-settings
   hierarchies. hermes runtime management was CANCELLED with the user
   (2026-09-17): hermes stays a profile-deploy + inventory-scan + ACP-chat

@@ -6,6 +6,7 @@ import { sessionsListRequestSchema, type NativeSessionView } from '@harness-nexu
 import { AcpAgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-sessions.js';
+import { piSessionViews } from './pi-sessions.js';
 
 /**
  * Native session listing (Phase 9 W7) — the chat rail's data source. The
@@ -21,6 +22,9 @@ import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-session
  *   deepseek — a pure file scan of `~/.dsh/sessions` (no spawn, no auth; dsh's
  *     own list returns neither title nor time, so both come from the
  *     transcript header + mtime).
+ *   pi — a pure file scan of `~/.pi/agent/sessions` (9 W16): plain JSONL,
+ *     identity/cwd from the `session` header line, title from the last
+ *     `session_info`, model from the last `model_change`, recency = mtime.
  *   hermes / zcode / generic — no verified native surface: `supported:false`.
  */
 
@@ -97,6 +101,19 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
           socket.emit('sessions:list:result', {
             requestId,
             sessions: await listCached(target, refresh === true, async () => listDsh(home)),
+          });
+          return;
+        }
+        if (target === 'pi') {
+          socket.emit('sessions:list:result', {
+            requestId,
+            sessions: await listCached(target, refresh === true, async () =>
+              piSessionViews(join(home, '.pi', 'agent', 'sessions'), {
+                readdir: (p) => readdirSync(p),
+                readFile: (p) => readFileSync(p),
+                stat: (p) => statSync(p),
+              }),
+            ),
           });
           return;
         }

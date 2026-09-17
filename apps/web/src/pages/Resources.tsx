@@ -97,7 +97,7 @@ const KINDS: {
   },
 ];
 
-const TARGETS: AgentTarget[] = ['claude-code', 'zcode', 'hermes', 'generic'];
+const TARGETS: AgentTarget[] = ['claude-code', 'zcode', 'hermes', 'pi', 'generic'];
 
 export function ResourcesPage() {
   const { logout, user } = useAuth();

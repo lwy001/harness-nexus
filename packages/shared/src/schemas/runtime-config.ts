@@ -30,6 +30,9 @@ export const RUNTIME_API_SUPPORT: Record<RuntimeTarget, readonly ProviderApi[]> 
   // 9 W12 — the provider's `npm` AI-SDK key covers both wires
   // (@ai-sdk/openai[-compatible] / @ai-sdk/anthropic).
   opencode: ['anthropic-messages', 'openai'],
+  // 9 W16 — pi's models.json `api` values cover both coarse flavors
+  // (anthropic-messages / openai-completions / openai-responses).
+  pi: ['anthropic-messages', 'openai'],
 };
 
 /**
@@ -49,6 +52,14 @@ export const OPENCODE_PROVIDER_ID = 'harness-nexus';
  * `["harness-nexus", <model>]` for the configured set.
  */
 export const DSH_PROVIDER_ID = 'harness-nexus';
+
+/**
+ * 9 W16 — pi's provider key in `~/.pi/agent/models.json` (again the same
+ * spelling, again a different slot). pi's RPC model refs are
+ * `provider/id`-shaped, so the daemon-side W13 rewrite keeps only
+ * `${PI_PROVIDER_ID}/<model>` values for the configured set.
+ */
+export const PI_PROVIDER_ID = 'harness-nexus';
 
 export const runtimeConfigSpecSchema = z.object({
   /** Display label only — surfaces in the harness's own config UI. */
@@ -116,6 +127,11 @@ export function runtimeSpecUnsupportedReason(
   }
   if (target === 'deepseek' && spec.baseUrl === undefined) {
     return "deepseek provider routes must set a baseUrl (dsh's route is not in the installed catalog, so it has no default endpoint)";
+  }
+  // 9 W16 — the pi writer always defines the `harness-nexus` provider entry in
+  // models.json; a custom provider with models REQUIRES a baseUrl there.
+  if (target === 'pi' && spec.baseUrl === undefined) {
+    return "pi provider routes must set a baseUrl (the writer defines a custom models.json provider, which requires an endpoint)";
   }
   return null;
 }

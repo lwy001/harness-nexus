@@ -42,6 +42,7 @@ describe('RUNTIME_PROBES', () => {
       ['codex', 'codex'],
       ['deepseek', 'dsh'],
       ['opencode', 'opencode'],
+      ['pi', 'pi'],
     ]);
   });
 });
@@ -98,10 +99,11 @@ describe('probeRuntimes', () => {
   it('reports installed bins with version + method and missing bins as not installed', async () => {
     writeBin('claude', 'echo "2.1.211 (Claude Code)"');
     writeBin('codex', 'echo codex-cli 0.12.1');
+    writeBin('pi', 'echo 0.85.1'); // 9 W16
     // deepseek: deliberately absent
 
     const infos = await probeRuntimes({ pathEnv: binDir, homeDir: home, timeoutMs: 4000 });
-    expect(infos).toHaveLength(4); // claude-code, codex, deepseek, opencode (W12)
+    expect(infos).toHaveLength(5); // claude-code, codex, deepseek, opencode (W12), pi (W16)
 
     const claude = infos.find((r) => r.target === 'claude-code')!;
     expect(claude.installed).toBe(true);

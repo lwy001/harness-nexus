@@ -116,7 +116,11 @@ function DeploymentsCard({
         // Only targets with a local-write install adapter can be deployed.
         setProfiles(
           all.filter(
-            (p) => p.target === 'hermes' || p.target === 'codex' || p.target === 'deepseek',
+            (p) =>
+              p.target === 'hermes' ||
+              p.target === 'codex' ||
+              p.target === 'deepseek' ||
+              p.target === 'pi',
           ),
         );
       } catch {

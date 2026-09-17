@@ -45,7 +45,15 @@ import {
 type Scope = 'global' | 'personal';
 
 /** The Agent targets a profile can be shaped for (Phase 3.2 + codex + 8 T1). */
-const TARGETS: AgentTarget[] = ['claude-code', 'hermes', 'codex', 'deepseek', 'zcode', 'generic'];
+const TARGETS: AgentTarget[] = [
+  'claude-code',
+  'hermes',
+  'codex',
+  'deepseek',
+  'pi',
+  'zcode',
+  'generic',
+];
 
 /** Non-mcp resource kinds a profile entry can reference (Phase 3.5). */
 const RESOURCE_KINDS: NonMcpKind[] = ['skill', 'rule', 'command', 'sub_agent', 'hook'];
