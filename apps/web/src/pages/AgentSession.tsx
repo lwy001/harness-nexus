@@ -874,6 +874,7 @@ export function AgentSessionPage() {
                   imageSupported={imageSupported}
                   config={conversation.config satisfies ComposerConfig}
                   onConfigSet={(set) => void configSet(set)}
+                  commands={conversation.commands}
                 />
               </div>
             </div>

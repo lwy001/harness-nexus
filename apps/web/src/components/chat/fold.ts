@@ -2,6 +2,7 @@ import type {
   AcpToolContentItem,
   ChatStreamEvent,
   ChatToolCallView,
+  CommandView,
   HistoryItem,
   PlanEntry,
   PromptBlock,
@@ -115,6 +116,12 @@ export interface FoldState {
    * = announced then cleared. History replay converges through the same arm.
    */
   plan: PlanEntry[] | null;
+  /**
+   * 9 W15 — the agent's slash-command catalog (ACP
+   * `available_commands_update`, full replace). Empty = none advertised
+   * (dsh/hermes) — the `/` palette simply does not open.
+   */
+  commands: CommandView[];
   usage: {
     inputTokens?: number;
     outputTokens?: number;
@@ -144,6 +151,7 @@ export function createFoldState(): FoldState {
     turnStartedAt: null,
     config: {},
     plan: null,
+    commands: [],
     usage: null,
     permissions: [],
     turnActive: false,
@@ -372,6 +380,9 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
     case 'plan':
       // 9 W14 — full-replace snapshot; empty = cleared (the panel hides).
       return { ...state, plan: event.entries };
+    case 'commands':
+      // 9 W15 — full-replace catalog; empty = none (the palette hides).
+      return { ...state, commands: event.commands };
     case 'raw':
       if (event.method === 'hnx/prompt-error') {
         const message = (event.params as { message?: string } | undefined)?.message;

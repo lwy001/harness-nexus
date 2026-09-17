@@ -617,15 +617,37 @@ function handleRequest(msg) {
       // a close WHILE session/new is still in flight (the daemon must abort).
       // FIXTURE_SESSION_CONFIG=1 (9 W9 A) advertises modes + configOptions on
       // the establishment responses (the claude/codex/dsh shape).
+      const sid = process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`;
       const answer = () =>
         respond(id, {
-          sessionId: process.env.FIXTURE_SESSION_ID || `fx-${randomUUID().slice(0, 8)}`,
+          sessionId: sid,
           cwd: params?.cwd ?? process.cwd(),
           ...(process.env.FIXTURE_SESSION_CONFIG === '1' ? fixtureSessionConfig() : {}),
         });
       const newDelay = Number(process.env.FIXTURE_DELAY_NEW_MS ?? '0');
       if (newDelay > 0) setTimeout(answer, newDelay);
       else answer();
+      // FIXTURE_COMMANDS=1 (9 W15): push a command catalog after the response,
+      // the way the real adapters do (claude/codex defer it well past the
+      // reply — early pushes would race the daemon's establishment wiring).
+      if (process.env.FIXTURE_COMMANDS === '1') {
+        setTimeout(() => {
+          notify('session/update', {
+            sessionId: sid,
+            update: {
+              sessionUpdate: 'available_commands_update',
+              availableCommands: [
+                {
+                  name: 'deploy',
+                  description: 'Deploy the current profile',
+                  input: { hint: 'profile name' },
+                },
+                { name: 'mcp:status', description: 'MCP server status' },
+              ],
+            },
+          });
+        }, 250);
+      }
       return;
     }
     case 'session/list':

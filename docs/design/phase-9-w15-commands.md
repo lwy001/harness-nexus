@@ -30,12 +30,12 @@ Additive stream kind (bounded view of the adapter push):
 
 ```ts
 export const availableCommandViewSchema = z.object({
-  name: z.string().min(1).max(128),        // VERBATIM adapter name (may be 'mcp:foo')
-  description: z.string().max(512),        // clamped daemon-side
-  hint: z.string().max(256).optional(),    // from input.hint (args placeholder)
+  name: z.string().min(1).max(128), // VERBATIM adapter name (may be 'mcp:foo')
+  description: z.string().max(512), // clamped daemon-side
+  hint: z.string().max(256).optional(), // from input.hint (args placeholder)
 });
 // chatStreamEventSchema +=
-z.object({ kind: z.literal('commands'), commands: z.array(availableCommandViewSchema).max(64) })
+z.object({ kind: z.literal('commands'), commands: z.array(availableCommandViewSchema).max(64) });
 ```
 
 Replace semantics (the push always carries the full catalog). Riding the
@@ -68,9 +68,9 @@ description clamped 512, `input.hint` clamped 256, malformed rows skipped)
     not clip it), width matching the card, capped height with scroll,
     `role="listbox"` + `aria-activedescendant`.
 - **No fallback table.** An agent that never pushed commands shows no
-    palette (dsh, hermes) — same data-driven honesty as the W9 selectors.
+  palette (dsh, hermes) — same data-driven honesty as the W9 selectors.
   The portal reference ships a hardcoded fallback list; we deliberately
-    don't.
+  don't.
 - The empty-filter state shows a muted "no matching commands" row (palette
   stays open so the user sees why).
 

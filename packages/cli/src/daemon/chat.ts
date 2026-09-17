@@ -23,11 +23,13 @@ import {
   chatSessionResyncEventSchema,
   chatSessionStartEventSchema,
   chatTurnCancelEventSchema,
+  availableCommandViewSchema,
   planEntrySchema,
   sessionConfigOptionSchema,
   sessionModeStateSchema,
   type AcpPermissionOption,
   type AcpToolCallView,
+  type AvailableCommandView,
   type ChatStreamEvent,
   type HistoryItem,
   type PlanEntry,
@@ -1259,6 +1261,35 @@ export function takePlanEntries(raw: unknown): PlanEntry[] {
   return out;
 }
 
+/**
+ * 9 W15 — validate/clamp an `available_commands_update` catalog down to the
+ * platform's bounded view: ≤64 rows, `name` VERBATIM (the `mcp:` prefix is
+ * the agent's own namespacing), description clamped 512, the unstructured
+ * `input.hint` clamped 256, malformed rows skipped. An EMPTY catalog is
+ * legal (= no commands) and passes through.
+ */
+export function takeAvailableCommands(raw: unknown): AvailableCommandView[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AvailableCommandView[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as UnknownRecord;
+    const name = typeof r['name'] === 'string' ? r['name'].slice(0, 128) : '';
+    const description = typeof r['description'] === 'string' ? r['description'].slice(0, 512) : '';
+    const input = (r['input'] ?? null) as UnknownRecord | null;
+    const hint =
+      input !== null && typeof input['hint'] === 'string' ? input['hint'].slice(0, 256) : undefined;
+    const parsed = availableCommandViewSchema.safeParse({
+      ...(name !== '' ? { name } : {}),
+      description,
+      ...(hint !== undefined ? { hint } : {}),
+    });
+    if (parsed.success) out.push(parsed.data);
+    if (out.length >= 64) break;
+  }
+  return out;
+}
+
 /** Map one ACP `session/update` params object; null = drop (user echo). */
 export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
   const update = (params.update ?? {}) as UnknownRecord;
@@ -1288,6 +1319,14 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
         return { kind: 'raw', method: 'session/update', params: update };
       }
       return { kind: 'plan', entries: takePlanEntries(update.entries) };
+    }
+    case 'available_commands_update': {
+      // 9 W15 — the agent's slash-command catalog (full replace). Pushed
+      // after new/load/resume by claude-agent-acp (custom + `mcp:*`),
+      // codex-acp (review family) and opencode (Command.Info — platform-
+      // deployed custom commands surface here); dsh/hermes never push one.
+      // Stateless like `plan` — the web's fold holds the catalog.
+      return { kind: 'commands', commands: takeAvailableCommands(update.availableCommands) };
     }
     case 'agent_message_chunk': {
       const delta = chunkText(update);
