@@ -37,6 +37,7 @@ import { ChatStream } from '@/components/chat/chat-stream.js';
 import { ChannelTabs } from '@/components/chat/channel-tabs.js';
 import { useChatChannels } from '@/components/chat/use-chat-channels.js';
 import { Composer, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
+import { TodoPanel } from '@/components/chat/todo-panel.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
 import { FilePicker } from '@/components/chat/file-picker.js';
 import {
@@ -849,6 +850,9 @@ export function AgentSessionPage() {
 
             <div className="shrink-0 p-3">
               <div className="mx-auto w-full max-w-3xl">
+                {/* 9 W14 — the agent's todo/plan snapshot (full-replace ACP
+                    state; hidden when the agent never announced one). */}
+                <TodoPanel entries={conversation.plan ?? []} />
                 <Composer
                   value={draft}
                   onChange={changeDraft}

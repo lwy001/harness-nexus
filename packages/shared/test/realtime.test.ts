@@ -144,6 +144,14 @@ describe('chat stream schemas (C5)', () => {
       { kind: 'turn_result', stopReason: 'end_turn' },
       { kind: 'session_status', state: 'active' },
       { kind: 'raw', method: 'session/update', params: { sessionUpdate: 'plan' } },
+      {
+        kind: 'plan',
+        entries: [
+          { content: 'Survey the layout', status: 'pending', priority: 'high' },
+          { content: 'Analyzing dependencies…', status: 'in_progress' },
+          { content: 'Write the patch', status: 'completed' },
+        ],
+      },
     ];
     for (const event of events) {
       expect(chatStreamEventSchema.safeParse(event).success, JSON.stringify(event)).toBe(true);
@@ -158,6 +166,19 @@ describe('chat stream schemas (C5)', () => {
     expect(chatStreamEventSchema.safeParse({ kind: 'session_status', state: 'busy' }).success).toBe(
       false,
     );
+  });
+
+  it('plan snapshots: empty clears, bad status rejects, entry cap holds (9 W14)', () => {
+    expect(chatStreamEventSchema.safeParse({ kind: 'plan', entries: [] }).success).toBe(true);
+    expect(
+      chatStreamEventSchema.safeParse({ kind: 'plan', entries: [{ content: 'x', status: 'done' }] })
+        .success,
+    ).toBe(false);
+    const tooMany = {
+      kind: 'plan' as const,
+      entries: Array.from({ length: 129 }, () => ({ content: 'x', status: 'pending' })),
+    };
+    expect(chatStreamEventSchema.safeParse(tooMany).success).toBe(false);
   });
 
   it('validates the chat:event envelope wrapping an event', () => {

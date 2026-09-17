@@ -336,6 +336,60 @@ function runToolShowcase(id, sessionId) {
   finish();
 }
 
+/**
+ * `show-plan` prompt (9 W14): a turn riding PLAN snapshots the way
+ * claude-agent-acp emits them — full-replace lists, TodoWrite-style, with
+ * the in_progress row carrying its activeForm text. No tool calls at all:
+ * the wrapper SUPPRESSES TodoWrite/Task* as tool calls on purpose.
+ */
+function runPlanShowcase(id, sessionId) {
+  const plan = (entries) =>
+    notify('session/update', {
+      sessionId,
+      update: { sessionUpdate: 'plan', entries },
+    });
+  const finish = () => {
+    update(sessionId, 'usage_update');
+    respond(id, { stopReason: 'end_turn' });
+  };
+
+  notify('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      contentBlock: { type: 'text', text: 'Laying out the steps first.\n\n' },
+    },
+  });
+  plan([
+    { content: 'Survey the workspace layout', status: 'pending', priority: 'high' },
+    { content: 'Implement the panel', status: 'pending' },
+    { content: 'Verify against the fold', status: 'pending' },
+  ]);
+  plan([
+    { content: 'Survey the workspace layout', status: 'completed', priority: 'high' },
+    { content: 'Implementing the panel…', status: 'in_progress' },
+    { content: 'Verify against the fold', status: 'pending' },
+  ]);
+  plan([
+    { content: 'Survey the workspace layout', status: 'completed', priority: 'high' },
+    { content: 'Implement the panel', status: 'completed' },
+    { content: 'Verifying against the fold…', status: 'in_progress' },
+  ]);
+  plan([
+    { content: 'Survey the workspace layout', status: 'completed', priority: 'high' },
+    { content: 'Implement the panel', status: 'completed' },
+    { content: 'Verify against the fold', status: 'completed' },
+  ]);
+  notify('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      contentBlock: { type: 'text', text: 'All steps complete.' },
+    },
+  });
+  finish();
+}
+
 function runPrompt(id, text, deferred = false) {
   const sessionId = 'fx-session'; // single-session fixture; content is what matters
   const finish = (stopReason) => {
@@ -374,6 +428,11 @@ function runPrompt(id, text, deferred = false) {
 
   if (text.includes('show-tools')) {
     runToolShowcase(id, sessionId);
+    return;
+  }
+
+  if (text.includes('show-plan')) {
+    runPlanShowcase(id, sessionId);
     return;
   }
 

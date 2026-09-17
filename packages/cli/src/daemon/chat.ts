@@ -23,12 +23,14 @@ import {
   chatSessionResyncEventSchema,
   chatSessionStartEventSchema,
   chatTurnCancelEventSchema,
+  planEntrySchema,
   sessionConfigOptionSchema,
   sessionModeStateSchema,
   type AcpPermissionOption,
   type AcpToolCallView,
   type ChatStreamEvent,
   type HistoryItem,
+  type PlanEntry,
   type PromptBlock,
   type SessionConfigOption,
   type SessionModeState,
@@ -1232,6 +1234,31 @@ export function takeSessionConfig(
   };
 }
 
+/**
+ * 9 W14 — validate/clamp an adapter `plan` update's entries down to the
+ * platform's bounded view: ≤128 rows (excess dropped — a snapshot that long
+ * is noise), `content` clamped to 512 chars (dropping a long row would
+ * misrepresent the plan), malformed rows skipped. An EMPTY array is legal
+ * (= plan cleared) and passes through.
+ */
+export function takePlanEntries(raw: unknown): PlanEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PlanEntry[] = [];
+  for (const row of raw) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as UnknownRecord;
+    const content = typeof r['content'] === 'string' ? r['content'].slice(0, 512) : '';
+    const parsed = planEntrySchema.safeParse({
+      ...(content !== '' ? { content } : {}),
+      ...(r['status'] !== undefined ? { status: r['status'] } : {}),
+      ...(r['priority'] !== undefined ? { priority: r['priority'] } : {}),
+    });
+    if (parsed.success) out.push(parsed.data);
+    if (out.length >= 128) break;
+  }
+  return out;
+}
+
 /** Map one ACP `session/update` params object; null = drop (user echo). */
 export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
   const update = (params.update ?? {}) as UnknownRecord;
@@ -1248,6 +1275,19 @@ export function mapAcpUpdate(params: UnknownRecord): ChatStreamEvent | null {
     case 'config_option_update': {
       const options = takeConfigOptions(update.configOptions);
       return options === null ? null : { kind: 'session_config', configOptions: options };
+    }
+    case 'plan': {
+      // 9 W14 — full-replace todo/task snapshot. claude-agent-acp surfaces
+      // TodoWrite AND TaskCreate/TaskUpdate/TaskList exclusively this way
+      // (the tool calls are suppressed), codex-acp maps its update_plan tool
+      // to it; opencode/dsh never emit one. Stateless: the web holds the
+      // last-wins state, so the load-replay capture path needs no merge.
+      // Only the stable shape (`entries`) maps; the pre-1.0 draft shape
+      // (`plan.steps`) keeps the raw fallback — no shipped adapter emits it.
+      if (!Array.isArray(update.entries)) {
+        return { kind: 'raw', method: 'session/update', params: update };
+      }
+      return { kind: 'plan', entries: takePlanEntries(update.entries) };
     }
     case 'agent_message_chunk': {
       const delta = chunkText(update);

@@ -90,6 +90,39 @@ describe('mapAcpUpdate', () => {
     });
   });
 
+  it('maps plan snapshots (9 W14): clamp, malformed-row drop, empty clears, draft shape stays raw', () => {
+    expect(
+      map({
+        sessionUpdate: 'plan',
+        entries: [
+          { content: 'Step one', status: 'pending', priority: 'high' },
+          { content: 'Working…', status: 'in_progress' },
+        ],
+      }),
+    ).toEqual({
+      kind: 'plan',
+      entries: [
+        { content: 'Step one', status: 'pending', priority: 'high' },
+        { content: 'Working…', status: 'in_progress' },
+      ],
+    });
+    // Over-long content is CLAMPED (dropping the row would misrepresent the plan).
+    expect(
+      map({
+        sessionUpdate: 'plan',
+        entries: [{ content: 'x'.repeat(900), status: 'pending' }],
+      }),
+    ).toEqual({ kind: 'plan', entries: [{ content: 'x'.repeat(512), status: 'pending' }] });
+    // Malformed rows skip; a legal empty snapshot passes (plan cleared).
+    expect(
+      map({ sessionUpdate: 'plan', entries: [{ content: 'ok', status: 'nope' }, null, 42] }),
+    ).toEqual({ kind: 'plan', entries: [] });
+    expect(map({ sessionUpdate: 'plan', entries: [] })).toEqual({ kind: 'plan', entries: [] });
+    // The pre-1.0 draft shape (plan.steps) keeps the raw fallback.
+    expect(map({ sessionUpdate: 'plan', plan: { steps: [] } })).toMatchObject({ kind: 'raw' });
+    expect(map({ sessionUpdate: 'plan' })).toMatchObject({ kind: 'raw' });
+  });
+
   it('maps usage defensively', () => {
     expect(
       map({ sessionUpdate: 'usage_update', usage: { inputTokens: 3, outputTokens: 4 } }),
@@ -405,6 +438,53 @@ describe('session round-trip vs the fixture agent', () => {
       lateAck,
     );
     expect(lateAck).toHaveBeenCalledWith({ error: 'unknown-session' });
+  }, 15000);
+
+  it('a plan turn surfaces full-replace snapshots and the history ring replays them (9 W14)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-plan',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready'));
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-plan',
+      prompt: [{ type: 'text', text: 'show-plan please' }],
+    });
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+    const plans = socket.chatEvents().filter((e) => e.kind === 'plan');
+    // Full-replace snapshots arrive verbatim; the LAST one is all-completed.
+    expect(plans.length).toBeGreaterThanOrEqual(4);
+    const last = plans[plans.length - 1]!;
+    if (last.kind !== 'plan') throw new Error('not a plan event');
+    expect(last.entries.map((e) => e.status)).toEqual(['completed', 'completed', 'completed']);
+    expect(last.entries[0]).toEqual({
+      content: 'Survey the workspace layout',
+      status: 'completed',
+      priority: 'high',
+    });
+    // The in_progress snapshot carried the activeForm-style text.
+    const mid = plans[1]!;
+    if (mid.kind !== 'plan') throw new Error('not a plan event');
+    expect(mid.entries.some((e) => e.content === 'Implementing the panel…')).toBe(true);
+
+    // Resync replays the ring — the plan events must ride chat:history too.
+    socket.receive('chat:session.resync', { sessionId: 'sess-plan' });
+    const history = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:history')?.payload as
+          { items: { type: string; event?: { kind: string } }[] } | undefined,
+    );
+    expect(history.items.some((i) => i.type === 'event' && i.event?.kind === 'plan')).toBe(true);
+
+    socket.receive('chat:session.close', { sessionId: 'sess-plan', reason: 'user' });
   }, 15000);
 
   it('a permission request with a UUID-STRING id resolves (codex-acp dialect)', async () => {

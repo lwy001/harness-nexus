@@ -429,6 +429,23 @@ export const sessionConfigOptionSchema = z.object({
   options: z.array(sessionConfigValueSchema).max(256).optional(),
 });
 
+// ---- 9 W14: ACP plan (todo) snapshots ----
+//
+// `session/update {sessionUpdate:'plan', entries}` is a FULL REPLACE
+// snapshot — ACP's own contract: "the agent must send a complete list of all
+// entries with their current status". claude-agent-acp surfaces TodoWrite
+// AND TaskCreate/TaskUpdate/TaskList exclusively this way (the tool calls
+// are suppressed), codex-acp maps its update_plan tool to it; the daemon
+// clamps (≤128 entries, content ≤512) before re-emitting on our wire.
+
+export const planEntryStatusSchema = z.enum(['pending', 'in_progress', 'completed']);
+
+export const planEntrySchema = z.object({
+  content: z.string().min(1).max(512),
+  status: planEntryStatusSchema,
+  priority: z.enum(['high', 'medium', 'low']).optional(),
+});
+
 /**
  * The `session_config` stream event — PATCH semantics: `availableModes` /
  * `configOptions` replace when present; a lone `currentModeId` patches the
@@ -486,6 +503,8 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('session_status'), state: z.enum(['active', 'idle']) }),
   // 9 W9 A — the session's mode/config snapshot (patch semantics above).
   z.object({ kind: z.literal('session_config') }).merge(sessionConfigPatchSchema),
+  // 9 W14 — the agent's todo/task plan (full-replace snapshot; empty = cleared).
+  z.object({ kind: z.literal('plan'), entries: z.array(planEntrySchema).max(128) }),
   z.object({ kind: z.literal('raw'), method: z.string().min(1).max(64), params: z.unknown() }),
 ]);
 
@@ -867,6 +886,8 @@ export type SessionModeState = z.infer<typeof sessionModeStateSchema>;
 export type SessionConfigValue = z.infer<typeof sessionConfigValueSchema>;
 export type SessionConfigOption = z.infer<typeof sessionConfigOptionSchema>;
 export type SessionConfigPatch = z.infer<typeof sessionConfigPatchSchema>;
+export type PlanEntryStatus = z.infer<typeof planEntryStatusSchema>;
+export type PlanEntry = z.infer<typeof planEntrySchema>;
 export type PromptCapabilities = z.infer<typeof promptCapabilitiesSchema>;
 export type ChatConfigSetRequest = z.infer<typeof chatConfigSetRequestSchema>;
 export type ChatConfigSetEvent = z.infer<typeof chatConfigSetEventSchema>;
