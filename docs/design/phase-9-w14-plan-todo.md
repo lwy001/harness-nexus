@@ -113,3 +113,24 @@ Rig E2E on the live machine (`docs/dev/test-rig.md`, git-ignored):
 - Fold behavior is covered by the daemon wire contract + manual rig pass
   (the web has no component test harness; the fold's plan arm mirrors
   `session_config`'s state-only merge).
+
+## 5. Rig results (2026-09-17, daemon `0.19.0-p9w14`)
+
+- **codex plan E2E ✓** — the `update_plan` tool fires on a "make a plan then
+  execute" prompt; `plan` snapshots flow end-to-end and the web TodoPanel
+  renders, converges live, and settles at `已完成 3 3/3` (zero-count segments
+  omitted). Browser-verified collapsed + expanded.
+- **claude task-list lane DORMANT today** — CLI 2.1.263 headless sessions
+  expose NEITHER TodoWrite NOR TaskCreate/TaskUpdate to the model (verified
+  by having the model list its tools verbatim: Agent/Bash/Cron*/Edit/
+  EnterPlanMode/… only). The wrapper's TodoWrite/Task*→plan conversion
+  therefore has no producer on this rig right now; the wire + panel are
+  ready for when the CLI ships task tools to SDK sessions. The subagent
+  tool is `Agent` (ex-`Task`) and still rides an ordinary tool_call → the
+  existing TaskCard.
+- **Permissions ✓** — claude-code (options allow-once / allow-with-updates /
+  reject → allow-once → tool proceeds → clean turn end) and opencode
+  (once / always / reject → allow_once → clean end). The browser permission
+  card (codex, its own three-option set) approved and the turn completed.
+- Side capture: `available_commands_update` observed live from claude (incl.
+  `deep-research`) and codex (`review` with `input.hint`) — the W15 input.
