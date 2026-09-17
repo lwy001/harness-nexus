@@ -26,6 +26,7 @@ import { supportedTargets } from './install/registry.js';
 import { getHermesPlanWarnings } from './install/adapters/hermes.js';
 import { getCodexPlanWarnings } from './install/adapters/codex.js';
 import { getDeepseekPlanWarnings } from './install/adapters/deepseek.js';
+import { getPiPlanWarnings } from './install/adapters/pi.js';
 import { applyUninstall, planUninstall } from './install/uninstaller.js';
 import { daemonConfigPath, loadDaemonConfig, saveDaemonConfig } from './config.js';
 import { runDaemon } from './daemon/client.js';
@@ -197,6 +198,18 @@ function printDeepseekHints(): void {
   console.log(lines.join('\n'));
 }
 
+/** Print pi post-install hints. */
+function printPiHints(): void {
+  const w = getPiPlanWarnings();
+  const lines = ['\npi post-install steps:'];
+  if (w.skipped.length > 0) {
+    lines.push(`  • Skipped (no declarative pi surface):`);
+    for (const s of w.skipped) lines.push(`      - ${s}`);
+  }
+  // eslint-disable-next-line no-console
+  console.log(lines.join('\n'));
+}
+
 /** Render a plan for the dry-run preview. */
 function formatPlan(plan: import('./install/types.js').InstallPlan): string {
   const lines = [
@@ -248,6 +261,9 @@ async function runInstall(args: InstallArgs): Promise<void> {
   }
   if (plan.adapter.target === 'deepseek') {
     printDeepseekHints();
+  }
+  if (plan.adapter.target === 'pi') {
+    printPiHints();
   }
 
   if (!args.apply) {

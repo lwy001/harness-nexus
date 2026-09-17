@@ -30,7 +30,7 @@ import { jobView } from '../jobs/service.js';
  * the plugin itself) — deploying into it from here is not a path. deepseek
  * (T1) writes skills + a home cordis-patch MCP row like the others.
  */
-export const DEPLOYABLE_TARGETS = ['hermes', 'codex', 'deepseek'] as const;
+export const DEPLOYABLE_TARGETS = ['hermes', 'codex', 'deepseek', 'pi'] as const;
 
 export async function jobsRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };

@@ -176,6 +176,17 @@ function setupHome(): string {
     '---\nname: docx\ndescription: Work with documents\n---\n\nCreate and edit .docx files.\n',
   );
 
+  // ---- pi (9 W16): skills (frontmatter name may differ from the dir), prompt templates ----
+  w(
+    '.pi/agent/skills/mismatched-dir/SKILL.md',
+    '---\nname: real-name\ndescription: The dir is not the name\n---\n\nBody.\n',
+  );
+  w(
+    '.pi/agent/skills/plain/SKILL.md',
+    '---\nname: plain\ndescription: No side files\n---\n\nBody.\n',
+  );
+  w('.pi/agent/prompts/deploy.md', '---\ndescription: Deploy the app\n---\nDeploy carefully.\n');
+
   return home;
 }
 
@@ -386,6 +397,27 @@ describe('opencode scanner (9 W12)', () => {
   });
 });
 
+describe('pi scanner (9 W16)', () => {
+  it('maps skills (frontmatter name wins over the dir) and prompt templates as commands', async () => {
+    const h = setupHome();
+    const snap = scanTarget('pi', h);
+    const items = snap.agents[0]!.items;
+
+    const renamed = items.find((i) => i.name === 'real-name')!;
+    expect(renamed.kind).toBe('skill');
+    expect(renamed.path).toBe('skills/mismatched-dir'); // dir preserved, name from frontmatter
+    expect(renamed.origin).toBe('local');
+    expect(items.find((i) => i.name === 'plain')?.kind).toBe('skill');
+    expect(items.find((i) => i.name === 'deploy')?.kind).toBe('command');
+
+    const payload = await collectItems('pi', [{ kind: 'skill', name: 'real-name' }], h);
+    expect(payload[0]!.artifact).toEqual({
+      kind: 'skill',
+      files: { 'SKILL.md': expect.stringContaining('real-name') },
+    });
+  });
+});
+
 describe('scanAllTargets', () => {
   it('reports a snapshot for every supported target and validates against the wire schema', async () => {
     const h = setupHome();
@@ -396,6 +428,7 @@ describe('scanAllTargets', () => {
       'deepseek',
       'hermes',
       'opencode',
+      'pi',
     ]);
     const { inventorySnapshotSchema } = await import('@harness-nexus/shared');
     for (const snap of snapshots) {
