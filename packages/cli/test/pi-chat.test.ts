@@ -64,15 +64,23 @@ function waitFor<T>(fn: () => T | undefined | false, ms = 8000): Promise<T> {
 
 describe('pi dialect mappers (pure)', () => {
   it('maps text/thinking deltas, tool executions, bash, and usage', () => {
+    // rig-verified shape (pi 0.85.1): the delta rides `assistantMessageEvent`
     expect(
-      piEventToAcpUpdate({ type: 'message_update', update: { type: 'text_delta', delta: 'Hi' } }),
+      piEventToAcpUpdate({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Hi' },
+      }),
     ).toEqual({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } });
     expect(
       piEventToAcpUpdate({
         type: 'message_update',
-        update: { type: 'thinking_delta', delta: 'hm' },
+        assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: 'hm' },
       }),
     ).toEqual({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'hm' } });
+    // the pre-verification `update` spelling stays as a cushion
+    expect(
+      piEventToAcpUpdate({ type: 'message_update', update: { type: 'text_delta', delta: 'Hi' } }),
+    ).toEqual({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } });
     expect(
       piEventToAcpUpdate({
         type: 'tool_execution_start',

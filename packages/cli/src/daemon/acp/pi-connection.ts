@@ -152,7 +152,10 @@ export function piEventToAcpUpdate(event: unknown): UnknownRecord | null {
   const e = (event ?? {}) as UnknownRecord;
   switch (e['type']) {
     case 'message_update': {
-      const u = (e['update'] ?? e) as UnknownRecord;
+      // rig-verified (pi 0.85.1): the delta rides `assistantMessageEvent`
+      // ({type:'text_delta'|'thinking_delta', contentIndex, delta}); the
+      // `update` spelling stays as a pre-verification cushion.
+      const u = (e['assistantMessageEvent'] ?? e['update'] ?? e) as UnknownRecord;
       const delta = pickString(u['delta']) ?? pickString(u['text']) ?? pickString(u['thinking']);
       if (delta === null) return null;
       const kind = pickString(u['type']) ?? '';
@@ -705,7 +708,15 @@ export class PiRpcConnection implements AgentConnection {
                 `pi command failed: ${JSON.stringify(error)}`);
           pending.reject(new Error(text));
         } else {
-          pending.resolve(msg);
+          // rig-verified (pi 0.85.1): responses are {id, type:'response',
+          // command, success, data} — the payload lives under `data` (absent
+          // on bare acks like prompt/abort).
+          const data = msg['data'];
+          pending.resolve(
+            data !== null && typeof data === 'object' && !Array.isArray(data)
+              ? (data as UnknownRecord)
+              : msg,
+          );
         }
         return;
       }

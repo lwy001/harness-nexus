@@ -22,11 +22,13 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
-const respond = (id, payload = {}, error = null) =>
+// rig-verified envelope (pi 0.85.1): {id, type:'response', command, success,
+// data} — the payload lives under `data`; failures carry a root `error`.
+const respond = (id, command, payload = {}, error = null) =>
   send(
     error === null
-      ? { type: 'response', id, success: true, ...payload }
-      : { type: 'response', id, success: false, error },
+      ? { type: 'response', id, command, success: true, data: payload }
+      : { type: 'response', id, command, success: false, error },
   );
 
 const FIXTURE_SESSION_ID = process.env.PI_FIXTURE_SESSION_ID ?? 'pi-fixture-uuid';
@@ -44,8 +46,7 @@ function turn(message) {
   if (message.includes('use-tool')) {
     send({
       type: 'message_update',
-      contentIndex: 0,
-      update: { type: 'text_delta', delta: 'Let me check ' },
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Let me check ' },
     });
     send({
       type: 'tool_execution_start',
@@ -61,8 +62,7 @@ function turn(message) {
     });
     send({
       type: 'message_update',
-      contentIndex: 1,
-      update: { type: 'text_delta', delta: 'done' },
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: 'done' },
     });
     send({
       type: 'message_end',
@@ -74,13 +74,11 @@ function turn(message) {
   if (message.includes('think')) {
     send({
       type: 'message_update',
-      contentIndex: 0,
-      update: { type: 'thinking_delta', delta: 'hmm' },
+      assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: 'hmm' },
     });
     send({
       type: 'message_update',
-      contentIndex: 1,
-      update: { type: 'text_delta', delta: 'thoughtful answer' },
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: 'thoughtful answer' },
     });
     send({ type: 'message_end', message: { role: 'assistant', usage: { input: 5, output: 7 } } });
     send({ type: 'agent_settled' });
@@ -90,8 +88,7 @@ function turn(message) {
     send({ type: 'bash_execution_update', id: 'bash-1', delta: '$ ls\nfile' });
     send({
       type: 'message_update',
-      contentIndex: 0,
-      update: { type: 'text_delta', delta: 'listed' },
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'listed' },
     });
     send({ type: 'agent_settled' });
     return true;
@@ -99,11 +96,13 @@ function turn(message) {
   if (message.includes('hang')) {
     return true; // acked; nothing until abort
   }
-  send({ type: 'message_update', contentIndex: 0, update: { type: 'text_delta', delta: 'Hello' } });
   send({
     type: 'message_update',
-    contentIndex: 0,
-    update: { type: 'text_delta', delta: ' there' },
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Hello' },
+  });
+  send({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: ' there' },
   });
   send({
     type: 'message_end',
@@ -139,7 +138,7 @@ async function handle(line) {
       if (Number(process.env.PI_FIXTURE_SLOW_START ?? 0) > 0) {
         await delay(Number(process.env.PI_FIXTURE_SLOW_START));
       }
-      respond(id, {
+      respond(id, type, {
         state: {
           model: { provider: 'harness-nexus', id: 'gw-large' },
           thinkingLevel: 'medium',
@@ -150,16 +149,16 @@ async function handle(line) {
       return;
     }
     case 'get_session_stats':
-      respond(id, { sessionId: FIXTURE_SESSION_ID, messageCount: 2 });
+      respond(id, type, { sessionId: FIXTURE_SESSION_ID, messageCount: 2 });
       return;
     case 'get_available_models':
-      respond(id, { models });
+      respond(id, type, { models });
       return;
     case 'get_available_thinking_levels':
-      respond(id, { levels: ['off', 'low', 'medium', 'high'] });
+      respond(id, type, { levels: ['off', 'low', 'medium', 'high'] });
       return;
     case 'get_commands':
-      respond(id, {
+      respond(id, type, {
         commands: [{ name: 'review', description: 'Review the diff' }, { name: 'deploy' }],
       });
       return;
@@ -167,23 +166,23 @@ async function handle(line) {
     case 'switch_session':
     case 'set_model':
     case 'set_thinking_level':
-      respond(id);
+      respond(id, type);
       return;
     case 'prompt': {
       const ok = turn(String(params.message ?? ''));
-      if (ok === null) respond(id, null, 'pi prompt rejected: no auth for this model');
-      else respond(id); // the ACK — the turn settles via agent_settled
+      if (ok === null) respond(id, 'prompt', null, 'pi prompt rejected: no auth for this model');
+      else respond(id, type); // the ACK — the turn settles via agent_settled
       return;
     }
     case 'abort':
-      respond(id);
+      respond(id, type);
       // Real pi answers abort once idle; the generation stops → the turn
       // settles. Emitting settled here releases the held ACP response with
       // stopReason 'cancelled' (the façade's abortRequested flag).
       send({ type: 'agent_settled' });
       return;
     default:
-      respond(id, null, `fixture pi does not implement '${type}'`);
+      respond(id, type, null, `fixture pi does not implement '${type}'`);
   }
 }
 
