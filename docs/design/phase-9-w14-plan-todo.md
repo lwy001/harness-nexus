@@ -36,7 +36,7 @@ export const planEntrySchema = z.object({
   priority: z.enum(['high', 'medium', 'low']).optional(),
 });
 // chatStreamEventSchema +=
-z.object({ kind: z.literal('plan'), entries: z.array(planEntrySchema).max(128) })
+z.object({ kind: z.literal('plan'), entries: z.array(planEntrySchema).max(128) });
 ```
 
 Full REPLACE semantics (ACP's own contract: every update carries the complete
@@ -109,7 +109,7 @@ Rig E2E on the live machine (`docs/dev/test-rig.md`, git-ignored):
   content clamp, malformed-row drop, empty array passes as cleared) + a
   fixture round-trip (new `show-plan` prompt arm in the fixture agent:
   pending snapshot → progress snapshot → completion snapshot + message +
-   end_turn).
+  end_turn).
 - Fold behavior is covered by the daemon wire contract + manual rig pass
   (the web has no component test harness; the fold's plan arm mirrors
   `session_config`'s state-only merge).

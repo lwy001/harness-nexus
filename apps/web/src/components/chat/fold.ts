@@ -3,6 +3,7 @@ import type {
   ChatStreamEvent,
   ChatToolCallView,
   HistoryItem,
+  PlanEntry,
   PromptBlock,
   SessionConfigOption,
   SessionMode,
@@ -108,6 +109,12 @@ export interface FoldState {
     availableModes?: SessionMode[];
     configOptions?: SessionConfigOption[];
   };
+  /**
+   * 9 W14 — the agent's todo/task plan (ACP `plan` snapshots, FULL replace:
+   * every event carries the complete list). `null` = never announced; `[]`
+   * = announced then cleared. History replay converges through the same arm.
+   */
+  plan: PlanEntry[] | null;
   usage: {
     inputTokens?: number;
     outputTokens?: number;
@@ -136,6 +143,7 @@ export function createFoldState(): FoldState {
     seq: 0,
     turnStartedAt: null,
     config: {},
+    plan: null,
     usage: null,
     permissions: [],
     turnActive: false,
@@ -361,6 +369,9 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
           ...(event.configOptions !== undefined ? { configOptions: event.configOptions } : {}),
         },
       };
+    case 'plan':
+      // 9 W14 — full-replace snapshot; empty = cleared (the panel hides).
+      return { ...state, plan: event.entries };
     case 'raw':
       if (event.method === 'hnx/prompt-error') {
         const message = (event.params as { message?: string } | undefined)?.message;

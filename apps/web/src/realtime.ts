@@ -77,7 +77,27 @@ export type ChatStreamEvent =
   | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
   | { kind: 'session_status'; state: 'active' | 'idle' }
   | ({ kind: 'session_config' } & SessionConfigPatch)
+  | ({ kind: 'plan' } & PlanPatch)
   | { kind: 'raw'; method: string; params: unknown };
+
+// ---- 9 W14 — ACP plan (todo) snapshots (mirrors shared/realtime.ts) ----
+
+export type PlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+
+/**
+ * One todo/task row. Full-REPLACE semantics: every `plan` event carries the
+ * complete list (ACP contract); `content` of an in_progress row is often the
+ * agent's activeForm text — display verbatim.
+ */
+export interface PlanEntry {
+  content: string;
+  status: PlanEntryStatus;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+export interface PlanPatch {
+  entries: PlanEntry[];
+}
 
 // ---- 9 W9 A — ACP session modes & configuration (mirrors shared/realtime.ts) ----
 
