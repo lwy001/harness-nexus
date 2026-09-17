@@ -167,6 +167,93 @@ describe('mapAcpUpdate', () => {
     expect(map({ sessionUpdate: 'usage_update' })).toEqual({ kind: 'usage' });
   });
 
+  it('takeElicitationView reduces the claude AskUserQuestion shape (9 W14.1)', async () => {
+    const { takeElicitationView } = await import('../src/daemon/chat.js');
+    // The probe-captured claude dialect: oneOf consts + a custom free-text
+    // property + required list.
+    const view = takeElicitationView({
+      mode: 'form',
+      sessionId: 'fx-session',
+      toolCallId: 'call_abc',
+      message: 'Which color do you prefer?',
+      requestedSchema: {
+        type: 'object',
+        required: ['question_0'],
+        properties: {
+          question_0: {
+            type: 'string',
+            title: 'Color',
+            oneOf: [
+              { const: 'Red', title: 'Red', description: 'The color red' },
+              { const: 'Blue', title: 'Blue' },
+            ],
+          },
+          question_0_custom: { type: 'string', title: 'Other', description: 'Your own answer' },
+        },
+      },
+    });
+    expect(view).toEqual({
+      message: 'Which color do you prefer?',
+      toolCallId: 'call_abc',
+      fields: [
+        {
+          name: 'question_0',
+          type: 'enum',
+          title: 'Color',
+          options: [
+            { value: 'Red', label: 'Red', description: 'The color red' },
+            { value: 'Blue', label: 'Blue' },
+          ],
+          required: true,
+        },
+        { name: 'question_0_custom', type: 'text', title: 'Other', description: 'Your own answer' },
+      ],
+    });
+  });
+
+  it('takeElicitationView covers the other field kinds and degrades safely (9 W14.1)', async () => {
+    const { takeElicitationView } = await import('../src/daemon/chat.js');
+    const view = takeElicitationView({
+      message: 'Pick',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          plainEnum: { type: 'string', enum: ['a', 'b'] },
+          multi: { type: 'array', items: { enum: ['x', 'y'] } },
+          flag: { type: 'boolean', title: 'Verbose' },
+          num: { type: 'number' },
+          count: { type: 'integer' },
+          nested: { type: 'object', properties: { deep: { type: 'string' } } },
+          typeless: { title: 'Nothing renderable' },
+          longTitle: { type: 'string', title: 't'.repeat(900) },
+        },
+      },
+    });
+    expect(view.message).toBe('Pick');
+    expect(view.toolCallId).toBeUndefined();
+    const byName = new Map(view.fields.map((f: { name: string }) => [f.name, f]));
+    expect(byName.get('plainEnum')).toEqual({
+      name: 'plainEnum',
+      type: 'enum',
+      options: [{ value: 'a' }, { value: 'b' }],
+    });
+    expect(byName.get('multi')).toEqual({
+      name: 'multi',
+      type: 'multi',
+      options: [{ value: 'x' }, { value: 'y' }],
+    });
+    expect(byName.get('flag')).toEqual({ name: 'flag', type: 'boolean', title: 'Verbose' });
+    expect(byName.get('num')).toEqual({ name: 'num', type: 'number' });
+    expect(byName.get('count')).toEqual({ name: 'count', type: 'integer' });
+    // Structurally unusable properties drop; long strings clamp.
+    expect(byName.has('nested')).toBe(false);
+    expect(byName.has('typeless')).toBe(false);
+    expect((byName.get('longTitle') as { title?: string }).title).toBe('t'.repeat(256));
+    // No schema at all → message-only card (empty fields is VALID).
+    expect(takeElicitationView({ message: 'm' })).toEqual({ message: 'm', fields: [] });
+    expect(takeElicitationView({ message: 'm'.repeat(3000) }).message).toBe('m'.repeat(2048));
+  });
+
   it('speaks the dsh native dialect too (content object, flat tool_call, used/size)', () => {
     // dsh's ACP adapter: chunks carry `content` (not `contentBlock`)…
     expect(
@@ -571,6 +658,100 @@ describe('session round-trip vs the fixture agent', () => {
       true,
     );
     socket.receive('chat:session.close', { sessionId: 'sess-cmd', reason: 'user' });
+  }, 15000);
+
+  it('an elicitation round trip surfaces the card and returns the values verbatim (9 W14.1)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-eli',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready'));
+
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-eli',
+      prompt: [{ type: 'text', text: 'please ask-user now' }],
+    });
+    const req = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'elicitation_request'),
+    );
+    if (req.kind !== 'elicitation_request') throw new Error('not an elicitation event');
+    expect(req.message).toBe('Which color do you prefer?');
+    expect(req.toolCallId).toMatch(/^call-/);
+    const byName = new Map(req.fields.map((f) => [f.name, f]));
+    expect(byName.get('question_0')).toEqual({
+      name: 'question_0',
+      type: 'enum',
+      title: 'Color',
+      options: [
+        { value: 'Red', label: 'Red', description: 'The color red' },
+        { value: 'Blue', label: 'Blue' },
+      ],
+      required: true,
+    });
+    expect(byName.get('question_1')).toEqual({
+      name: 'question_1',
+      type: 'boolean',
+      title: 'Verbose',
+    });
+    expect(byName.get('question_2')).toEqual({
+      name: 'question_2',
+      type: 'integer',
+      title: 'Count',
+    });
+
+    // Accept → values ride VERBATIM; the fixture echoes the response it got.
+    const respondAck = vi.fn();
+    socket.receive(
+      'chat:elicitation.respond',
+      {
+        sessionId: 'sess-eli',
+        requestId: req.requestId,
+        action: 'accept',
+        values: { question_0: 'Red', question_1: true, question_2: 3 },
+      },
+      respondAck,
+    );
+    expect(respondAck).toHaveBeenCalledWith({ accepted: true });
+    const echoed = await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta.startsWith('elicitation')),
+    );
+    expect(
+      JSON.parse((echoed as { delta: string }).delta.slice('elicitation answered: '.length)),
+    ).toEqual({
+      action: 'accept',
+      content: { question_0: 'Red', question_1: true, question_2: 3 },
+    });
+    await waitFor(() => socket.chatEvents().find((e) => e.kind === 'turn_result'));
+
+    // The request rides the history ring (resync re-shows the card)…
+    socket.receive('chat:session.resync', { sessionId: 'sess-eli' });
+    const history = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:history')?.payload as
+          { items: { type: string; event?: { kind: string } }[] } | undefined,
+    );
+    expect(
+      history.items.some((i) => i.type === 'event' && i.event?.kind === 'elicitation_request'),
+    ).toBe(true);
+    // …and a stale respond for the settled id is rejected, not re-answered.
+    const staleAck = vi.fn();
+    socket.receive(
+      'chat:elicitation.respond',
+      { sessionId: 'sess-eli', requestId: req.requestId, action: 'decline' },
+      staleAck,
+    );
+    expect(staleAck).toHaveBeenCalledWith({ error: 'unknown-elicitation' });
+
+    socket.receive('chat:session.close', { sessionId: 'sess-eli', reason: 'user' });
   }, 15000);
 
   it('a permission request with a UUID-STRING id resolves (codex-acp dialect)', async () => {

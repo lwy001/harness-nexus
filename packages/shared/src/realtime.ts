@@ -348,6 +348,31 @@ export const acpPermissionOptionSchema = z.object({
 });
 
 /**
+ * 9 W14.1 — a bounded rendering hint for ONE ACP elicitation form field,
+ * extracted daemon-side from the `requestedSchema.properties` entry (never
+ * the raw JSON schema on the wire). `type` is OUR hint: `enum`/`multi` come
+ * from `oneOf`/`enum` consts, the rest from the property's declared type.
+ */
+export const elicitationFieldSchema = z.object({
+  name: z.string().min(1).max(128),
+  type: z.enum(['text', 'number', 'integer', 'boolean', 'enum', 'multi']),
+  title: z.string().max(256).optional(),
+  description: z.string().max(1024).optional(),
+  placeholder: z.string().max(256).optional(),
+  options: z
+    .array(
+      z.object({
+        value: z.string().min(1).max(1024),
+        label: z.string().max(256).optional(),
+        description: z.string().max(1024).optional(),
+      }),
+    )
+    .max(32)
+    .optional(),
+  required: z.boolean().optional(),
+});
+
+/**
  * One MIME an attached image may carry (9 W9 B). This is exactly the raster
  * vocabulary EVERY shipped adapter admits — dsh validates against the same
  * list server-side and rejects everything else with invalid_params.
@@ -514,6 +539,22 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
     outcome: z.enum(['selected', 'cancelled', 'timeout']),
     optionId: z.string().min(1).max(128).optional(),
   }),
+  // 9 W14.1 — the agent asked the user a structured question (ACP
+  // `elicitation/create`, form mode; claude's AskUserQuestion and
+  // MCP-server elicitations both arrive here). `fields` may be EMPTY: the
+  // schema was not representable, so the card offers decline/cancel only.
+  z.object({
+    kind: z.literal('elicitation_request'),
+    requestId: z.string().min(1).max(128),
+    message: z.string().max(2048),
+    fields: z.array(elicitationFieldSchema).max(16),
+    toolCallId: z.string().min(1).max(256).optional(),
+  }),
+  z.object({
+    kind: z.literal('elicitation_resolved'),
+    requestId: z.string().min(1).max(128),
+    outcome: z.enum(['accepted', 'declined', 'cancelled', 'timeout']),
+  }),
   z.object({
     kind: z.literal('turn_result'),
     stopReason: z.enum(['end_turn', 'cancelled', 'max_tokens', 'refusal']),
@@ -673,6 +714,32 @@ export const chatPermissionRespondRequestSchema = z.object({
 
 /** server → daemon: forwarded permission decision (or timeout/user cancel). */
 export const chatPermissionRespondEventSchema = chatPermissionRespondRequestSchema;
+
+/**
+ * 9 W14.1 — browser → server: answer an elicitation. `accept` carries the
+ * form values keyed by field name (forwarded VERBATIM as the ACP `content`);
+ * `values` absent/empty on accept = an empty form submit.
+ */
+export const chatElicitationRespondRequestSchema = z.object({
+  sessionId: z.string().min(1).max(64),
+  requestId: z.string().min(1).max(128),
+  action: z.enum(['accept', 'decline', 'cancel']),
+  values: z
+    .record(
+      z.string().min(1).max(128),
+      z.union([
+        z.string().max(10000),
+        z.number(),
+        z.boolean(),
+        z.array(z.string().max(10000)).max(32),
+      ]),
+    )
+    .refine((r) => Object.keys(r).length <= 16, { message: 'too many values' })
+    .optional(),
+});
+
+/** server → daemon: forwarded decision (or timeout/user cancel). */
+export const chatElicitationRespondEventSchema = chatElicitationRespondRequestSchema;
 
 /** browser → server: close the channel. */
 export const chatSessionCloseRequestSchema = z.object({
@@ -902,6 +969,7 @@ export type AcpToolStatus = z.infer<typeof acpToolStatusSchema>;
 export type AcpToolCallView = z.infer<typeof acpToolCallViewSchema>;
 export type AcpToolContentItem = z.infer<typeof acpToolContentItemSchema>;
 export type AcpPermissionOption = z.infer<typeof acpPermissionOptionSchema>;
+export type ElicitationField = z.infer<typeof elicitationFieldSchema>;
 export type PromptBlock = z.infer<typeof promptBlockSchema>;
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
 export type SessionMode = z.infer<typeof sessionModeSchema>;
@@ -923,6 +991,7 @@ export type ChatMessageSendRequest = z.infer<typeof chatMessageSendRequestSchema
 export type ChatPromptEvent = z.infer<typeof chatPromptEventSchema>;
 export type ChatTurnCancelEvent = z.infer<typeof chatTurnCancelEventSchema>;
 export type ChatPermissionRespondRequest = z.infer<typeof chatPermissionRespondRequestSchema>;
+export type ChatElicitationRespondRequest = z.infer<typeof chatElicitationRespondRequestSchema>;
 export type ChatSessionCloseRequest = z.infer<typeof chatSessionCloseRequestSchema>;
 export type ChatSessionClosedEvent = z.infer<typeof chatSessionClosedEventSchema>;
 export type ChatSessionReadyPush = z.infer<typeof chatSessionReadyPushSchema>;

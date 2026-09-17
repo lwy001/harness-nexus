@@ -17,6 +17,9 @@
  *        session/request_permission (a REQUEST, answered by the client) →
  *        allow_*: tool_call completed + "permission granted: <optionId>" → end_turn
  *        reject_* or cancelled: tool_call failed + "denied" → end_turn
+ *     prompt containing 'ask-user' (9 W14.1):
+ *        elicitation/create (a REQUEST, form mode) → the client's response is
+ *        echoed as "elicitation answered: <json>" → end_turn
  *     any other prompt: one thought chunk + one text chunk (echo) + usage → end_turn
  *   session/cancel → the pending prompt resolves {stopReason: 'cancelled'}
  *   session/close → {}
@@ -160,6 +163,8 @@ function runTapSpeakerTurn(id, text, finish) {
 
 /** Pending permission waiters: jsonrpc request id → (outcome) => void */
 const permissionWaiters = new Map();
+/** Pending elicitation waiters (9 W14.1): jsonrpc id → (response) => void */
+const elicitationWaiters = new Map();
 /** In-flight prompt ids — session/cancel resolves all of them as 'cancelled'. */
 const promptIds = new Set();
 
@@ -490,6 +495,54 @@ function runPrompt(id, text, deferred = false) {
     return;
   }
 
+  // 9 W14.1 — prompt containing 'ask-user': send a real `elicitation/create`
+  // REQUEST (the claude-agent-acp dialect: top-level method, form mode) and
+  // echo the client's response as the turn's message. Exercises the daemon's
+  // handler, the wire event, and the respond round trip.
+  if (text.includes('ask-user')) {
+    const elId = nextId++;
+    send({
+      jsonrpc: '2.0',
+      id: elId,
+      method: 'elicitation/create',
+      params: {
+        mode: 'form',
+        sessionId,
+        toolCallId: `call-${randomUUID().slice(0, 8)}`,
+        message: 'Which color do you prefer?',
+        requestedSchema: {
+          type: 'object',
+          required: ['question_0'],
+          properties: {
+            question_0: {
+              type: 'string',
+              title: 'Color',
+              oneOf: [
+                { const: 'Red', title: 'Red', description: 'The color red' },
+                { const: 'Blue', title: 'Blue' },
+              ],
+            },
+            question_0_custom: { type: 'string', title: 'Other' },
+            question_1: { type: 'boolean', title: 'Verbose' },
+            question_2: { type: 'integer', title: 'Count' },
+          },
+        },
+      },
+    });
+    elicitationWaiters.set(elId, (response) => {
+      elicitationWaiters.delete(elId);
+      notify('session/update', {
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          contentBlock: { type: 'text', text: `elicitation answered: ${JSON.stringify(response)}` },
+        },
+      });
+      finish('end_turn');
+    });
+    return;
+  }
+
   if (tapReady) {
     runTapSpeakerTurn(id, text, finish);
     return;
@@ -801,6 +854,13 @@ rl.on('line', (line) => {
     if (waiter) {
       const result = msg.result ?? {};
       waiter(result.outcome ?? { outcome: 'cancelled' });
+      return;
+    }
+    // …or to our elicitation/create (9 W14.1): the result IS the response
+    // ({action:'accept',content} | {action:'decline'} | {action:'cancel'}).
+    const elWaiter = elicitationWaiters.get(msg.id);
+    if (elWaiter) {
+      elWaiter(msg.result ?? { action: 'cancel' });
     }
     return;
   }

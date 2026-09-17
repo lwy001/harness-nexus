@@ -447,6 +447,24 @@ credentialName}` with the three kinds `openai-chat` / `openai-responses`
     reference (first-word filter, bare Enter selects + fills, Enter-with-
     args sends). Research: `docs/research/phase-9-w14-w15-plan-commands.md`
     · design: `docs/design/phase-9-w15-commands.md`.
+  - **W14.1 Ask User (ACP elicitation) + claude todo/plan revival —
+    SHIPPED (2026-09-17)** — post-W14 review re-verified the ask-user
+    surface against the pinned adapters AND live probes (ground truth:
+    three-layer matrix, the SDK-bundled CLI 2.1.270 discovery, the raw
+    `elicitation/create` wire capture). Two fixes: (1) the claude-code
+    adapter env sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, reviving the Task
+    tools → ACP plan snapshots → the W14 TodoPanel (the "dormant on
+    2.1.263" conclusion was right symptom, wrong cause — portal runs the
+    SDK-bundled 2.1.270, task tools disabled-by-default since 2.1.233);
+    (2) full elicitation wiring — daemon advertises `elicitation.form`,
+    handles the top-level `elicitation/create` request (bounded field
+    view; empty fields = message-only card), server relays + watchdogs +
+    `chat:elicitation.respond` routing, web question cards (enum/multi/
+    text/number/boolean; values verbatim as ACP content). claude is the
+    only target with an adapter bridge today (codex/opencode/dsh
+    verified to have none). Research:
+    `docs/research/phase-9-w14.1-claude-ground-truth.md` · design:
+    `docs/design/phase-9-w14.1-claude-elicitation.md`.
 - Non-goals v1: harness uninstall, zcode/hermes
   runtimes, managed-settings hierarchies. hermes native sessions remain an
   open follow-up (adapter surface unverified).

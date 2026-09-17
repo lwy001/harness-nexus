@@ -612,6 +612,85 @@ describe('session lifecycle', () => {
     await closedP;
   });
 
+  it('elicitation round-trips accept verbatim and times out with cancel (9 W14.1)', async () => {
+    const startP = once(daemon, 'chat:session.start');
+    await openSession(browser, agentId);
+    const start = (await startP) as { sessionId: string };
+    const readyP = once(browser, 'chat:session.ready');
+    readyFor(daemon, start);
+    await readyP;
+
+    // Request → relayed to the browser.
+    const reqP = nextEvent(browser, (e) => e.kind === 'elicitation_request');
+    daemon.emit('chat:event', {
+      sessionId: start.sessionId,
+      event: {
+        kind: 'elicitation_request',
+        requestId: 'eli-1',
+        message: 'Which color do you prefer?',
+        fields: [
+          {
+            name: 'question_0',
+            type: 'enum',
+            required: true,
+            options: [{ value: 'Red' }, { value: 'Blue' }],
+          },
+          { name: 'question_1', type: 'text' },
+        ],
+        toolCallId: 'call_1',
+      },
+    });
+    await reqP;
+
+    // Accept → values forwarded VERBATIM (they are the ACP content).
+    const respondP = once(daemon, 'chat:elicitation.respond');
+    const resolvedP = nextEvent(browser, (e) => e.kind === 'elicitation_resolved');
+    const ack = await emitAck(browser, 'chat:elicitation.respond', {
+      sessionId: start.sessionId,
+      requestId: 'eli-1',
+      action: 'accept',
+      values: { question_0: 'Red', question_1: 'thanks' },
+    });
+    expect(ack).toEqual({ accepted: true });
+    const forwarded = (await respondP) as {
+      requestId: string;
+      action: string;
+      values?: Record<string, unknown>;
+    };
+    expect(forwarded.action).toBe('accept');
+    expect(forwarded.values).toEqual({ question_0: 'Red', question_1: 'thanks' });
+    expect(await resolvedP).toEqual({
+      kind: 'elicitation_resolved',
+      requestId: 'eli-1',
+      outcome: 'accepted',
+    });
+
+    // An unanswered request times out ⇒ cancel to the daemon + settled card.
+    daemon.emit('chat:event', {
+      sessionId: start.sessionId,
+      event: {
+        kind: 'elicitation_request',
+        requestId: 'eli-timeout',
+        message: 'Slow one?',
+        fields: [],
+      },
+    });
+    const cancelP = once(daemon, 'chat:elicitation.respond');
+    const cancel = (await cancelP) as { requestId: string; action: string };
+    expect(cancel.requestId).toBe('eli-timeout');
+    expect(cancel.action).toBe('cancel');
+    const settled = await nextEvent(browser, (e) => e.kind === 'elicitation_resolved', 3000);
+    expect(settled).toEqual({
+      kind: 'elicitation_resolved',
+      requestId: 'eli-timeout',
+      outcome: 'timeout',
+    });
+
+    const closedP = once(browser, 'chat:session.closed');
+    await emitAck(browser, 'chat:session.close', { sessionId: start.sessionId });
+    await closedP;
+  });
+
   it('spawn failure (ready with error) closes the channel as spawn-failed', async () => {
     const startP = once(daemon, 'chat:session.start');
     await openSession(browser, agentId);

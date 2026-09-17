@@ -15,6 +15,7 @@ import {
   acpPermissionOptionSchema,
   acpToolCallViewSchema,
   chatConfigSetEventSchema,
+  chatElicitationRespondEventSchema,
   chatPermissionRespondEventSchema,
   chatPromptEventSchema,
   chatReconcileEventSchema,
@@ -31,6 +32,7 @@ import {
   type AcpToolCallView,
   type AvailableCommandView,
   type ChatStreamEvent,
+  type ElicitationField,
   type HistoryItem,
   type PlanEntry,
   type PromptBlock,
@@ -107,6 +109,8 @@ interface DaemonSession {
   busy: boolean;
   /** In-flight permission requests by our wire requestId. */
   permissions: Map<string, { jsonrpcId: JsonRpcId; timer: NodeJS.Timeout }>;
+  /** 9 W14.1 — in-flight `elicitation/create` requests, same shape. */
+  elicitations: Map<string, { jsonrpcId: JsonRpcId; timer: NodeJS.Timeout }>;
   /**
    * 9 W9 A — the merged session-config snapshot (modes + select options).
    * Source of truth for the composer's selectors; every change emits a FULL
@@ -274,6 +278,8 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     session.tap?.close();
     for (const [, p] of session.permissions) clearTimeout(p.timer);
     session.permissions.clear();
+    for (const [, e] of session.elicitations) clearTimeout(e.timer);
+    session.elicitations.clear();
     session.conn.kill();
     // 9 W11 A — the kill path does NOT unlink the ledger file: if the daemon
     // hard-dies inside the SIGTERM→SIGKILL grace, an unlinked file would
@@ -572,6 +578,7 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
           conn,
           busy: false,
           permissions: new Map(),
+          elicitations: new Map(),
           config: establishedConfig ?? { options: [] },
           ...(modelOptions !== undefined ? { modelOptions } : {}),
           history: [],
@@ -772,6 +779,38 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
       parsed.data.optionId !== undefined
         ? { outcome: 'selected', optionId: parsed.data.optionId }
         : { outcome: 'cancelled' },
+    );
+  });
+
+  socket.on('chat:elicitation.respond', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = chatElicitationRespondEventSchema.safeParse(payload);
+    if (!parsed.success) {
+      ack?.({ error: 'proto:invalid' });
+      return;
+    }
+    const session = sessions.get(parsed.data.sessionId);
+    if (session === undefined) {
+      ack?.({ error: 'unknown-session' });
+      return;
+    }
+    const pending = session.elicitations.get(parsed.data.requestId);
+    if (pending === undefined) {
+      ack?.({ error: 'unknown-elicitation' });
+      return;
+    }
+    ack?.({ accepted: true });
+    clearTimeout(pending.timer);
+    session.elicitations.delete(parsed.data.requestId);
+    // Values ride VERBATIM as the ACP `content` — the wrapper folds an
+    // accept back into the tool input keyed by these exact property names.
+    const { action, values } = parsed.data;
+    session.conn.respondElicitation(
+      pending.jsonrpcId,
+      action === 'accept'
+        ? { action: 'accept', content: values ?? {} }
+        : action === 'decline'
+          ? { action: 'decline' }
+          : { action: 'cancel' },
     );
   });
 
@@ -1067,6 +1106,31 @@ function wireSession(
       requestId,
       toolCall: toolCallView(params.toolCall),
       options: permissionOptions(params.options),
+    });
+  });
+
+  // 9 W14.1 — ACP elicitation (form mode): claude's AskUserQuestion and
+  // MCP-server elicitations arrive as `elicitation/create` requests. The
+  // schema reduces to bounded render hints; an unrepresentable schema still
+  // surfaces (empty fields → decline/cancel card only).
+  conn.setElicitationHandler((jsonrpcId, params) => {
+    const requestId = randomUUID();
+    const timer = setTimeout(() => {
+      // Belt-and-braces backstop, same policy as permissions: the server
+      // runs its own watchdog; this guarantees the agent never waits forever
+      // even if the server is gone.
+      session.elicitations.delete(requestId);
+      conn.respondElicitation(jsonrpcId, { action: 'cancel' });
+      emitEvent(session, { kind: 'elicitation_resolved', requestId, outcome: 'timeout' });
+    }, 75000);
+    session.elicitations.set(requestId, { jsonrpcId, timer });
+    const view = takeElicitationView(params);
+    emitEvent(session, {
+      kind: 'elicitation_request',
+      requestId,
+      message: view.message,
+      fields: view.fields,
+      ...(view.toolCallId !== undefined ? { toolCallId: view.toolCallId } : {}),
     });
   });
 }
@@ -1548,4 +1612,111 @@ function permissionOptions(options: unknown): AcpPermissionOption[] {
     if (parsed.success) out.push(parsed.data);
   }
   return out;
+}
+
+/**
+ * 9 W14.1 — reduce an ACP `elicitation/create` payload to a bounded,
+ * renderable view. Structurally unusable properties are DROPPED (an empty
+ * field list is valid — the card then offers decline/cancel only); every
+ * string is clamped so a hostile/broken schema cannot bloat the wire.
+ */
+export function takeElicitationView(params: Record<string, unknown>): {
+  message: string;
+  fields: ElicitationField[];
+  toolCallId?: string;
+} {
+  const message = clampElicitationText(params.message, 2048);
+  const toolCallId =
+    typeof params.toolCallId === 'string' && params.toolCallId.length > 0
+      ? clampElicitationText(params.toolCallId, 256)
+      : undefined;
+  const fields: ElicitationField[] = [];
+  const schema = asRecord(params.requestedSchema);
+  const properties = schema !== null ? asRecord(schema.properties) : null;
+  if (properties !== null) {
+    const required = new Set(
+      Array.isArray(schema!.required)
+        ? schema!.required.filter((r): r is string => typeof r === 'string')
+        : [],
+    );
+    for (const [name, prop] of Object.entries(properties).slice(0, 16)) {
+      if (name.length === 0 || name.length > 128) continue;
+      const record = asRecord(prop);
+      if (record === null) continue;
+      const field = elicitationField(name, record, required.has(name));
+      if (field !== null) fields.push(field);
+    }
+  }
+  return { message, fields, ...(toolCallId !== undefined ? { toolCallId } : {}) };
+}
+
+function elicitationField(
+  name: string,
+  prop: Record<string, unknown>,
+  isRequired: boolean,
+): ElicitationField | null {
+  const type = typeof prop.type === 'string' ? prop.type : '';
+  // `oneOf`/`enum` consts are the ACP option vocabulary (claude's
+  // AskUserQuestion emits `oneOf: [{const, title, description}]`).
+  const options = constOptions(prop.oneOf) ?? constOptions(prop.enum);
+  const itemOptions =
+    type === 'array'
+      ? (constOptions(asRecord(prop.items)?.oneOf ?? null) ??
+        constOptions(asRecord(prop.items)?.enum ?? null))
+      : null;
+
+  let kind: ElicitationField['type'] | null = null;
+  if (options !== null && type !== 'array') kind = 'enum';
+  else if (type === 'array' && itemOptions !== null) kind = 'multi';
+  else if (type === 'number' || type === 'integer') kind = type;
+  else if (type === 'boolean') kind = 'boolean';
+  else if (type === 'string') kind = 'text';
+  if (kind === null) return null; // nested objects / array-of-free-text: unusable
+
+  const title = clampElicitationText(prop.title, 256);
+  const description = clampElicitationText(prop.description, 1024);
+  const placeholder = clampElicitationText(prop.placeholder, 256);
+  const chosenOptions = kind === 'enum' ? options : kind === 'multi' ? itemOptions : null;
+  return {
+    name,
+    type: kind,
+    ...(title !== '' ? { title } : {}),
+    ...(description !== '' ? { description } : {}),
+    ...(placeholder !== '' ? { placeholder } : {}),
+    ...(chosenOptions !== null ? { options: chosenOptions } : {}),
+    ...(isRequired ? { required: true } : {}),
+  };
+}
+
+/** `oneOf`/`enum` consts → bounded options; null when the entry is not one. */
+function constOptions(raw: unknown): ElicitationField['options'] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: NonNullable<ElicitationField['options']> = [];
+  for (const entry of raw.slice(0, 32)) {
+    if (typeof entry === 'string') {
+      out.push({ value: clampElicitationText(entry, 1024) });
+    } else {
+      const record = asRecord(entry);
+      if (record !== null && typeof record.const === 'string' && record.const.length > 0) {
+        const label = clampElicitationText(record.title, 256);
+        const description = clampElicitationText(record.description, 1024);
+        out.push({
+          value: clampElicitationText(record.const, 1024),
+          ...(label !== '' ? { label } : {}),
+          ...(description !== '' ? { description } : {}),
+        });
+      }
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
+function clampElicitationText(value: unknown, max: number): string {
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

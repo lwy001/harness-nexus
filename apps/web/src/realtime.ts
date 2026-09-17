@@ -74,6 +74,19 @@ export type ChatStreamEvent =
       outcome: 'selected' | 'cancelled' | 'timeout';
       optionId?: string;
     }
+  | {
+      /** 9 W14.1 — the agent asked a structured question (ACP elicitation). */
+      kind: 'elicitation_request';
+      requestId: string;
+      message: string;
+      fields: ElicitationField[];
+      toolCallId?: string;
+    }
+  | {
+      kind: 'elicitation_resolved';
+      requestId: string;
+      outcome: 'accepted' | 'declined' | 'cancelled' | 'timeout';
+    }
   | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
   | { kind: 'session_status'; state: 'active' | 'idle' }
   | ({ kind: 'session_config' } & SessionConfigPatch)
@@ -115,6 +128,19 @@ export interface CommandView {
 
 export interface CommandsPatch {
   commands: CommandView[];
+}
+
+// ---- 9 W14.1 — ACP elicitation form fields (mirrors shared/realtime.ts) ----
+
+/** One bounded rendering hint extracted daemon-side from `requestedSchema`. */
+export interface ElicitationField {
+  name: string;
+  type: 'text' | 'number' | 'integer' | 'boolean' | 'enum' | 'multi';
+  title?: string;
+  description?: string;
+  placeholder?: string;
+  options?: { value: string; label?: string; description?: string }[];
+  required?: boolean;
 }
 
 // ---- 9 W9 A — ACP session modes & configuration (mirrors shared/realtime.ts) ----

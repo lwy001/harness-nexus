@@ -307,6 +307,9 @@ Before touching these, read the linked design doc (`docs/README.md` indexes all)
 - **Slash commands in the composer (Phase 9 W15)**
   → `docs/design/phase-9-w15-commands.md` ·
   research: `docs/research/phase-9-w14-w15-plan-commands.md`
+- **Ask User (ACP elicitation) + claude todo/plan revival (Phase 9 W14.1)**
+  → `docs/design/phase-9-w14.1-claude-elicitation.md` ·
+  research: `docs/research/phase-9-w14.1-claude-ground-truth.md`
 
 ## MCP management & credentials (Phase 2.1)
 
@@ -1174,18 +1177,81 @@ entries: PlanEntry[]}`, `PlanEntry = {content, priority?, status}`) —
     `done/total`; expanded = per-entry status glyphs (`--ok` check /
     `--warn` pulse / muted dashed). The W6 TodoCard (registry `TodoWrite`)
     STAYS as the fallback for adapters that still emit a todo tool call.
-- **Rig truth (2026-09-17)**: codex is the LIVE plan producer today (its
-  `update_plan` tool fired E2E; the panel converged to 已完成 3 3/3).
-  claude's task-lane is DORMANT on CLI 2.1.263 — headless sessions expose
-  NEITHER TodoWrite NOR TaskCreate to the model (verified by listing its
-  tools verbatim); the wire+panel are ready for when the CLI ships task
-  tools to SDK sessions. The subagent tool is `Agent` (ex-`Task`) and rides
-  an ordinary tool_call → the existing TaskCard. Permissions verified E2E
-  on claude (allow-once → tool proceeds) and opencode (once/always/reject).
+- **Rig truth (2026-09-17, corrected 9 W14.1)**: codex is one LIVE plan
+  producer (its `update_plan` tool fired E2E; the panel converged to
+  已完成 3 3/3). claude's lane was initially reported dormant on "CLI
+  2.1.263" — the W14.1 re-verification CORRECTED the cause chain: portal
+  claude sessions run the **SDK-bundled CLI 2.1.270** (the wrapper's
+  `@anthropic-ai/claude-agent-sdk` 0.3.270 ships its own `claude` binary),
+  and ≥2.1.233 ships the Task/todo tools DISABLED by default. The daemon's
+  claude-code adapter row now sets **`CLAUDE_CODE_ENABLE_TODO_TOOLS=1`**
+  (`acp/adapters.ts` env, target-scoped, applies across command overrides)
+  — rig-verified: TaskCreate fires and plan snapshots flow E2E. The subagent
+  tool is `Agent` (ex-`Task`) and rides an ordinary tool_call → the existing
+  TaskCard. Permissions verified E2E on claude (allow-once → tool proceeds)
+  and opencode (once/always/reject).
 - The draft subagent protocol (ACP PR #1992, `subagent_spawned` + child
   stream rerouting behind a client `subagents` capability) is deliberately
   NOT advertised — unstable draft, and our single-channel fold would fold
   child output into the main transcript. Revisit when the SDK ships it.
+
+## Ask User — ACP elicitation wiring + claude fixes (Phase 9 W14.1)
+
+Full design in `docs/design/phase-9-w14.1-claude-elicitation.md`; ground
+truth (three-layer ask-user matrix, SDK-bundled CLI discovery, the raw
+`elicitation/create` capture) in `docs/research/phase-9-w14.1-claude-ground-truth.md`.
+Summary for daily work:
+
+- **claude-code is the ONLY target with an adapter-side elicitation bridge
+  today** (wrapper 0.78.0 maps AskUserQuestion AND MCP-server elicitations
+  onto ACP when the client advertises `elicitation.form`; codex-acp logs
+  `RequestUserInput` as "Unexpected event" and auto-declines non-approval
+  MCP elicitations; opencode 1.18.31+current-dev and dsh-acp have zero
+  elicitation support). The portal wiring is therefore UNGATED by target.
+- **The request is a TOP-LEVEL `elicitation/create` JSON-RPC method** (NOT
+  `session/request`-wrapped, NOT `session/create_elicitation`) —
+  probe-captured; `agent-connection.ts` dispatches it to
+  `setElicitationHandler`, answered via `respondElicitation`
+  (`{action:'accept', content} | decline | cancel`; content values keyed by
+  schema property name, VERBATIM — the wrapper folds them into the tool
+  input). The daemon's `initialize` now advertises
+  `clientCapabilities: { elicitation: { form: {} } }` — **url mode is
+  deliberately NOT advertised** (OAuth-jump class; no UI for it).
+- **Wire**: `{kind:'elicitation_request', requestId, message, fields,
+  toolCallId?}` + `{kind:'elicitation_resolved', outcome}` stream events,
+  `chat:elicitation.respond {sessionId, requestId, action, values?}`
+  browser→server→daemon — the permission lifecycle mirrored exactly
+  (server watchdog + daemon 75s backstop both cancel on timeout; the
+  request enters the history ring so a resync re-shows the card; a stale
+  respond → `unknown-elicitation`). The SERVER relay must carry the kinds
+  (zod) — deploy server + cli overlay together.
+- **Fields are OUR bounded hints, not the raw schema**: daemon-side
+  `takeElicitationView` (`chat.ts`, exported, pure) reduces
+  `requestedSchema.properties` (≤16) — `oneOf`/`enum` consts → `enum`
+  options; `array`+item consts → `multi`; number/integer/boolean/string →
+  plain kinds; `required[]` → flag; strings clamped; structurally unusable
+  properties (nested objects, typeless) DROP. **An EMPTY field list is
+  valid** — the web card then offers decline/cancel only
+  (`elicitationUnrenderable` note). AskUserQuestion's canonical shape:
+  `question_N` enum + `question_N_custom` free text.
+- **Web**: fold slice `elicitations` (upsert by requestId, resolved →
+  settled); `components/chat/elicitation-cards.tsx` renders unsettled cards
+  after the permission cards (same warn chrome): enum → radio rows with
+  descriptions, multi → checkboxes, boolean → checkbox, number/integer →
+  number input, text → text input; accept disabled until required fields
+  are filled; empty-string drafts are STRIPPED from the payload (the
+  adapter validates content against its own schema). Settled cards vanish
+  (the answer surfaces in the next assistant message). Strings in
+  `strings/chat.ts` (en/zh).
+- **Fixture**: prompt containing `ask-user` sends a real
+  `elicitation/create` (enum + custom + boolean + integer, `question_0`
+  required) and echoes the client's response —
+  `elicitation answered: {json}`. Daemon `0.21.0-p9w14.1`.
+- **claude todo/plan revival (the companion fix)**: the adapter env above.
+  Upstream context: AskUserQuestion is hard-removed from bare `-p` after
+  2.1.185 (issue #77994) but STILL fires on the SDK path; Task tools
+  disabled-by-default since 2.1.233 (#23874 headless tracking, #80401
+  remote kill-switch flapping).
 
 ## Slash commands (Phase 9 W15)
 

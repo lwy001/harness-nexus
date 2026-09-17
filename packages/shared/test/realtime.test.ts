@@ -7,6 +7,7 @@ import {
   chatConfigSetRequestSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
+  chatElicitationRespondRequestSchema,
   chatPromptEventSchema,
   chatSessionOpenRequestSchema,
   chatSessionReadyEventSchema,
@@ -159,6 +160,32 @@ describe('chat stream schemas (C5)', () => {
           { name: 'mcp:deploy', description: 'Deploy via MCP' },
         ],
       },
+      {
+        kind: 'elicitation_request',
+        requestId: 'e1',
+        message: 'Which color do you prefer?',
+        fields: [
+          {
+            name: 'question_0',
+            type: 'enum',
+            title: 'Color',
+            required: true,
+            options: [
+              { value: 'Red', label: 'Red', description: 'The color red' },
+              { value: 'Blue', label: 'Blue' },
+            ],
+          },
+          { name: 'question_0_custom', type: 'text', title: 'Other' },
+          { name: 'question_1', type: 'multi', options: [{ value: 'a' }, { value: 'b' }] },
+          { name: 'question_2', type: 'boolean' },
+          { name: 'question_3', type: 'integer' },
+          { name: 'question_4', type: 'number' },
+        ],
+        toolCallId: 'call_abc',
+      },
+      { kind: 'elicitation_request', requestId: 'e2', message: 'Unrepresentable', fields: [] },
+      { kind: 'elicitation_resolved', requestId: 'e1', outcome: 'accepted' },
+      { kind: 'elicitation_resolved', requestId: 'e2', outcome: 'timeout' },
     ];
     for (const event of events) {
       expect(chatStreamEventSchema.safeParse(event).success, JSON.stringify(event)).toBe(true);
@@ -173,6 +200,31 @@ describe('chat stream schemas (C5)', () => {
     expect(chatStreamEventSchema.safeParse({ kind: 'session_status', state: 'busy' }).success).toBe(
       false,
     );
+    // 9 W14.1 — elicitation rejections: unknown field type, bad outcome, an
+    // option without a value.
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'elicitation_request',
+        requestId: 'e1',
+        message: '?',
+        fields: [{ name: 'q', type: 'colour' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'elicitation_resolved',
+        requestId: 'e1',
+        outcome: 'maybe',
+      }).success,
+    ).toBe(false);
+    expect(
+      chatStreamEventSchema.safeParse({
+        kind: 'elicitation_request',
+        requestId: 'e1',
+        message: '?',
+        fields: [{ name: 'q', type: 'enum', options: [{ label: 'no value' }] }],
+      }).success,
+    ).toBe(false);
   });
 
   it('plan snapshots: empty clears, bad status rejects, entry cap holds (9 W14)', () => {
@@ -275,6 +327,57 @@ describe('chat request schemas (C5)', () => {
         optionId: 'allow_always',
       }),
     ).toEqual({ sessionId: 's1', requestId: 'r1', optionId: 'allow_always' });
+  });
+
+  it('elicitation respond accepts every value shape and rejects junk (9 W14.1)', () => {
+    expect(
+      chatElicitationRespondRequestSchema.parse({
+        sessionId: 's1',
+        requestId: 'e1',
+        action: 'accept',
+        values: {
+          question_0: 'Red',
+          question_1: ['a', 'b'],
+          question_2: true,
+          question_3: 7,
+        },
+      }),
+    ).toEqual({
+      sessionId: 's1',
+      requestId: 'e1',
+      action: 'accept',
+      values: { question_0: 'Red', question_1: ['a', 'b'], question_2: true, question_3: 7 },
+    });
+    expect(
+      chatElicitationRespondRequestSchema.parse({
+        sessionId: 's1',
+        requestId: 'e1',
+        action: 'decline',
+      }),
+    ).toEqual({ sessionId: 's1', requestId: 'e1', action: 'decline' });
+    // accept without values = an empty form submit; object values are junk.
+    expect(
+      chatElicitationRespondRequestSchema.safeParse({
+        sessionId: 's1',
+        requestId: 'e1',
+        action: 'accept',
+      }).success,
+    ).toBe(true);
+    expect(
+      chatElicitationRespondRequestSchema.safeParse({
+        sessionId: 's1',
+        requestId: 'e1',
+        action: 'accept',
+        values: { q: { nested: true } },
+      }).success,
+    ).toBe(false);
+    expect(
+      chatElicitationRespondRequestSchema.safeParse({
+        sessionId: 's1',
+        requestId: 'e1',
+        action: 'maybe',
+      }).success,
+    ).toBe(false);
   });
 
   it('session start carries target and cwd', () => {
