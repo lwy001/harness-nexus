@@ -1,4 +1,4 @@
-import { DSH_PROVIDER_ID, OPENCODE_PROVIDER_ID } from '@harness-nexus/shared';
+import { DSH_PROVIDER_ID, OPENCODE_PROVIDER_ID, PI_PROVIDER_ID } from '@harness-nexus/shared';
 import type { HistoryItem, SessionConfigOption } from '@harness-nexus/shared';
 
 /**
@@ -39,6 +39,12 @@ function allowedModelValues(ctx: ModelOptionRewrite): readonly string[] | null {
       // opencode validates against its provider registry — our W12 writer's
       // `models` map IS that registry for these ids.
       return ctx.modelOptions.map((id) => `${OPENCODE_PROVIDER_ID}/${id}`);
+    case 'pi':
+      // 9 W16 — pi model refs are `provider/id`-shaped (the --model flag
+      // syntax) and validated against its own registry; our models.json
+      // provider models ARE that registry for these ids. Intersect stance,
+      // like opencode (the pi façade synthesizes the option row).
+      return ctx.modelOptions.map((id) => `${PI_PROVIDER_ID}/${id}`);
     case 'deepseek':
       // dsh's model option values are JSON [provider, model] tuples (compact
       // serialization, verified against dsh-acp 0.1.2-rc.1); its catalog also

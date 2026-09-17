@@ -83,7 +83,40 @@ export function derivePromptCaps(result: unknown): { image: boolean } {
   return { image: r.agentCapabilities?.promptCapabilities?.image === true };
 }
 
-export class AcpAgentConnection {
+/**
+ * 9 W16 — the connection surface `chat.ts` drives. Historically duck-typed
+ * against AcpAgentConnection alone; the pi façade (pi-connection.ts, an
+ * in-daemon ACP↔pi-RPC translator) implements the SAME surface, so the chat
+ * pipeline is shared verbatim across both dialect classes.
+ */
+export interface AgentConnection {
+  readonly pgid: number | null;
+  /** ACP-shaped request (the pi façade translates to pi commands). */
+  request(method: string, params: unknown, timeoutMs: number): Promise<unknown>;
+  /** Answer the agent's `session/request_permission` (optionId verbatim). */
+  respondPermission(jsonrpcId: JsonRpcId, outcome: PermissionOutcome): void;
+  /** Answer the agent's `elicitation/create`. */
+  respondElicitation(
+    jsonrpcId: JsonRpcId,
+    response:
+      | { action: 'accept'; content: Record<string, unknown> }
+      | { action: 'decline' }
+      | { action: 'cancel' },
+  ): void;
+  setNotificationHandler(handler: (method: string, params: Record<string, unknown>) => void): void;
+  setPermissionHandler(
+    handler: (jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void,
+  ): void;
+  setElicitationHandler(
+    handler: (jsonrpcId: JsonRpcId, params: Record<string, unknown>) => void,
+  ): void;
+  /** Fires when the subprocess exits on its own (crash/quit) — not on kill(). */
+  onExit(handler: () => void): void;
+  isGroupAlive(): boolean;
+  kill(graceMs?: number): void;
+}
+
+export class AcpAgentConnection implements AgentConnection {
   private proc: ChildProcess;
   /** The detached leader's pid — which is also its process-group id. */
   readonly pgid: number | null;
