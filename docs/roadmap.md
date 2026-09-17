@@ -465,16 +465,18 @@ credentialName}` with the three kinds `openai-chat` / `openai-responses`
     verified to have none). Research:
     `docs/research/phase-9-w14.1-claude-ground-truth.md` · design:
     `docs/design/phase-9-w14.1-claude-elicitation.md`.
-  - **pi agent feasibility research (2026-09-17, not scheduled)** —
-    candidate runtime target investigated at the user's request:
+  - **pi agent onboarding — GREEN-LIT (2026-09-17), plan ready, not yet
+    implemented** — feasibility confirmed at the user's request:
     `@earendil-works/pi-coding-agent` (ex `@mariozechner/pi-coding-agent`,
     deprecated). Verdict: runtime management + W3 provider push + W4 viewer
     are near-free (npm arm, documented JSON configs, all three provider api
     kinds; Node ≥22.19 gate), the W7 sessions rail is cheap (plain JSONL
-    file scan), but C5 chat needs an ACP↔pi-RPC bridge (pi has NO native
-    ACP) and profile deploy is partial (skills/prompt-templates only; MCP
-    is extension-based, no declarative surface). Research:
-    `docs/research/phase-9-w16-pi-agent.md` — awaiting a go/no-go.
+    file scan), C5 chat rides a SELF-DEVELOPED in-daemon ACP↔pi-RPC bridge
+    (pi has NO native ACP; open-source adapters are dialect references
+    only — user decision), and profile deploy is partial (skills/
+    prompt-templates only; MCP is extension-based, no declarative surface).
+    Research: `docs/research/phase-9-w16-pi-agent.md` · development plan:
+    `docs/design/phase-9-w16-pi-agent.md`.
 - Non-goals v1: harness uninstall, zcode runtimes, managed-settings
   hierarchies. hermes runtime management was CANCELLED with the user
   (2026-09-17): hermes stays a profile-deploy + inventory-scan + ACP-chat
