@@ -6,7 +6,7 @@ import type { ProviderApi } from './runtime-config.js';
  * LLM provider management (Phase 9 W10) — cc-switch-style reusable provider
  * routes for the W3 provider-config push. The provider is the ROUTE, never
  * the secret: the API key lives in the Credential store, referenced by name.
- * See docs/design/phase-9-w10-llm-providers.md.
+ * See wiki dev/design/phase-9-w10-llm-providers.md.
  */
 
 /**

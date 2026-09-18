@@ -19,8 +19,8 @@ export type ResourceKind = 'skill' | 'hook' | 'sub_agent' | 'rule' | 'mcp' | 'co
  * `hnx install --target zcode` is rejected (409 TARGET_UNSUPPORTED) until a
  * reference surface revives it. Mirrored in `@harness-nexus/shared`
  * (`schemas/profile.ts`); update both together. See
- * `docs/research/phase-3-ecc-install-patterns.md` +
- * `docs/research/phase-8-t1-deepseek-harness.md`.
+ * `wiki dev/research/phase-3-ecc-install-patterns.md` +
+ * `wiki dev/research/phase-8-t1-deepseek-harness.md`.
  */
 export type AgentTarget =
   'claude-code' | 'zcode' | 'hermes' | 'codex' | 'deepseek' | 'opencode' | 'pi' | 'generic';
@@ -62,7 +62,7 @@ export type ResourceSource =
   // Phase 7.1 — a marketplace/plugin skill reference. Skills bundle inside
   // plugins in the CC/ZCode world; this variant preserves the plugin namespace
   // and the source-kind distinction that `git` cannot express. See
-  // `docs/design/phase-7.1-plugin-source.md` Part 1a.
+  // `wiki dev/design/phase-7.1-plugin-source.md` Part 1a.
   | {
       type: 'plugin';
       /**

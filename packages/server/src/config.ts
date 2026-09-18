@@ -61,7 +61,7 @@ export interface ServerConfig {
   skillDisabledSources?: string;
   /**
    * Phase 8 — max realtime (Socket.IO) message size in bytes. Bounds ACP
-   * payloads and job envelopes; see docs/design/phase-8-client.md.
+   * payloads and job envelopes; see wiki dev/design/phase-8-client.md.
    */
   socketMaxHttpBufferSize: number;
   /** How long a scan/collect REST handler waits for the daemon's reply (C3). */

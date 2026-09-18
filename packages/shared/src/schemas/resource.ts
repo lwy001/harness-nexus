@@ -3,7 +3,7 @@ import { resourceKindSchema, agentTargetSchema } from './profile.js';
 
 /**
  * Resource validation schemas — single source of truth for request shapes
- * across server, SDK, and web. See docs/design/phase-4-web-ui.md.
+ * across server, SDK, and web. See wiki dev/design/phase-4-web-ui.md.
  *
  * These mirror the domain types in @harness-nexus/core; keep them in sync.
  *
@@ -45,7 +45,7 @@ const resourceSourceSchema = z.discriminatedUnion('type', [
   }),
   // Phase 7.1 — a marketplace/plugin skill reference. The nested discriminated
   // union mirrors the CC marketplace.json `source` kinds. See
-  // `docs/design/phase-7.1-plugin-source.md` Part 2a.
+  // `wiki dev/design/phase-7.1-plugin-source.md` Part 2a.
   z.object({
     type: z.literal('plugin'),
     source: z.discriminatedUnion('source', [

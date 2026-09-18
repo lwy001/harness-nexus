@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 /**
  * MCP connection & credential validation schemas — single source of truth for
- * request shapes across server, SDK, and web. See docs/design/phase-2.1-credentials.md
- * (credentials + placeholder injection) and docs/design/phase-8-c2.md
+ * request shapes across server, SDK, and web. See wiki dev/design/phase-2.1-credentials.md
+ * (credentials + placeholder injection) and wiki dev/design/phase-8-c2.md
  * (the dial-site model that replaced the 3.1 proxy/direct mode).
  *
  * These mirror the domain types in @harness-nexus/core; keep them in sync.

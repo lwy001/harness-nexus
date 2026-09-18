@@ -10,7 +10,7 @@ import {
 import type { TargetScanner } from '../types.js';
 
 /**
- * pi scanner (Phase 9 W16). Ground truth: docs/research/phase-9-w16-pi-agent.md
+ * pi scanner (Phase 9 W16). Ground truth: wiki dev/research/phase-9-w16-pi-agent.md
  * §7 — the agent's global home is `~/.pi/agent`:
  *   skills   → skills/<name>/SKILL.md (+ bundle files) — Agent Skills format;
  *              the DISPLAY name comes from frontmatter `name` (pi allows it

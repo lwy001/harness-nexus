@@ -1,0 +1,32 @@
+name: Design discussion
+description: Weigh an approach before building it — data model, API surface, wire protocol, trade-offs.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For changes that need agreement before code: schema/API/wire changes,
+        new agent-tool onboarding, anything cross-package. Keep it to the
+        decisions that need making; implementation detail belongs in the PR.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / goal
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints & prior art
+      description: Incompatible behaviors, adapter/protocol ground truth, reference projects — anything that bounds the solution.
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: Include your recommendation and why.
+    validations:
+      required: true
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions

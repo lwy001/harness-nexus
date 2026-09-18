@@ -17,7 +17,7 @@ import { dshNodeWarning, piNodeWarning } from './runtime.js';
 
 /**
  * Provider-config apply (Phase 9 W3) — the daemon half of
- * docs/design/phase-9-harness-runtime.md §4.3.
+ * wiki dev/design/phase-9-harness-runtime.md §4.3.
  *
  * `apply-config` harness jobs fetch the resolved `{spec, secret}` bundle with
  * the machine PAT (execution-time resolution: a requeued job after a spec or

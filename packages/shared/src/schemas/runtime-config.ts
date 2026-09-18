@@ -5,7 +5,7 @@ import { runtimeTargetSchema, type RuntimeTarget } from './inventory.js';
  * Runtime provider-config schemas (Phase 9 W3) — the LLM route a harness
  * runtime should use. One spec per (machine, target), upserted over REST and
  * applied by the daemon into each harness's NATIVE config slots.
- * docs/design/phase-9-harness-runtime.md §4.3.
+ * wiki dev/design/phase-9-harness-runtime.md §4.3.
  *
  * The spec NEVER carries a secret — it references a distributable credential
  * by name. The plaintext is resolved server-side only for the daemon's
@@ -131,7 +131,7 @@ export function runtimeSpecUnsupportedReason(
   // 9 W16 — the pi writer always defines the `harness-nexus` provider entry in
   // models.json; a custom provider with models REQUIRES a baseUrl there.
   if (target === 'pi' && spec.baseUrl === undefined) {
-    return "pi provider routes must set a baseUrl (the writer defines a custom models.json provider, which requires an endpoint)";
+    return 'pi provider routes must set a baseUrl (the writer defines a custom models.json provider, which requires an endpoint)';
   }
   return null;
 }

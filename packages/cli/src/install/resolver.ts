@@ -8,7 +8,7 @@
  * outbound path in the CLI; there is no local-manifest fallback (a profile's
  * resource bodies and the aggregated `/mcp` endpoint both require the server).
  *
- * See `docs/design/phase-3-install.md` Part 4.
+ * See `wiki dev/design/phase-3-install.md` Part 4.
  */
 import { HarnessNexusClient, HarnessNexusError } from '@harness-nexus/sdk';
 import type { Profile, McpServer } from '@harness-nexus/core';

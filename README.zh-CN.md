@@ -64,8 +64,10 @@
 | 编排（多代理）                    | 🧪 未设计                    |
 | 其余导入适配器（ECC/Superpower）  | 🧪 计划中                    |
 
-详细计划见 [`docs/roadmap.md`](docs/roadmap.md)；每个阶段都有配套的 PRD + 设计文档，
-索引在 [`docs/README.md`](docs/README.md)。
+开发围绕 [GitHub Issues + 里程碑](https://github.com/sinrimin/harness-nexus/milestones)
+组织；历史阶段计划、全部 PRD/设计/调研文档与面向使用者的功能文档都在
+[Wiki](https://github.com/sinrimin/harness-nexus/wiki)，工作流程见
+[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 技术栈
 
@@ -84,7 +86,7 @@ packages/
   cli/           `hnx`——注册/守护进程/安装/MCP 服务
 apps/
   web/           React 管理界面（Signal 设计系统，界面语言：英文/简体中文）
-docs/            PRD、设计、调研、路线图、ADR
+docs/            架构 + ADR（过程与功能文档在 Wiki）
 ```
 
 ## 快速开始（开发）
@@ -179,8 +181,11 @@ ACP 聊天子进程。远程聊天默认按机器关闭——在机器页面开�
 
 ## 文档
 
-[`docs/README.md`](docs/README.md) 索引了全部文档：架构
-（[`docs/architecture.md`](docs/architecture.md)）、各阶段 PRD/设计、调研笔记与 ADR。
+- [Wiki](https://github.com/sinrimin/harness-nexus/wiki)——功能文档、各阶段
+  PRD/设计、调研笔记与历史路线图
+- 仓库内：[`docs/architecture.md`](docs/architecture.md)（分层与存储契约）、
+  [`docs/adr/`](docs/adr)
+- [CONTRIBUTING.md](CONTRIBUTING.md)——开发组织方式
 
 ## 许可证
 

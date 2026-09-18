@@ -9,7 +9,7 @@ import type { ResolvedProfile } from '../src/install/types.js';
 
 /**
  * pi adapter tests (Phase 9 W16). Ground truth:
- * docs/research/phase-9-w16-pi-agent.md §7 — skills are Agent Skills with
+ * wiki dev/research/phase-9-w16-pi-agent.md §7 — skills are Agent Skills with
  * REQUIRED name+description frontmatter under skills/<name>/, commands are
  * prompt templates under prompts/<name>.md (filename = /name), and
  * mcp/sub_agent/hook/rule have no declarative surface (skipped with reasons).

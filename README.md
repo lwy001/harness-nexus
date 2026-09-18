@@ -72,8 +72,11 @@ while a small client (`hnx`) on each of your machines does the local work.
 | Orchestration (multi-agent)            | 🧪 undesigned                   |
 | Other import adapters (ECC/Superpower) | 🧪 planned                      |
 
-The detailed plan lives in [`docs/roadmap.md`](docs/roadmap.md); each phase has
-a paired PRD + design doc indexed in [`docs/README.md`](docs/README.md).
+Development is organized around [GitHub issues + milestones]
+(https://github.com/sinrimin/harness-nexus/milestones). The historical phase
+plan, all PRD/design/research docs, and user-facing feature guides live in
+the [wiki](https://github.com/sinrimin/harness-nexus/wiki); see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 
 ## Stack
 
@@ -92,7 +95,7 @@ packages/
   cli/           `hnx` — enroll/daemon/install/mcp-serve
 apps/
   web/           React admin UI (Signal design system)
-docs/            PRDs, designs, research, roadmap, ADRs
+docs/            architecture + ADRs (process & feature docs live in the wiki)
 ```
 
 ## Quick start (development)
@@ -198,9 +201,11 @@ instance (and its `JWT_SECRET`) as root for everything connected to it.
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) indexes everything: architecture
-([`docs/architecture.md`](docs/architecture.md)), per-phase PRDs/designs,
-research notes, and ADRs.
+- [Wiki](https://github.com/sinrimin/harness-nexus/wiki) — feature guides,
+  per-phase PRDs/designs, research notes, the historical roadmap
+- In-repo: [`docs/architecture.md`](docs/architecture.md) (layering & storage
+  contract) and [`docs/adr/`](docs/adr)
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how development is organized
 
 ## License
 

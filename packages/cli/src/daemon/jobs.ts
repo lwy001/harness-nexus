@@ -14,7 +14,7 @@ import { runApplyConfigJob } from './runtime-config.js';
 
 /**
  * Daemon-side job executor (Phase 8 C4 + Phase 9 W2).
- * docs/design/phase-8-c4.md · phase-9-harness-runtime.md.
+ * wiki dev/design/phase-8-c4.md · phase-9-harness-runtime.md.
  *
  * A deploy job is the 3.3 pipeline with a different trigger: fetch the
  * resolved bundle with the machine PAT (`GET /api/client/deploy-bundle` —

@@ -7,7 +7,7 @@ import type { InventoryItemKind } from '@harness-nexus/shared';
  * from the same ground-truth locations its install adapter writes; this module
  * owns the cross-target conventions: bounded text reads, summaries/previews,
  * install-ledger platform detection, and MCP secret redaction.
- * See docs/design/phase-8-c3.md.
+ * See wiki dev/design/phase-8-c3.md.
  */
 
 /** Hard cap for one importable artifact body (per item). */

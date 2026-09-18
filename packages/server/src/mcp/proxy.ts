@@ -8,7 +8,7 @@
  *
  * Auth: a PAT (Bearer hnpat_…) is required, resolved into `req.user` by the
  * root auth hook. The `?profile=<id>` query param selects which profile's MCP
- * server entries are exposed (explicit profile routing — see docs/design/phase-2.2-registry.md).
+ * server entries are exposed (explicit profile routing — see wiki dev/design/phase-2.2-registry.md).
  *
  * This file is the transport mount point only; aggregation lives in
  * `./registry.ts`. It is intentionally decoupled from the REST routes.

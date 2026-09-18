@@ -14,7 +14,7 @@ import type { RawMcpEntry, TargetScanner } from '../types.js';
 
 /**
  * OpenCode scanner (Phase 9 W12). Ground truth:
- * docs/research/phase-9-w12-opencode.md §4 — the agent's global home is
+ * wiki dev/research/phase-9-w12-opencode.md §4 — the agent's global home is
  * XDG-shaped (~/.config/opencode):
  *   mcp      → top-level `mcp` map in opencode.json (local: `command` —
  *              ARRAY in opencode's docs, string tolerated — with optional

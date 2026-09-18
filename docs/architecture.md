@@ -56,4 +56,4 @@ Streamable HTTP (`/mcp`) and SSE (`/mcp/sse`) — so the same aggregated server 
 be consumed by remote tools over HTTP. The registry dials configured upstreams as
 a client (SSE / Streamable HTTP) and aggregates their tools under namespaced keys;
 agent tools authenticate with a PAT and route through a profile. stdio is
-unsupported (security). See `docs/design/phase-2.2-registry.md`.
+unsupported (security). See `wiki dev/design/phase-2.2-registry.md`.

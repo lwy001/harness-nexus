@@ -1,7 +1,7 @@
 import type { InventoryDiff, InventoryDiffEntry, InventoryItem } from './schemas/inventory.js';
 
 /**
- * Pure inventory-vs-profile diff (Phase 8 C3). See docs/design/phase-8-c3.md.
+ * Pure inventory-vs-profile diff (Phase 8 C3). See wiki dev/design/phase-8-c3.md.
  *
  * The caller (server route) resolves profile entries to `{kind, name}` pairs
  * first — non-mcp entries carry the RESOURCE name (adapters name artifacts

@@ -14,8 +14,8 @@
  * A profile is a reference bundle (its entries point at server-side resources),
  * so the server is required — there is no local-manifest path.
  *
- * Design: `docs/design/phase-3-install.md`. Adapter pattern:
- * `docs/research/phase-3-ecc-install-patterns.md`.
+ * Design: `wiki dev/design/phase-3-install.md`. Adapter pattern:
+ * `wiki dev/research/phase-3-ecc-install-patterns.md`.
  */
 import { hostname } from 'node:os';
 import { InstallError } from './errors.js';

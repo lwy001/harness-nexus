@@ -4,7 +4,7 @@
  * `deploy` type (remote profile install reusing the 3.3 pipeline); Phase 9 W2
  * adds `harness` (install/upgrade/pin the harness runtime itself — no
  * AgentInstance side effects). `scan` / `import` stay interactive (C3) and
- * remain reserved in the type union. See docs/design/phase-8-c4.md.
+ * remain reserved in the type union. See wiki dev/design/phase-8-c4.md.
  */
 import type { AgentTarget } from './resource.js';
 

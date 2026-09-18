@@ -67,7 +67,7 @@ import {
 
 /**
  * Daemon-side chat session manager (Phase 8 C5, extended 9 W7).
- * docs/design/phase-8-c5.md + docs/design/phase-9-w7-native-sessions.md.
+ * wiki dev/design/phase-8-c5.md + wiki dev/design/phase-9-w7-native-sessions.md.
  *
  * The daemon is the protocol-adaptation edge: one ACP adapter subprocess per
  * `chat:session.start`, ACP frames mapped onto the platform's semantic stream
