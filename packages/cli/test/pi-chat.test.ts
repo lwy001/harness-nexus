@@ -358,4 +358,18 @@ describe('pi chat round-trip', () => {
     expect(JSON.stringify(items)).toContain('past question');
     expect(JSON.stringify(items)).toContain('past answer');
   });
+
+  it('fails honestly when the resumed session file does not exist', async () => {
+    const socket = new FakeSocket();
+    attach(socket);
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-pi-6',
+      agentInstanceId: 'ag-pi',
+      target: 'pi',
+      cwd: home,
+      resume: { sessionId: 'no-such-session', cwd: home },
+    });
+    const ready = await waitFor(() => socket.emitted.find((e) => e.event === 'chat:session.ready'));
+    expect((ready!.payload as { error?: string }).error).toContain('not found');
+  });
 });
