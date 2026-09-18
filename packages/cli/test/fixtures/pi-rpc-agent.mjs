@@ -163,7 +163,19 @@ async function handle(line) {
       });
       return;
     case 'new_session':
-    case 'switch_session':
+      respond(id, type);
+      return;
+    case 'switch_session': {
+      // rig-verified: switch_session takes `sessionPath` (the session FILE's
+      // absolute path). An id-shaped param dies exactly like real pi:
+      // "Cannot read properties of undefined (reading 'startsWith')".
+      if (typeof params.sessionPath !== 'string' || params.sessionPath === '') {
+        respond(id, type, null, "Cannot read properties of undefined (reading 'startsWith')");
+      } else {
+        respond(id, type, { cancelled: false });
+      }
+      return;
+    }
     case 'set_model':
     case 'set_thinking_level':
       respond(id, type);

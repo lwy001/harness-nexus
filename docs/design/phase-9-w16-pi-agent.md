@@ -271,3 +271,13 @@ value:'harness-nexus/doubao-seed-code-1-6'}` → accepted, the push
 - **Viewer**: settings/models shown; `models.json …apiKey` masked by key
   name; `auth.json` + `harness-nexus.key` wholesale `${redacted}`.
 - **Leak scan**: no orphan `--mode rpc` processes after the turns.
+- **Resume — rig-found fix (2026-09-18)**: rail clicks failed at first
+  with `Cannot read properties of undefined (reading 'startsWith')` —
+  `switch_session` takes **`sessionPath`** (the session FILE's absolute
+  path), not an id (docs "RPC mode"; verified by probe). `establishLoad`
+  now resolves id → path via `piFindSessionFile` (throwing an honest
+  "not found" for foreign ids), switches with the path, and treats a
+  `cancelled:true` reply as failure. E2E after the fix: READY carried the
+  RESUMED session's nativeSessionId, the transcript replayed (4 items),
+  and a follow-up question about the earlier turn answered from the
+  resumed context ("RPCOK").

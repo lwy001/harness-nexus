@@ -504,12 +504,26 @@ export class PiRpcConnection implements AgentConnection {
 
   private async establishLoad(sessionId: string, timeoutMs: number): Promise<UnknownRecord> {
     if (sessionId === '') throw new Error('pi session/load requires a sessionId');
-    await this.piCommand('switch_session', { sessionId }, Math.min(timeoutMs, 20000));
+    // rig-found (pi 0.85.1): switch_session takes `sessionPath` — the session
+    // FILE's absolute path, not an id (docs "RPC mode"; an id-shaped param
+    // dies with "Cannot read properties of undefined (reading 'startsWith')").
+    // Resolve id → path ourselves, exactly like the rail's file scan.
+    const file = piFindSessionFile(this.sessionsDir, piConnFs, sessionId);
+    if (file === null) {
+      throw new Error(`pi session '${sessionId}' not found under the sessions store`);
+    }
+    const switched = await this.piCommand(
+      'switch_session',
+      { sessionPath: file },
+      Math.min(timeoutMs, 20000),
+    );
+    if (switched['cancelled'] === true) {
+      throw new Error('pi extension cancelled the session switch');
+    }
     this.sessionId = sessionId;
     // Replay history from the transcript file (pi switch_session does NOT
     // replay): emit BEFORE resolving — the daemon's wireCapture path folds
     // these exactly like claude's native replay. Best-effort by design.
-    const file = piFindSessionFile(this.sessionsDir, piConnFs, sessionId);
     if (file !== null) {
       try {
         for (const update of piSessionReplay(readFileSync(file, 'utf8'))) {

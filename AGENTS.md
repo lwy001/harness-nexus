@@ -1328,9 +1328,12 @@ contentIndex, delta}`**; `get_session_stats.data.sessionId`; usage
   ACP response is HELD until `agent_settled`/abort** (pi ACKs immediately
   — ACP resolves at turn end). Line codec splits on `\n` ONLY (readline
   splits U+2028/U+2029 inside JSON strings). Command override:
-  `HN_ACP_COMMAND_PI` (fixture/pins). `session/load` = `switch_session` +
-  file-replayed history emitted BEFORE the response resolves (the
-  wireCapture path); resume advertises `loadSession: true` only. Model
+  `HN_ACP_COMMAND_PI` (fixture/pins). `session/load` = `switch_session
+{sessionPath: <abs file>}` (rig-found: the param is the session FILE's
+  PATH, not an id — the façade resolves id→path via `piFindSessionFile`,
+  honest "not found" for foreign ids) + file-replayed history emitted
+  BEFORE the response resolves (the wireCapture path); resume advertises
+  `loadSession: true` only. Model
   values are `harness-nexus/<id>` refs; W13 rewrites intersect to them
   (opencode stance). Permissions/elicitation: pi has NEITHER — the
   handlers never fire (honest absence). bash/tool_execution event arms ride
