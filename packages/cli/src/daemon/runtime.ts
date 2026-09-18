@@ -14,7 +14,7 @@ import { scanTarget, scannerFor } from '../inventory/scan.js';
 import { emptySnapshot } from './client.js';
 
 /**
- * Harness-runtime job executor (Phase 9 W2). docs/design/phase-9-harness-runtime.md §4.2.
+ * Harness-runtime job executor (Phase 9 W2). wiki dev/design/phase-9-harness-runtime.md §4.2.
  *
  * `install` / `upgrade` / `pin` map to the per-target command table — npm is
  * the universal channel (every daemon host runs Node ≥20); the ONE native

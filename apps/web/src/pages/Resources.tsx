@@ -560,7 +560,7 @@ function ResourceEditor({
  *
  * Only events supported by at least one declared target are offered. Hermes is
  * excluded entirely (no declarative hooks model). See
- * `docs/research/phase-4.5-hooks.md`.
+ * `wiki dev/research/phase-4.5-hooks.md`.
  */
 interface HookEntry {
   event: HookEvent;

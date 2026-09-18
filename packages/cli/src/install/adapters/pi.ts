@@ -1,7 +1,7 @@
 /**
  * pi target adapter (Phase 9 W16).
  *
- * pi layout (ground truth: `docs/research/phase-9-w16-pi-agent.md` §7 —
+ * pi layout (ground truth: `wiki dev/research/phase-9-w16-pi-agent.md` §7 —
  * pi.dev docs "Skills" + "Prompt templates", verified 2026-09-17):
  *   A. skills   → `~/.pi/agent/skills/<name>/SKILL.md` (+ bundle files) —
  *                 the Agent Skills format; pi REQUIRES frontmatter `name` +

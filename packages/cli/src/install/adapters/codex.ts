@@ -2,7 +2,7 @@
  * Codex target adapter (Phase 8 C2 — lands here as the "trivial case" of the
  * stdio shim unification; absorbs roadmap 3.6).
  *
- * Codex layout (ground truth: `docs/research/phase-3-ecc-install-patterns.md`
+ * Codex layout (ground truth: `wiki dev/research/phase-3-ecc-install-patterns.md`
  * § "Codex — concrete format"):
  *   A. skills      → `~/.codex/skills/<name>/SKILL.md` (+ bundle files)
  *   B. commands    → `~/.codex/prompts/<name>.md` (YAML frontmatter stripped)

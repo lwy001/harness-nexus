@@ -16,8 +16,8 @@
  * route module resolves the token; this service is transport-free and talks
  * only to the UnitOfWork, mirroring how `mcp/registry.ts` stays decoupled.
  *
- * Ground truth: docs/design/phase-3.5-marketplace-emitter.md +
- * docs/research/phase-3.5-marketplace-emitter-spike.md (every client-side
+ * Ground truth: wiki dev/design/phase-3.5-marketplace-emitter.md +
+ * wiki dev/research/phase-3.5-marketplace-emitter-spike.md (every client-side
  * constraint cited here was verified against a live claude install cycle).
  */
 import JSZip from 'jszip';

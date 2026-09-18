@@ -3,7 +3,7 @@
  * daemon's scanners produce it (normalized in `@harness-nexus/shared`
  * `schemas/inventory.ts` — keep the item/agent shapes in sync); the server
  * stores exactly one row per pair and computes diffs against profiles from it.
- * See docs/design/phase-8-c3.md.
+ * See wiki dev/design/phase-8-c3.md.
  */
 import type { AgentTarget } from './resource.js';
 

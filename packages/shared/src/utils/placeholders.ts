@@ -12,7 +12,7 @@
  *   - proxy mode  — server-side at connect time (plaintext in memory only).
  *   - direct mode — install time, by the Phase 3.3 writer.
  *
- * See docs/design/phase-2.1-credentials.md.
+ * See wiki dev/design/phase-2.1-credentials.md.
  */
 
 /** Matches `${cred:NAME}` where NAME is the credential name (non-} chars). */

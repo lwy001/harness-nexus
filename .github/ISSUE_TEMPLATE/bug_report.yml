@@ -1,0 +1,46 @@
+name: Bug report
+description: Something behaves incorrectly or breaks.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report! Please keep it on one screen —
+        concrete and reproducible reports get fixed fastest.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include the page/route or CLI command involved.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See error …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Server & daemon versions, deployment (npm/docker), agent tool + version if relevant, OS.
+      placeholder: 'server 0.x.y (docker) · daemon 0.x.y · claude-code 2.1.x · macOS 15'
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Trim to the relevant part. Never paste real credentials or tokens.
+      render: shell

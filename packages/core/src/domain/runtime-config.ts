@@ -4,7 +4,7 @@
  * a distributable credential, resolved to plaintext only inside the daemon's
  * machine-PAT bundle fetch. Applied by the daemon into each harness's native
  * config slots (claude-code settings.json env, codex config.toml + auth.json,
- * dsh cordis patch + `~/.dsh/.env`). See docs/design/phase-9-harness-runtime.md §4.3.
+ * dsh cordis patch + `~/.dsh/.env`). See wiki dev/design/phase-9-harness-runtime.md §4.3.
  */
 
 /** Plain mirror of `RuntimeConfigSpec` in shared (core stays framework-free). */

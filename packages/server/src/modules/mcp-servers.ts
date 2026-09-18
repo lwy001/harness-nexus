@@ -28,7 +28,7 @@ import { RegistryError } from '../mcp/registry.js';
  * stdio can only be dialed client-side — the platform never spawns processes
  * on the user's machine — enforced as 409 STDIO_REQUIRES_CLIENT here.
  *
- * Scope rules (see docs/design/phase-2.1-credentials.md) are identical to credentials:
+ * Scope rules (see wiki dev/design/phase-2.1-credentials.md) are identical to credentials:
  *   global   — any authenticated user can read; admin only to create/update/delete.
  *   personal — owner only for all operations.
  */

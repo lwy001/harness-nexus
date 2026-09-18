@@ -14,7 +14,7 @@ import { credentialView } from './serialize.js';
  * Credential management — named secrets referenced by MCP transports via
  * `${cred:NAME}` placeholders. A credential is a pure name + secret + scope.
  *
- * Scope rules (see docs/design/phase-2.1-credentials.md):
+ * Scope rules (see wiki dev/design/phase-2.1-credentials.md):
  *   global   — any authenticated user can read; admin only to create/update/delete.
  *   personal — owner only for all operations.
  */

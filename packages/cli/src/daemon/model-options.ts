@@ -15,7 +15,7 @@ import type { HistoryItem, SessionConfigOption } from '@harness-nexus/shared';
  * claude-code needs no rewrite (the W3 writer's `availableModels` allowlist
  * constrains the wrapper's own option list) and deepseek's native picker
  * already reads the W10 catalog — both fall through as identity.
- * docs/design/phase-9-w13-multi-model.md.
+ * wiki dev/design/phase-9-w13-multi-model.md.
  */
 
 /** What the rewrite needs to know about the channel. */

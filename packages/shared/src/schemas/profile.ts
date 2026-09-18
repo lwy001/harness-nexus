@@ -22,9 +22,9 @@ export const resourceKindSchema = z.enum(['skill', 'hook', 'sub_agent', 'rule', 
 // Phase 9 W12 — runtime-managed + chatable, no profile install adapter yet).
 // `pi` (Earendil Works' minimal coding harness, Phase 9 W16) is runtime-managed
 // + chatable (self-developed ACP façade) + deployable (skills/templates).
-// See `docs/research/phase-3-ecc-install-patterns.md` +
-// `docs/research/phase-8-t1-deepseek-harness.md` +
-// `docs/research/phase-9-w12-opencode.md` + `docs/research/phase-9-w16-pi-agent.md`.
+// See `wiki dev/research/phase-3-ecc-install-patterns.md` +
+// `wiki dev/research/phase-8-t1-deepseek-harness.md` +
+// `wiki dev/research/phase-9-w12-opencode.md` + `wiki dev/research/phase-9-w16-pi-agent.md`.
 export const agentTargetSchema = z.enum([
   'claude-code',
   'zcode',

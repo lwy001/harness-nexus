@@ -26,7 +26,7 @@ export type UserBlock =
 
 /**
  * The conversation fold (Phase 9 W6) — adapted from the portal reference's
- * row-sequence model (docs/research/phase-9-portal-chat-ui.md §2): the stream
+ * row-sequence model (wiki dev/research/phase-9-portal-chat-ui.md §2): the stream
  * is a LIST OF ROWS, not a list of bubbles — user rows, assistant STEPS (one
  * segment of model output, split by tool calls), independent tool rows with a
  * lifecycle, system notes, and turn-tail stats. Pure reducer, O(1) hot path

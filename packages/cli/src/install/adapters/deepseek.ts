@@ -1,7 +1,7 @@
 /**
  * DeepSeek Harness (dsh) target adapter (Phase 8 T1).
  *
- * dsh layout (ground truth: `docs/research/phase-8-t1-deepseek-harness.md`,
+ * dsh layout (ground truth: `wiki dev/research/phase-8-t1-deepseek-harness.md`,
  * pinned to dsh v0.1.2-rc.1):
  *   A. skills   → `~/.dsh/skills/<name>/SKILL.md` (+ bundle files) — the Agent
  *                 Skills format, but dsh REQUIRES YAML frontmatter

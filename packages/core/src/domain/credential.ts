@@ -10,7 +10,7 @@
  *
  * The `secret` field holds AES-256-GCM ciphertext (see server crypto module);
  * the plaintext is never returned by the API (responses carry a masked
- * preview instead). See docs/design/phase-2.1-credentials.md.
+ * preview instead). See wiki dev/design/phase-2.1-credentials.md.
  */
 
 export interface Credential {
@@ -26,7 +26,7 @@ export interface Credential {
    * shim's memory)? Personal credentials are always distributable (the
    * owner's own machines); global credentials carry an admin opt-in, default
    * false — non-distributable globals are served only through the platform
-   * `/mcp` outlet. See docs/design/phase-8-c2.md.
+   * `/mcp` outlet. See wiki dev/design/phase-8-c2.md.
    */
   distributable: boolean;
   createdAt: string;

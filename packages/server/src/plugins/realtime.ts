@@ -47,7 +47,7 @@ import { JobService } from '../jobs/service.js';
 /**
  * Realtime channel (Phase 8) — Socket.IO attached to the Fastify HTTP server.
  *
- * One bidirectional namespace per client role (docs/design/phase-8-client.md):
+ * One bidirectional namespace per client role (wiki dev/design/phase-8-client.md):
  *   /ctl — daemon, authenticated by a machine PAT (scopes ['machine-ctl'])
  *          whose PAT record must map to the claimed machineId.
  *   /app — browser, authenticated by JWT or api PAT; joins `user:<id>`

@@ -1,129 +1,32 @@
 # Harness Nexus documentation
 
-Documentation is split by type so it's clear what each file is for.
+Since 2026-09 the documentation is split by **audience and coupling**:
 
-| Folder                    | What it is                                                                                                                                                           | When to read it                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [`prd/`](./prd)           | **Product requirements** (PRD) — the _why_ and _what_. User stories, scope, acceptance. Written in the [to-spec](https://github.com/mattflick/to-spec) PRD template. | To understand what a phase delivers and why, before diving into how.                     |
-| [`design/`](./design)     | **Technical design** (the "how") — data models, API surfaces, internals, wiring. The development-plan docs.                                                          | Before changing a phase's implementation; the authoritative source for current behavior. |
-| [`research/`](./research) | **Technical research** — option comparisons, spike notes, technology surveys done before a design.                                                                   | When weighing an approach for an upcoming phase.                                         |
-| [`adr/`](./adr)           | **Architecture decision records** — irreversible cross-cutting choices.                                                                                              | When asking "why this stack/convention?".                                                |
+## In this repo — code-coupled contract docs
 
-Cross-cutting overviews live at the docs root: [`architecture.md`](./architecture.md)
-(layering, storage contract, MCP transport) and [`roadmap.md`](./roadmap.md)
-(phase status).
+| File / folder                          | What it is                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`architecture.md`](./architecture.md) | layering, storage contract, MCP transport — changes must ride the PR that changes the code |
+| [`adr/`](./adr)                        | architecture decision records — irreversible cross-cutting choices                         |
 
-> Convention: each phase has a paired `prd/phase-N-<topic>.md` and
-> `design/phase-N-<topic>.md`. The PRD is written/updated when the phase is
-> scoped; the design doc is written **before** implementation (see the
-> "Feature development workflow" section in the root `AGENTS.md`).
+## In the GitHub wiki — everything else
 
-## Index by phase
+Feature guides (user-facing), PRDs, technical designs, research notes, and
+the historical roadmap live in the
+[GitHub wiki](https://github.com/sinrimin/harness-nexus/wiki):
 
-### Phase 1 — Users, roles & authentication ✅
+- `features/` — what the product does, per capability area
+- `dev/prd/` · `dev/design/` · `dev/research/` — the development process docs
+  (imported from this folder 2026-09; indexed by `dev/README.md` there)
+- `dev/roadmap.md` — the historical phase plan; forward planning lives in
+  [issues + milestones](https://github.com/sinrimin/harness-nexus/milestones)
 
-- PRD: [`prd/phase-1-auth.md`](./prd/phase-1-auth.md)
-- Design: [`design/phase-1-auth.md`](./design/phase-1-auth.md)
+The wiki is a git repository
+(`https://github.com/sinrimin/harness-nexus.wiki.git`) — keep a clone next to
+this repo (`../harness-nexus.wiki`) and edit through git, not the web editor.
 
-### Phase 2.1 — MCP connection config & credentials ✅
+Exception: `docs/dev/test-rig.md` (verification-rig notes) is machine-specific
+and stays local + git-ignored — it is deliberately not published.
 
-- PRD: [`prd/phase-2.1-credentials.md`](./prd/phase-2.1-credentials.md)
-- Design: [`design/phase-2.1-credentials.md`](./design/phase-2.1-credentials.md)
-
-### Phase 2.2 — MCP registry, proxy & profiles ✅
-
-- PRD: [`prd/phase-2.2-registry.md`](./prd/phase-2.2-registry.md)
-- Design: [`design/phase-2.2-registry.md`](./design/phase-2.2-registry.md)
-
-### Phase 2.3 — Callable-function scripts ⏸️ on hold
-
-- PRD: [`prd/phase-2.3-callable-functions.md`](./prd/phase-2.3-callable-functions.md)
-- Research: [`research/phase-2.3-sandbox.md`](./research/phase-2.3-sandbox.md)
-- Design: _to be written before implementation_
-- > Not currently planned for development.
-
-### Phase 2.4 — proxy MCP connect & tool inspection ✅
-
-- PRD: [`prd/phase-2.4-connect-tools.md`](./prd/phase-2.4-connect-tools.md)
-- Design: [`design/phase-2.4-connect-tools.md`](./design/phase-2.4-connect-tools.md)
-
-### Phase 3 — Install pipeline 🚧 (3.1, 3.2 done)
-
-- Research: [`research/phase-3-ecc-install-patterns.md`](./research/phase-3-ecc-install-patterns.md) — the install-pipeline architecture extracted from ECC (adapter factory + plan/apply + install-state ledger; Codex ground-truth format).
-- Research: [`research/phase-3-plugin-targets.md`](./research/phase-3-plugin-targets.md) — per-target plugin formats (Claude Code / Hermes; ZCode superseded). Superseded on architecture by the ECC doc above.
-- Research: [`research/phase-3.5-marketplace-emitter-spike.md`](./research/phase-3.5-marketplace-emitter-spike.md) — empirical spike: Claude Code consumes a plain-HTTP `marketplace.json` + `archive` (zip) plugin sources; capability-URL auth; version/SSRF constraints. Basis for the 3.5 re-plan (marketplace emission preferred over adapter writes for claude-code).
-- Design: [`design/phase-3.5-marketplace-emitter.md`](./design/phase-3.5-marketplace-emitter.md) — the emitter surface: PAT-in-path catalog + per-profile archive zips, plugin zip layout, MCP emission, config `PUBLIC_BASE_URL`.
-- PRD: [`prd/phase-3-install.md`](./prd/phase-3-install.md)
-- Design: [`design/phase-3-install.md`](./design/phase-3-install.md) — target adapter factory (one adapter per target: Hermes → Claude Code → Codex), plan/apply, install-state ledger. ZCode out of install scope.
-
-### Phase 4 — Resource management & PAT UI ✅ (4.1–4.6 done)
-
-- PRD: [`prd/phase-4-web-ui.md`](./prd/phase-4-web-ui.md)
-- Design: [`design/phase-4-web-ui.md`](./design/phase-4-web-ui.md)
-- Research: [`research/phase-4.5-hooks.md`](./research/phase-4.5-hooks.md) — the hook event × target support matrix (CC ~30 events, ZCode 7, Hermes different model); lands in `packages/shared/src/hooks.ts`.
-- All resource kinds shipped: sub-agent, rule, command (single-file inline), hook (hooks.json + event/target matrix), skill (inline + inline-bundle multi-file).
-
-### Phase 5 — ACP bridge ➡️ absorbed into Phase 8
-
-- Delivered by Phase 8: C1 (daemon + control channel) and C5 (ACP chat). See the Phase 8 entries below.
-
-### Phase 6 — Platform features ⏳
-
-- stdio bridge entry → resolved by Phase 8 C2 (the stdio shim IS the entry). Remaining: Channels (adjacent to Phase 8 C6), LLM-WIKI, memory/notes.
-
-### Phase 7 — Skill multi-source & plugin references ✅
-
-- PRD: [`prd/phase-7-skills.md`](./prd/phase-7-skills.md) — covers all four sub-phases (7.1–7.4); carries the research corrections (10 Hermes adapters, 4 trust tiers internally / 3 surfaced, CC has 4 live source kinds and no npm, `category` is the filter axis).
-- Design 7.1: [`design/phase-7.1-plugin-source.md`](./design/phase-7.1-plugin-source.md) — `plugin` `ResourceSource` variant + trust/provenance labels + `SkillSource` port + validator/smoke flip. Zero outbound network.
-- Design 7.2: [`design/phase-7.2-marketplace-fetch.md`](./design/phase-7.2-marketplace-fetch.md) — the server's first outbound HTTP path: `SkillCatalogService` (lazy TTL cache + in-flight dedup), `MARKETPLACE_ALLOWLIST`, `/api/skills/marketplaces/:id/plugins`, fixture-injection test mode.
-- Design 7.3: [`design/phase-7.3-hub-ui.md`](./design/phase-7.3-hub-ui.md) — the `/skills/hub` browse page: category/free-text filters, client-side trust badge (neutral variants, not `--signal`), inline save-as-skill dialog with install-warning UX.
-- Design 7.4: [`design/phase-7.4-multi-source.md`](./design/phase-7.4-multi-source.md) — 4 `SkillSource` adapters (github/well-known/url/marketplace), `SkillSearchRouter` (per-source timeout + identifier dedupe + trust-rank), `/api/skills/search`, hub dual-mode (browse + cross-source search). skills.sh/browse.sh deferred; clawhub/lobehub/hermes-index skipped (verified).
-- Research: [`research/phase-4.4-skills.md`](./research/phase-4.4-skills.md) — external skill sourcing: CC/ZCode marketplace plugin model + Hermes's `SkillSource` adapter model, trust tiers, provenance pinning.
-- 7.2–7.4 designs to be written before each ships.
-
-### Phase 8 — Harness Nexus client & agent orchestration 🚧 (C1–C5 shipped)
-
-- PRD: [`prd/phase-8-client.md`](./prd/phase-8-client.md) — the vision shift (control plane / data plane), the four locked decisions (credential distributability, `/mcp` outlet narrowing, on-demand daemon, uniform stdio MCP), and the C1–C6 scope.
-- Design: [`design/phase-8-client.md`](./design/phase-8-client.md) — data model (`Machine`/`AgentInstance`/`Job`/`AcSession`), the Socket.IO-over-WSS realtime protocol (bidirectional role namespaces `/ctl` daemon + `/app` browser, event catalog, rooms, isolation layers; daemon as protocol-adaptation edge), the MCP shim process model + dial-site routing derivation, jobs/deploy, inventory/diff/import, ACP chat, security model, and the per-phase development plan.
-- Design C1: [`design/phase-8-c1.md`](./design/phase-8-c1.md) — the shipped C1 plan: machines storage + migration `0006`, machine PATs (`machine-ctl`, REST-rejected), realtime v0 (`/ctl` handshake/hello/presence + `/app` push), `/api/machines` CRUD, `hnx enroll`/`hnx daemon`, the Machines web page, and the verification matrix (unit + integration + smoke `[8 C1]`).
-- Design C3: [`design/phase-8-c3.md`](./design/phase-8-c3.md) — the shipped C3 plan: daemon per-target scanners (claude-code/codex/hermes), normalized snapshots over `/ctl` (`inventory:scan|report|collect|payload`), latest-per-(machine,target) storage (migration `0008`), the pure profile diff, and one-click import (reuse-or-create resources + McpServer rows + a new profile) with daemon-side secret redaction.
-- Design C4: [`design/phase-8-c4.md`](./design/phase-8-c4.md) — the shipped C4 plan: the Job state machine (queue/dispatch/ack-timeout sweep/disconnect recovery with attempt caps), remote deploy reusing the unchanged 3.3 pipeline via a machine-PAT deploy-bundle fetch, AgentInstance upserts, and the MachineDetail deployments UI.
-- Research C5: [`research/phase-8-c5-acp-web-demo.md`](./research/phase-8-c5-acp-web-demo.md) — the web-vibecoding-demo reference (browser ↔ portal ↔ acp-bridge → DSH): ACP as the chat payload dialect, permission `optionId` passthrough, session-op mutual exclusion, cancel watchdog, reconnect re-registration, the fold/StreamBuffer streaming model, and fs/terminal channel boundaries. First filled row of the C5 adapter matrix (DSH).
-- Design C2: [`design/phase-8-c2.md`](./design/phase-8-c2.md) — the shipped C2 plan: the normative dial-site × distributability matrix, migration `0007`, the `mcp-runtime` `UpstreamPool` extraction (stdio included), the client-config API contract (machine-PAT exception + secret-leak rules), the `hnx mcp serve` stdio shim, install-adapter shim entries + the Codex adapter, and emitter `emitMode` (client default / server fallback).
-- Research C5: [`research/phase-8-c5-acp-web-demo.md`](./research/phase-8-c5-acp-web-demo.md) — the ACP web-demo reference study (chat dialect, permission/session pitfalls, fold/StreamBuffer) + the completed per-target ACP adapter matrix (claude-code/codex via official Zed adapters, hermes native, zcode deferred).
-- Design C5: [`design/phase-8-c5.md`](./design/phase-8-c5.md) — the shipped C5 plan: the `chat:*` wire protocol + ACP dialect schemas, the semantic `ChatStreamEvent` stream, `AcSession` audit rows (migration `0010`, no FKs), `ChatService` gating/watchdogs/teardown, the daemon's ACP adapter subprocess table + JSON-RPC/stdio client, and the `/chat` web UI.
-- Research T1: [`research/phase-8-t1-deepseek-harness.md`](./research/phase-8-t1-deepseek-harness.md) — DeepSeek Harness (dsh) ground truth pinned to `v0.1.2-rc.1`: the `~/.dsh` home + home-level `cordis.patch.yml` (applies to every profile, hot-reloads), the Agent-Skills format with mandatory frontmatter, `dsh-mcp-client` MCP rows, hook bridges/subagent providers (why they're skipped), and the native `dsh --profile acp` server.
-- Design T1: [`design/phase-8-t1-deepseek.md`](./design/phase-8-t1-deepseek.md) — the shipped T1 plan: the `deepseek` target end to end (install adapter with frontmatter synthesis + marked-region patch surgery, C3 scanner, C5 ACP row, C4 deployability), the T-wave numbering decision (supersedes the 3.8 "other agents" bucket), the supported-harnesses list, and the registry-resilience fix the T1 smoke surfaced.
-
-### Phase 9 — Harness runtime lifecycle 🧪 designed
-
-- Research: [`research/phase-9-harness-runtime.md`](./research/phase-9-harness-runtime.md) — ground truth for managing the harness software itself: per-CLI install methods (claude native/npm/brew incl. channel + auto-updater interference, codex npm/brew, dsh npm), `--version` shapes, install-method detection by bin path, and each harness's native provider/key config slots (CC `settings.json` env, codex `config.toml` + `auth.json`, dsh `dsh-llm-pi-ai` patch rows + `apiKeyEnv`).
-- Design: [`design/phase-9-harness-runtime.md`](./design/phase-9-harness-runtime.md) — **Agent-first** runtime arm on the inventory payload (the Agent is the primary object; items nest under it), `AgentInstance (source: 'detected')` auto-registration so any detected Agent is chatable (closes the emitter claude-code gap), capture-as-profile for default state, `harness` job type on the C4 pipeline (install/upgrade/pin), `RuntimeConfig` entity (migration `0011`) referencing distributable credentials, per-target native config writers, redacted `runtime:config.get` viewing, waves W1–W4.
-- Research W6: [`research/phase-9-portal-chat-ui.md`](./research/phase-9-portal-chat-ui.md) — the portal half of the ACP reference (`~/acp-ref/portal/`): session list grouped by cwd, the row-sequence fold model (user/assistant-step/tool/system/turn-tail), the disclosure tool-card registry + Read/Diff/Terminal/Search/Io blocks, and stick-to-bottom scroll policy.
-- Design W5+W6: [`design/phase-9-portal-ui.md`](./design/phase-9-portal-ui.md) — the shared `FormDialog` modal container (create flows off the list pages) and the portal-style chat rebuild: Agent cards → session page, machine `baseWorkspace` + daemon-routed `workspace:list` directory picker, `AcSession.cwd/title` (migration `0013`), the enriched `acpToolCallView` wire (toolName/rawInput/content/output), and the Signal-styled stream components.
-- Design W7: [`design/phase-9-w7-native-sessions.md`](./design/phase-9-w7-native-sessions.md) — native agent sessions (list + resume, NO platform session store; migration `0014` drops `ac_sessions`), the one-shape history wire with three producers, and the post-ship § "dsh live streaming" addendum (transcript-file tail streaming, daemon `0.10.1-p9w7`).
-- Design W7.1: [`design/phase-9-w7.1-dsh-event-tap.md`](./design/phase-9-w7.1-dsh-event-tap.md) — the in-process dsh cordis-plugin event tap (spawn-time `--patch` insert of a zero-dep plugin streaming the `session/event` bus back to the daemon over localhost JSON-lines), now the PRIMARY dsh streaming source with the file tail as fallback; daemon `0.11.0-p9w7.1`; rig A/B numbers and the resolved implementation decisions in §Post-ship notes.
-- Design W8: [`design/phase-9-w8-sender.md`](./design/phase-9-w8-sender.md) — **shipped**: the chat Sender (composer) upgrade — a card-style two-row input (autogrow textarea, context-usage meter, circular send/stop toggle) shaped after the reference composer but styled per Signal, with zero wire changes; attach / permission-mode / model / effort controls enumerated as deferred stubs with the wire arms each needs. Also records the claude-acp-bridge reference-code adoption notes and the post-ship finding that the `@agentclientprotocol` claude wrapper reports context occupancy too.
-- Research W9: [`research/phase-9-w9-composer-controls.md`](./research/phase-9-w9-composer-controls.md) — the deferred Sender controls, grounded: ACP's standard session-config surface (`modes`/`configOptions` + `session/set_mode`/`set_config_option` + the two push updates) verified against claude wrapper 0.76.0 / codex-acp 0.16.0 / dsh 0.1.2-rc.1 (support matrix incl. per-adapter image-prompt admission and OPAQUE option values), the portal reference's optimistic-switch pattern, our wire gaps per layer, and a phased A/B/C plan (config selectors → image attach → @ file mention).
-- Design W9: [`design/phase-9-w9-sender-controls.md`](./design/phase-9-w9-sender-controls.md) — **shipped**: the three A/B/C wires — `session_config` stream events (daemon-merged snapshots in the history ring) + `chat:config.set` + `promptCapabilities` on ready; the `image` prompt block with browser-side downscale and the +/paste/drag attach paths; the workspace `files` arm + FilePicker behind `resource_link` chips. Post-ship notes carry the rig E2E (real claude wrapper: selectors round-trip, vision verified, Read-tool file reference).
-- Design W10: [`design/phase-9-w10-llm-providers.md`](./design/phase-9-w10-llm-providers.md) — **shipped**: LLM provider management (cc-switch-inspired) — the `LlmProvider` entity (migration `0015`, three api kinds `openai-chat`/`openai-responses`/`anthropic`, per-Agent support matrix, credential-referenced keys), server-side model-list discovery (`POST /api/llm-providers/query-models`, the platform's second outbound HTTP surface), the provider-first machine page flow, and multi-model via `RuntimeConfigSpec.models` (dsh's native per-provider list; ground truth for codex/claude-code inside).
-- Design W11: [`design/phase-9-w11-adapter-lifecycle.md`](./design/phase-9-w11-adapter-lifecycle.md) — **COMPLETE — A + B + E + C + D + D6 shipped**: B = channel snapshot + tab bar + 一键清理 (server+web, hardened same-day: mount-sync catch-up, opens never close other channels, USER-scoped liveness so one window's refresh never kills another window's tabs) — `chat:channels` per-user snapshot pushes with `channels.sync`, the live-channel tab strip on both chat pages, and `chat:channels.closeAll` (idle now, mid-turn deferred). A = the daemon adapter pid ledger (`~/.hnx/adapters/`, entry written at spawn inside `AcpAgentConnection.start`, kill paths never unlink — audit/sweep own removal, boot sweep in `runDaemon`, initialize-failure kill; daemon `0.13.0-p9w11`). E = disconnect grace + reconnect reconcile — a `/ctl` transport blip no longer kills every channel (daemon `HN_TEARDOWN_GRACE_MS` + server `CHAT_RECONNECT_GRACE_MS`, both default 8000/`=0` off; `chat:reconcile {sessionIds}` → daemon ack `{held}` → server `retainOnly` on every (re)connect; deliberate closes bypass the grace; daemon `0.14.0-p9w11`). C = the adapter-process report (`GET /api/machines/:id/adapters` over `adapters:report`, instant daemon-side from the live sessions map) + the MachineDetail 适配器进程 panel with the owner-or-admin 终止 path (daemon `0.15.0-p9w11`; /ctl presence registration hardened synchronous along the way). D6 resolved 2026-09-15: `lastActiveAt` on the snapshot + 30-minute idle-age tab labels + the 只清理闲置 variant of the broom + `CHAT_IDLE_TTL_MS` (default off), plus two user-found fixes (resume-dedupe while establishing; closing the current channel returns the pane to its welcome state). D = the daemon-side `sessions:list` TTL cache (`SESSIONS_CACHE_TTL_MS` default 15s — hits skip the adapter spawn; `?refresh=1` from the rail's manual refresh bypasses; failures never cache; concurrent requests share one spawn; daemon `0.16.0-p9w11`).
-- Design W12: [`design/phase-9-w12-opencode.md`](./design/phase-9-w12-opencode.md) — **shipped**: OpenCode (SST) as a runtime-managed Agent, full surface — RUNTIME_TARGETS/AgentTarget/SCANNABLE_TARGETS + harness npm jobs (`opencode-ai`) + native `opencode acp` chat row + `applyOpencodeConfig` (provider block + `/v1`-normalized baseURL + `{file:}` 0600 raw key) + wholesale-redacted key viewer + the `~/.config/opencode` scanner (external ground truth in [`research/phase-9-w12-opencode.md`](./research/phase-9-w12-opencode.md); daemon `0.17.0-p9w12`; hermes later cancelled 2026-09-17).
-- Research W13: [`research/phase-9-w13-multi-model-picker.md`](./research/phase-9-w13-multi-model-picker.md) — feasibility of making the session model dropdown list ONLY usable (gateway-servable) models, source-verified per adapter: claude-code via the native `availableModels` settings allowlist (wrapper synthesizes unknown ids verbatim), codex via a daemon-side option rewrite (set_config_option accepts raw ids; no config seam exists), opencode via an `harness-nexus/`-prefix filter (its registry already contains our W12 models map), dsh already shipped in W10. Recommended surface: one writer key + one daemon rewrite + one server open-hint; zero schema/web changes.
-- Design W13: [`design/phase-9-w13-multi-model.md`](./design/phase-9-w13-multi-model.md) — **shipped**: the multi-model picker — claude-code writer `availableModels` allowlist, daemon-side model-option rewrite for codex/opencode at all four admission points (establishment / live push / capture history; idempotent, empty-intersection and out-of-picker currentValue semantics), the `chat:session.start` `modelOptions` hint from the stored RuntimeConfig, deepseek untouched (W10). Daemon `0.18.0-p9w13`.
-- Research W14/W15: [`research/phase-9-w14-w15-plan-commands.md`](./research/phase-9-w14-w15-plan-commands.md) — source-verified ground truth for the ACP `plan` (todo) snapshots and `available_commands_update` catalogs across the four shipped adapters: claude-agent-acp converts TodoWrite/Task* EXCLUSIVELY into plan updates (tool calls suppressed) and pushes a rich command catalog; codex-acp maps update_plan + a builtin command list; opencode pushes Command.Info; dsh emits neither. Also: no command-invocation RPC exists (a command is a `/name args` prompt), and the draft subagent protocol (PR #1992) is deliberately not adopted.
-- Design W14: [`design/phase-9-w14-plan-todo.md`](./design/phase-9-w14-plan-todo.md) — **shipped**: the plan/todo panel — a `plan` stream kind (full-replace snapshots, bounded), a stateless daemon arm, fold-carried state, and the TodoPanel above the composer (progress summary, status glyphs); plus the wave's verification deliverable (permissions E2E on claude/opencode, subagent Task-card path; rig truth: codex is the live plan producer today, claude's task lane dormant on CLI 2.1.263). Daemon `0.19.0-p9w14`.
-- Design W15: [`design/phase-9-w15-commands.md`](./design/phase-9-w15-commands.md) — **shipped**: slash commands in the composer — a `commands` stream kind (the agent's advertised catalog, bounded), the `/`-prefix palette (first-word filter, ↑/↓ cycle, bare Enter selects + fills `/name `, Enter-with-args sends as a normal prompt), no fallback table (honest absence for dsh/hermes); platform-deployed plugin commands surface through the agent's own catalog. Daemon `0.20.0-p9w15`.
-- Research W14.1: [`research/phase-9-w14.1-claude-ground-truth.md`](./research/phase-9-w14.1-claude-ground-truth.md) — the post-W14 re-verification of the ask-user/plan surface, probe-driven: the three-layer matrix (native / ACP adapter / portal — claude is the ONLY target with an adapter-side elicitation bridge), the discovery that portal claude sessions run the SDK-BUNDLED CLI (2.1.270, not the native 2.1.263), tool-existence probes (TaskCreate/TodoWrite/AskUserQuestion per env), the raw `elicitation/create` wire capture (top-level method, form mode, oneOf-const schema, the AskUserQuestion mapping), and the `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` revival that made plan snapshots flow E2E. Also corrects the W14 "claude dormant on 2.1.263" attribution.
-- Design W14.1: [`design/phase-9-w14.1-claude-elicitation.md`](./design/phase-9-w14.1-claude-elicitation.md) — **shipped**: Ask User for claude channels — daemon advertises `elicitation.form` + answers the top-level `elicitation/create` request (bounded field view via `takeElicitationView`; empty fields = message-only decline/cancel card), server relays the two stream kinds + watchdog + `chat:elicitation.respond` routing (permission lifecycle mirrored; values verbatim as ACP content), web question cards (enum radios / multi checkboxes / text / number / boolean, required gating, settled cards vanish), plus the companion claude todo/plan revival via the adapter env (url-mode elicitation deliberately NOT advertised). Daemon `0.21.0-p9w14.1`.
-- Research W16 (feasibility, not scheduled): [`research/phase-9-w16-pi-agent.md`](./research/phase-9-w16-pi-agent.md) — onboarding **pi** (`@earendil-works/pi-coding-agent`; the old `@mariozechner` scope is deprecated) as a runtime-managed Agent, verified against pi.dev docs + npm manifests: npm arm + Node ≥22.19 engine, JSON-only W3/W4 surfaces with pi's `api` enum covering ALL THREE of our provider api kinds (first 1:1 target; `!command` apiKey syntax gives the 0600-keyfile pattern), plain-JSONL W7 sessions scan, **no native ACP** (chat = a daemon-side ACP↔pi-RPC bridge; community `pi-acp` 0.0.x as dialect reference), profile deploy partial (Agent-Skills-standard skills + prompt templates; MCP is extension-based — no declarative surface; hooks/sub-agents are TS code). Companion decision recorded in the roadmap: **hermes runtime management cancelled** (2026-09-17).
-- Design W16: [`design/phase-9-w16-pi-agent.md`](./design/phase-9-w16-pi-agent.md) — **shipped**: pi onboarding with the SELF-DEVELOPED in-daemon ACP bridge — the `AgentConnection` surface extraction (chat.ts is now dialect-agnostic) + `PiRpcConnection` (ACP requests ⇄ pi `--mode rpc` JSONL; prompt responses HELD until `agent_settled`; `\n`-only line codec; rig-captured dialect: payload under `data`, deltas under `assistantMessageEvent`), npm runtime arm + Node ≥22.19 warning, the W3 writer (`!cat` 0600 keyfile, baseUrl verbatim) + W4 files, the JSONL sessions rail + leaf-chain replay parser, the deploy adapter (skills/prompts) + scanner, and the W13 `harness-nexus/<id>` model-option intersect. Rig E2E: install 0.85.1 → detected card → provider push (headless PONG) → masked viewer → rail rows → streamed turn (W16OK) → live model switch to doubao. Daemon `0.22.0-p9w16`.
-
-### Concept notes (design/)
-
-- [`design/profiles.md`](./design/profiles.md) — the broader profile concept + intended CLI install flow (future).
-- [`design/mcp-proxy-legacy.md`](./design/mcp-proxy-legacy.md) — original proxy concept sketch; superseded by `phase-2.2-registry.md`.
-
-### Decisions (adr/)
-
-- [`adr/0001-initial-stack.md`](./adr/0001-initial-stack.md) — stack rationale.
+The development workflow itself (issues, branches, verification, releases) is
+documented in the root [`CONTRIBUTING.md`](../CONTRIBUTING.md).

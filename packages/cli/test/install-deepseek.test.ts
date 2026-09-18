@@ -15,7 +15,7 @@ import type { ResolvedProfile } from '../src/install/types.js';
 
 /**
  * DeepSeek Harness adapter tests (Phase 8 T1). Ground truth:
- * docs/research/phase-8-t1-deepseek-harness.md — skills need mandatory
+ * wiki dev/research/phase-8-t1-deepseek-harness.md — skills need mandatory
  * frontmatter, commands are flat skills, MCP is a managed home-patch region.
  */
 
