@@ -9,7 +9,7 @@ import { AppError } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
 
 /**
- * Job state machine (Phase 8 C4). wiki dev/design/phase-8-c4.md.
+ * Job state machine (Phase 8 C4). wiki design-phase-8-c4.md.
  *
  *   create → queued → dispatched → running → succeeded | failed
  *                └── cancel (queued only)

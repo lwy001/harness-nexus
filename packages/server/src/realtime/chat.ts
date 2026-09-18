@@ -10,8 +10,8 @@ import type {
 import { generateId } from '../infra/crypto.js';
 
 /**
- * Chat routing + gating (Phase 8 C5, reworked 9 W7). wiki dev/design/phase-8-c5.md
- * + wiki dev/design/phase-9-w7-native-sessions.md.
+ * Chat routing + gating (Phase 8 C5, reworked 9 W7). wiki design-phase-8-c5.md
+ * + wiki design-phase-9-w7-native-sessions.md.
  *
  * The platform never learns agent protocols and — since W7 — never persists
  * anything session-shaped: the session list, transcript, and resume mechanics

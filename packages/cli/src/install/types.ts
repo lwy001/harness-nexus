@@ -1,6 +1,6 @@
 /**
  * Core install-pipeline types. Mirrors the ECC adapter pattern (see
- * `wiki dev/research/phase-3-ecc-install-patterns.md`): a `TargetAdapter` turns a
+ * `wiki research-phase-3-ecc-install-patterns.md`): a `TargetAdapter` turns a
  * resolved profile into an `InstallPlan` (a list of file operations, NO writes);
  * the installer materializes the plan.
  *

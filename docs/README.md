@@ -16,9 +16,9 @@ the historical roadmap live in the
 [GitHub wiki](https://github.com/sinrimin/harness-nexus/wiki):
 
 - `features/` — what the product does, per capability area
-- `dev/prd/` · `dev/design/` · `dev/research/` — the development process docs
-  (imported from this folder 2026-09; indexed by `dev/README.md` there)
-- `dev/roadmap.md` — the historical phase plan; forward planning lives in
+- `prd-` · `design-` · `research-` — the development process docs
+  (imported from this folder 2026-09; indexed by `doc-map.md` there)
+- `roadmap.md` — the historical phase plan; forward planning lives in
   [issues + milestones](https://github.com/sinrimin/harness-nexus/milestones)
 
 The wiki is a git repository

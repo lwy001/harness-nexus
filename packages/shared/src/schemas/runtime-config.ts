@@ -5,7 +5,7 @@ import { runtimeTargetSchema, type RuntimeTarget } from './inventory.js';
  * Runtime provider-config schemas (Phase 9 W3) — the LLM route a harness
  * runtime should use. One spec per (machine, target), upserted over REST and
  * applied by the daemon into each harness's NATIVE config slots.
- * wiki dev/design/phase-9-harness-runtime.md §4.3.
+ * wiki design-phase-9-harness-runtime.md §4.3.
  *
  * The spec NEVER carries a secret — it references a distributable credential
  * by name. The plaintext is resolved server-side only for the daemon's

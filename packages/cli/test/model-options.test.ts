@@ -4,7 +4,7 @@ import type { HistoryItem, SessionConfigOption } from '@harness-nexus/shared';
 
 /**
  * 9 W13 — the model-option rewrite matrix. Ground truth per adapter in
- * wiki dev/research/phase-9-w13-multi-model-picker.md; the wiring points in
+ * wiki research-phase-9-w13-multi-model-picker.md; the wiring points in
  * chat.ts are covered by the integration test in chat.test.ts.
  */
 

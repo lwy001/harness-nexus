@@ -5,7 +5,7 @@ import type { RuntimeConfigViewEvent, RuntimeTarget } from '@harness-nexus/share
 
 /**
  * Redacted effective-config reader (Phase 9 W4) — the daemon half of
- * `runtime:config.get`. wiki dev/design/phase-9-harness-runtime.md §5.
+ * `runtime:config.get`. wiki design-phase-9-harness-runtime.md §5.
  *
  * Reads the target's NATIVE config files (the same slots W3 writes, user
  * content included — the point is the harness's EFFECTIVE state) and masks

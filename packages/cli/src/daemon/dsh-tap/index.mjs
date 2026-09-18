@@ -1,5 +1,5 @@
 // Harness Nexus dsh event tap (Phase 9 W7.1).
-// wiki dev/design/phase-9-w7.1-dsh-event-tap.md
+// wiki design-phase-9-w7.1-dsh-event-tap.md
 //
 // A ZERO-DEPENDENCY cordis plugin, insert-mounted at SPAWN TIME via
 // `dsh --patch <yml>` (the daemon renders the patch next to this file's

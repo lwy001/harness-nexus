@@ -12,7 +12,7 @@ import { jobView } from '../jobs/service.js';
 
 /**
  * Deploy jobs + harness jobs + agent instances (Phase 8 C4 · Phase 9 W2).
- * wiki dev/design/phase-8-c4.md · phase-9-harness-runtime.md §4.2.
+ * wiki design-phase-8-c4.md · phase-9-harness-runtime.md §4.2.
  *
  * All machine-scoped endpoints inherit the machine owner-or-admin guard with
  * 404 existence-hiding. A deploy job is fire-and-forget replayable work: it

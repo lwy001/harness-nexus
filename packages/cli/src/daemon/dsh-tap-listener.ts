@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Daemon side of the dsh in-process event tap (Phase 9 W7.1).
- * wiki dev/design/phase-9-w7.1-dsh-event-tap.md
+ * wiki design-phase-9-w7.1-dsh-event-tap.md
  *
  * `dsh --patch` insert-mounts the zero-dep plugin shipped at
  * `daemon/dsh-tap/index.mjs`; the plugin dials back this localhost listener

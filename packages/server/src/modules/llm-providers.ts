@@ -15,7 +15,7 @@ import { ProviderModelsError, fetchProviderModels } from '../infra/provider-mode
 
 /**
  * LLM provider management (Phase 9 W10) — cc-switch-style reusable routes.
- * wiki dev/design/phase-9-w10-llm-providers.md.
+ * wiki design-phase-9-w10-llm-providers.md.
  *
  * A provider is the ROUTE, never the secret: the API key lives in the
  * Credential store (referenced by name). Scope rules mirror credentials —

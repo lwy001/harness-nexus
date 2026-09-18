@@ -2,7 +2,7 @@
 
 /**
  * The two roles. Phase 1 supports exactly these; authorization branches on this
- * single field. See wiki dev/design/phase-1-auth.md.
+ * single field. See wiki design-phase-1-auth.md.
  */
 export type Role = 'admin' | 'user';
 

@@ -11,7 +11,7 @@
  * sub_agents are a runtime `delegate_task` tool; hooks are Python callbacks, not
  * declarative hooks.json). Both surface as skipped warnings.
  *
- * Ground-truth format: `wiki dev/research/phase-3-ecc-install-patterns.md` +
+ * Ground-truth format: `wiki research-phase-3-ecc-install-patterns.md` +
  * verified against `~/.hermes/hermes-agent/hermes_cli/{plugins,mcp_config}.py`.
  *
  * Uninstall/upgrade reliability: the config.yaml merge is a single `write-file`

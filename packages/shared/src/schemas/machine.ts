@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * Machine management request schemas (Phase 8 C1). See
- * wiki dev/design/phase-8-client.md and wiki dev/design/phase-8-c1.md.
+ * wiki design-phase-8-client.md and wiki design-phase-8-c1.md.
  */
 
 export const createMachineSchema = z.object({

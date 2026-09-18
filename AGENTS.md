@@ -49,7 +49,7 @@ docs/          architecture.md + adr/ — code-coupled contract docs ONLY
 > (`https://github.com/sinrimin/harness-nexus.wiki.git`; browse:
 > <https://github.com/sinrimin/harness-nexus/wiki>) and edit it through git,
 > never the web editor. Doc references in this file of the form
-> `dev/design/…`, `dev/research/…`, `dev/prd/…` resolve inside that clone.
+> `design-…`, `research-…`, `prd-…` resolve inside that clone.
 > Exception: `docs/dev/test-rig.md` (verification-rig notes) is
 > machine-specific and stays **local + git-ignored** — it is NOT on the wiki.
 > Contributing workflow (issues, milestones, PRs): root `CONTRIBUTING.md`.
@@ -292,8 +292,8 @@ multiple packages and introducing new domain concepts), follow this loop:
    explicit out-of-scope items — run the discussion on the issue (use the
    _Design discussion_ template for the open questions + options). Once
    agreed, write the durable version on the **wiki** in the
-   `../harness-nexus.wiki` clone: `dev/design/<topic>.md` for the design,
-   `dev/research/<topic>.md` for option comparisons / adapter ground truth /
+   `../harness-nexus.wiki` clone: `design-<topic>.md` for the design,
+   `research-<topic>.md` for option comparisons / adapter ground truth /
    rig findings, linking back to the issue. No phase numbering for new work —
    the issue number is the anchor.
 2. **Then implement** on `feat/<issue>-<topic>`. Work inward from the
@@ -309,40 +309,40 @@ multiple packages and introducing new domain concepts), follow this loop:
 
 ## Sensitive areas — read docs first
 
-Before touching these, read the linked design doc (`dev/README.md` in the
+Before touching these, read the linked design doc (`doc-map.md` in the
 wiki clone indexes all; see "Repository layout" above for where the wiki
 lives):
 
-- **Authentication & roles** → `dev/design/phase-1-auth.md`
-- **MCP connections & credentials** → `dev/design/phase-2.1-credentials.md`
-- **MCP registry, proxy & profiles** → `dev/design/phase-2.2-registry.md`
-- **callable-function scripts (research)** → `dev/research/phase-2.3-sandbox.md`
-- **Profile concept & install flow** → `dev/design/profiles.md`
+- **Authentication & roles** → `design-phase-1-auth.md`
+- **MCP connections & credentials** → `design-phase-2.1-credentials.md`
+- **MCP registry, proxy & profiles** → `design-phase-2.2-registry.md`
+- **callable-function scripts (research)** → `research-phase-2.3-sandbox.md`
+- **Profile concept & install flow** → `design-profiles.md`
 - **Layering & storage contract** → `docs/architecture.md`
 - **Stack rationale** → `docs/adr/0001-initial-stack.md`
 - **Client daemon, machines, realtime protocol, MCP shim, ACP chat (Phase 8)**
-  → `dev/design/phase-8-client.md` · C1: `dev/design/phase-8-c1.md`
+  → `design-phase-8-client.md` · C1: `design-phase-8-c1.md`
 - **Sender controls (config selectors, attachments) (Phase 9 W9)**
-  → `dev/design/phase-9-w9-sender-controls.md`
+  → `design-phase-9-w9-sender-controls.md`
 - **LLM provider management + model discovery + multi-model (Phase 9 W10)**
-  → `dev/design/phase-9-w10-llm-providers.md`
+  → `design-phase-9-w10-llm-providers.md`
 - **Multi-model picker — dropdown = configured set (Phase 9 W13)**
-  → `dev/design/phase-9-w13-multi-model.md`
+  → `design-phase-9-w13-multi-model.md`
 - **pi agent onboarding + the self-developed ACP↔pi-RPC bridge (Phase 9 W16)**
-  → `dev/design/phase-9-w16-pi-agent.md`
+  → `design-phase-9-w16-pi-agent.md`
 - **Plan/todo panel + subagent/permission verification (Phase 9 W14)**
-  → `dev/design/phase-9-w14-plan-todo.md` ·
-  research: `dev/research/phase-9-w14-w15-plan-commands.md`
+  → `design-phase-9-w14-plan-todo.md` ·
+  research: `research-phase-9-w14-w15-plan-commands.md`
 - **Slash commands in the composer (Phase 9 W15)**
-  → `dev/design/phase-9-w15-commands.md` ·
-  research: `dev/research/phase-9-w14-w15-plan-commands.md`
+  → `design-phase-9-w15-commands.md` ·
+  research: `research-phase-9-w14-w15-plan-commands.md`
 - **Ask User (ACP elicitation) + claude todo/plan revival (Phase 9 W14.1)**
-  → `dev/design/phase-9-w14.1-claude-elicitation.md` ·
-  research: `dev/research/phase-9-w14.1-claude-ground-truth.md`
+  → `design-phase-9-w14.1-claude-elicitation.md` ·
+  research: `research-phase-9-w14.1-claude-ground-truth.md`
 
 ## MCP management & credentials (Phase 2.1)
 
-Full design in `dev/design/phase-2.1-credentials.md`. Summary for daily work:
+Full design in `design-phase-2.1-credentials.md`. Summary for daily work:
 
 - **Credential ≠ PAT.** A `PersonalAccessToken` authenticates a user _into_
   Harness Nexus. A `Credential` authenticates Harness Nexus _out to_ an upstream MCP
@@ -377,12 +377,12 @@ Full design in `dev/design/phase-2.1-credentials.md`. Summary for daily work:
   for all operations. The instance-level `requireAuth`/`requireAdmin` guards are
   the first gate; per-record ownership checks (owner-or-admin) layer on top.
   Not-found returns `404` (not `403`) to avoid leaking existence.
-- **Profiles** (`dev/design/phase-2.2-registry.md`) bundle MCP servers; an agent
+- **Profiles** (`design-phase-2.2-registry.md`) bundle MCP servers; an agent
   tool connects via `?profile=<id>` and sees only that profile's aggregated tools.
 
 ## MCP registry, proxy & profiles (Phase 2.2)
 
-Full design in `dev/design/phase-2.2-registry.md`. Summary for daily work:
+Full design in `design-phase-2.2-registry.md`. Summary for daily work:
 
 - **`McpRegistry`** (`packages/server/src/mcp/registry.ts`) owns the pool of
   live `Client` connections to exactly the **server-dialed** upstreams (dial
@@ -422,7 +422,7 @@ Full design in `dev/design/phase-2.2-registry.md`. Summary for daily work:
 
 ## proxy MCP connect & tool inspection (Phase 2.4)
 
-Full design in `dev/design/phase-2.4-connect-tools.md`. Summary for daily work:
+Full design in `design-phase-2.4-connect-tools.md`. Summary for daily work:
 
 - **Incremental connect semantics.** Phase 2.2's startup auto-pooling is
   unchanged and `/mcp` aggregation is untouched. 2.4 adds an operator control
@@ -460,8 +460,8 @@ not_proxy | not_connected`) mapped to HTTP by `mapRegistryError` in the route �
 
 ## Marketplace emitter for Claude Code (Phase 3.5)
 
-Full design in `dev/design/phase-3.5-marketplace-emitter.md`; empirical
-ground truth in `dev/research/phase-3.5-marketplace-emitter-spike.md`.
+Full design in `design-phase-3.5-marketplace-emitter.md`; empirical
+ground truth in `research-phase-3.5-marketplace-emitter-spike.md`.
 Summary for daily work:
 
 - **The preferred install path for claude-code targets.** The server EMITS a
@@ -525,7 +525,7 @@ ENTRY_TARGET_NOT_ACCESSIBLE`. The web profile editor picks BOTH kinds
 
 ## Resource management (Phase 4.2–4.3)
 
-Full design in `dev/design/phase-4-web-ui.md`. Summary for daily work:
+Full design in `design-phase-4-web-ui.md`. Summary for daily work:
 
 - **The shared Resource backend is built** (Phase 4.2): a single `resources`
   table with a `kind` discriminator, real `ResourceRepository` impls in both
@@ -577,7 +577,7 @@ skill-source.ts`, mirroring Hermes's ABC) shapes future adapters — 7.1 ships
 
 ## Marketplace fetch (Phase 7.2)
 
-Full design in `dev/design/phase-7.2-marketplace-fetch.md`. Summary for daily
+Full design in `design-phase-7.2-marketplace-fetch.md`. Summary for daily
 work:
 
 - **This is the server's ONLY outbound HTTP path.** All marketplace browsing
@@ -617,11 +617,11 @@ SkillHub.tsx`) browses a marketplace, filters by `category` / free text, and
   uses **neutral** Badge variants (`default` for trusted, `secondary` for
   community) — `--signal` is reserved for liveness per the Signal system. A
   `text-warn` callout appears when saving a community source with no pin. See
-  `dev/design/phase-7.3-hub-ui.md`.
+  `design-phase-7.3-hub-ui.md`.
 
 ## Multi-source skill search (Phase 7.4)
 
-Full design in `dev/design/phase-7.4-multi-source.md`. Summary for daily work:
+Full design in `design-phase-7.4-multi-source.md`. Summary for daily work:
 
 - **`SkillSearchRouter`** (`packages/server/src/infra/source-fetchers/
 search-router.ts`) dispatches a query to all registered `SkillSource`
@@ -653,7 +653,7 @@ index.json`, URL-query only), `UrlSource` (fetch-only, `search` no-op),
 
 ## Agent-first inventory & detected agents (Phase 9 W1)
 
-Full design in `dev/design/phase-9-harness-runtime.md` (W1 shipped; W2–W4
+Full design in `design-phase-9-harness-runtime.md` (W1 shipped; W2–W4
 designed). Summary for daily work:
 
 - **The Agent (installed harness runtime) is the primary inventory object.**
@@ -692,7 +692,7 @@ designed). Summary for daily work:
 ## Harness install/upgrade/pin jobs (Phase 9 W2)
 
 Extends the section above (read it first). Full design in
-`dev/design/phase-9-harness-runtime.md` §4.2/§9. Summary for daily work:
+`design-phase-9-harness-runtime.md` §4.2/§9. Summary for daily work:
 
 - **`type: 'harness'` jobs** ride the unchanged C4 pipeline (queue/replay/
   `job:update` push) but never create AgentInstances. `POST
@@ -723,8 +723,8 @@ install|upgrade|pin, target: RuntimeTarget, version?}` — `pin` requires a
 
 ## Provider config push (Phase 9 W3)
 
-Extends the sections above. Full design in `dev/design/phase-9-harness-runtime.md`
-§4.3/§9 (W3 notes) — ground truth in `dev/research/phase-9-harness-runtime.md` §8
+Extends the sections above. Full design in `design-phase-9-harness-runtime.md`
+§4.3/§9 (W3 notes) — ground truth in `research-phase-9-harness-runtime.md` §8
 (source-verified against dsh@0.1.2-rc.1 and codex-rs main). Summary for daily work:
 
 - **`RuntimeConfig`** (core domain + `RuntimeConfigRepository` port, migration
@@ -783,7 +783,7 @@ credentialName, extra?}` — never a secret; it names a credential that MUST
 
 ## Redacted config viewer (Phase 9 W4)
 
-Extends the section above. Full design in `dev/design/phase-9-harness-runtime.md`
+Extends the section above. Full design in `design-phase-9-harness-runtime.md`
 §5/§6/§9 (W4 notes). Summary for daily work:
 
 - **A live round-trip, never cached**: `GET /api/machines/:id/runtimes/:target/config`
@@ -810,8 +810,8 @@ Extends the section above. Full design in `dev/design/phase-9-harness-runtime.md
 
 ## Modal containers & portal chat (Phase 9 W5+W6)
 
-Full design in `dev/design/phase-9-portal-ui.md`; portal rendering study in
-`dev/research/phase-9-portal-chat-ui.md` (the `~/acp-ref/portal/` half of the
+Full design in `design-phase-9-portal-ui.md`; portal rendering study in
+`research-phase-9-portal-chat-ui.md` (the `~/acp-ref/portal/` half of the
 C5 reference — the session list IS cwd-grouped there, which this wave ports).
 Summary for daily work:
 
@@ -873,7 +873,7 @@ Summary for daily work:
 
 ## Native agent sessions — list + resume, no platform store (Phase 9 W7)
 
-Full design + ground truth in `dev/design/phase-9-w7-native-sessions.md`.
+Full design + ground truth in `design-phase-9-w7-native-sessions.md`.
 Supersedes the C5 "no resume" boundary and the W6 AcSession-row session list.
 Summary for daily work:
 
@@ -938,7 +938,7 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
   hint instead of offering a guaranteed failure.
 - **dsh LIVE token streaming rides the transcript file, not the protocol**
   (post-W7 addendum, branch `feat/p9-w7-dsh-streaming-tail`; full design in
-  `dev/design/phase-9-w7-native-sessions.md` § "dsh live streaming"):
+  `design-phase-9-w7-native-sessions.md` § "dsh live streaming"):
   `@deepseek-ai/dsh-acp` only emits COMMITTED updates (verified 0.1.2-rc.1
   AND 0.1.5-rc.1 — zero pushes during generation), but dsh persists every
   LLM chunk as a session event through a ~100–300ms write-behind window, so
@@ -964,7 +964,7 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
 - **W7.1 — the in-process dsh event tap is the PRIMARY streaming source;
   the file tail is the fallback** (SHIPPED 2026-09-10, daemon
   `0.11.0-p9w7.1`, branch `feat/p9-w7.1-dsh-tap`; design + rig results in
-  `dev/design/phase-9-w7.1-dsh-event-tap.md` incl. §Post-ship notes):
+  `design-phase-9-w7.1-dsh-event-tap.md` incl. §Post-ship notes):
   the daemon insert-mounts a ZERO-DEP cordis plugin at spawn
   (`dsh --patch ~/.hnx/dsh-tap.patch.yml`, rendered per boot by
   `writeTapPatch` — never written into `~/.dsh`; plugin =
@@ -985,7 +985,7 @@ NativeSessionView[]}` riding `sessions:list` over `/ctl` (capability
 
 ## Chat Sender/composer (Phase 9 W8)
 
-Full design + post-ship notes in `dev/design/phase-9-w8-sender.md`.
+Full design + post-ship notes in `design-phase-9-w8-sender.md`.
 Summary for daily work:
 
 - **`<Composer>`** (`apps/web/src/components/chat/composer.tsx`) replaced
@@ -1016,9 +1016,9 @@ Summary for daily work:
 
 ## Sender controls — config selectors & attachments (Phase 9 W9)
 
-Full design + adapter ground truth in `dev/design/phase-9-w9-sender-controls.md`
+Full design + adapter ground truth in `design-phase-9-w9-sender-controls.md`
 
-- `dev/research/phase-9-w9-composer-controls.md` (verified against claude
+- `research-phase-9-w9-composer-controls.md` (verified against claude
   wrapper 0.76.0 / codex-acp 0.16.0 / dsh-acp 0.1.2-rc.1). Summary for daily work:
 
 * **Mode / model / reasoning-effort ride the STANDARD ACP session-config
@@ -1066,9 +1066,9 @@ Full design + adapter ground truth in `dev/design/phase-9-w9-sender-controls.md`
 
 ## OpenCode runtime onboarding (Phase 9 W12)
 
-Full design + external ground truth in `dev/design/phase-9-w12-opencode.md`
+Full design + external ground truth in `design-phase-9-w12-opencode.md`
 
-- `dev/research/phase-9-w12-opencode.md` (verified against opencode 1.18.31
+- `research-phase-9-w12-opencode.md` (verified against opencode 1.18.31
   on the rig). Summary for daily work — **opencode is a runtime-managed Agent
   with the FULL surface: probe → install/upgrade/pin jobs → W3 provider push
   → W4 redacted viewer → ACP chat → C3 scan**:
@@ -1124,8 +1124,8 @@ Full design + external ground truth in `dev/design/phase-9-w12-opencode.md`
 
 ## Multi-model picker (Phase 9 W13)
 
-Full design + adapter ground truth in `dev/design/phase-9-w13-multi-model.md`
-(research: `dev/research/phase-9-w13-multi-model-picker.md` — source-verified
+Full design + adapter ground truth in `design-phase-9-w13-multi-model.md`
+(research: `research-phase-9-w13-multi-model-picker.md` — source-verified
 per adapter). Summary for daily work — **the session model dropdown lists ONLY
 platform-configured models (default + W10 `models` extras), per target**:
 
@@ -1183,8 +1183,8 @@ name: value}`) — building, not intersecting, is load-bearing: codex only
 
 ## Plan/todo panel + verification (Phase 9 W14)
 
-Full design + rig results in `dev/design/phase-9-w14-plan-todo.md`; adapter
-ground truth in `dev/research/phase-9-w14-w15-plan-commands.md`
+Full design + rig results in `design-phase-9-w14-plan-todo.md`; adapter
+ground truth in `research-phase-9-w14-w15-plan-commands.md`
 (source-verified against claude-agent-acp 0.78.0 / ACP SDK 1.4.0, codex-acp
 0.16.0, opencode, dsh-acp 0.1.2-rc.1). Summary for daily work:
 
@@ -1228,9 +1228,9 @@ entries: PlanEntry[]}`, `PlanEntry = {content, priority?, status}`) —
 
 ## Ask User — ACP elicitation wiring + claude fixes (Phase 9 W14.1)
 
-Full design in `dev/design/phase-9-w14.1-claude-elicitation.md`; ground
+Full design in `design-phase-9-w14.1-claude-elicitation.md`; ground
 truth (three-layer ask-user matrix, SDK-bundled CLI discovery, the raw
-`elicitation/create` capture) in `dev/research/phase-9-w14.1-claude-ground-truth.md`.
+`elicitation/create` capture) in `research-phase-9-w14.1-claude-ground-truth.md`.
 Summary for daily work:
 
 - **claude-code is the ONLY target with an adapter-side elicitation bridge
@@ -1286,8 +1286,8 @@ toolCallId?}` + `{kind:'elicitation_resolved', outcome}` stream events,
 
 ## Slash commands (Phase 9 W15)
 
-Full design + rig results in `dev/design/phase-9-w15-commands.md`; ground
-truth in `dev/research/phase-9-w14-w15-plan-commands.md`. Summary for
+Full design + rig results in `design-phase-9-w15-commands.md`; ground
+truth in `research-phase-9-w14-w15-plan-commands.md`. Summary for
 daily work — **the composer's `/` palette lists the agent's OWN advertised
 commands; invoking one is just a prompt**:
 
@@ -1316,8 +1316,8 @@ commands; invoking one is just a prompt**:
 
 ## pi agent onboarding (Phase 9 W16)
 
-Full design + rig results in `dev/design/phase-9-w16-pi-agent.md`; ground
-truth in `dev/research/phase-9-w16-pi-agent.md`. Summary for daily work —
+Full design + rig results in `design-phase-9-w16-pi-agent.md`; ground
+truth in `research-phase-9-w16-pi-agent.md`. Summary for daily work —
 **pi (Earendil Works, `@earendil-works/pi-coding-agent`, ex `@mariozechner`
 — deprecated scope, never pin it) is the fifth runtime-managed Agent with
 the FULL surface**:
@@ -1394,7 +1394,7 @@ contentIndex, delta}`**; `get_session_stats.data.sessionId`; usage
 
 ## LLM provider management (Phase 9 W10)
 
-Full design + multi-model ground truth in `dev/design/phase-9-w10-llm-providers.md`.
+Full design + multi-model ground truth in `design-phase-9-w10-llm-providers.md`.
 Summary for daily work:
 
 - **`LlmProvider`** (core domain + `UnitOfWork.llmProviders`, migration `0015`,
@@ -1456,7 +1456,7 @@ PROVIDER_NAME_TAKEN`; `scope` is immutable (PATCH → update schema has no
 
 ## Adapter lifecycle & session truth (Phase 9 W11)
 
-Full design in `dev/design/phase-9-w11-adapter-lifecycle.md` (problem
+Full design in `design-phase-9-w11-adapter-lifecycle.md` (problem
 inventory D1–D6 with evidence, slices A–F). Summary for daily work —
 **W11 is COMPLETE: slices A, B, E, C, D, and the D6 resolution are all
 SHIPPED**:
@@ -1591,7 +1591,7 @@ startedAt, command}`. The operator kill is `POST
 
 ## Authentication & authorization (permission interceptors)
 
-Full design in `dev/design/phase-1-auth.md` — read it before touching auth. Summary for daily work:
+Full design in `design-phase-1-auth.md` — read it before touching auth. Summary for daily work:
 
 - **Two roles only:** `admin` and `user`. Each user has exactly one role
   (`User.role`, not an array). Branch all access decisions on this field.
@@ -1657,7 +1657,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   bridge entry, and the ACP bridge are **absorbed into Phase 8** (see below).
   Channels, LLM-WIKI, memory/notes remain unplanned.
   `zcode` is in the `AgentTarget` enum but has no install adapter (no
-  reproducible reference). See the wiki's `dev/roadmap.md` (historical) and
+  reproducible reference). See the wiki's `roadmap.md` (historical) and
   the GitHub issues/milestones for what remains.
   **Phase 8 — the Harness Nexus client & agent orchestration — is scoped,
   direction-locked, and C1–C5 are shipped (2026-09):** machines + on-demand
@@ -1666,8 +1666,8 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   distributability + admin override; global creds non-distributable by default
   with server `/mcp` as their sole outlet), inventory/diff/import, remote
   deploy jobs, gated ACP chat, then orchestration (C6, undesigned). Read
-  `dev/prd/phase-8-client.md` + `dev/design/phase-8-client.md` first, then
-  `dev/design/phase-8-c1.md` for the shipped C1 details: `Machine` +
+  `prd-phase-8-client.md` + `design-phase-8-client.md` first, then
+  `design-phase-8-c1.md` for the shipped C1 details: `Machine` +
   `MachineRepository` (migration `0006`), machine PATs (`scopes:
 ['machine-ctl']`, rejected by the REST auth hook — realtime-only blast
   radius), realtime v0 in `packages/server/src/plugins/realtime.ts`
@@ -1679,7 +1679,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   the PAT), SDK machines methods, `hnx enroll`/`hnx daemon` (config at
   `~/.hnx/config.json`, 0600), the web Machines page + `/app` singleton in
   `apps/web/src/realtime.ts` (vite proxies `/socket.io` with `ws: true`).
-  `packages/acp-bridge` is DELETED. C2 (`dev/design/phase-8-c2.md`):
+  `packages/acp-bridge` is DELETED. C2 (`design-phase-8-c2.md`):
   `McpServer.mode` → `dialSite` + `Credential.distributable` (migration
   `0007`), pure derivation in `shared/src/dial-site.ts`, NEW
   `packages/mcp-runtime` (`UpstreamPool`, stdio included, shared by the
@@ -1691,7 +1691,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   emit one baked-path shim entry (Hermes simplified; **Codex adapter shipped**
   — skills/prompts + TOML `[mcp_servers]` merge), emitter `EMITTER_MODE`
   (`client` default / `server` fallback). C3
-  (`dev/design/phase-8-c3.md`) — inventory/diff/import: daemon per-target
+  (`design-phase-8-c3.md`) — inventory/diff/import: daemon per-target
   scanners in `packages/cli/src/inventory/` (claude-code/codex/hermes;
   platform origin from the install ledger + `harness-nexus[-*]` MCP names,
   never guessed from content), snapshots over `/ctl`
@@ -1708,7 +1708,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   daemon-side** to `${cred:<KEY>}` before upload; re-import of identical
   bodies is a full reuse). The MachineDetail web page (`/machines/:id`,
   drill-down from Machines rows — no nav entry) drives scan/diff/import.
-  C4 (`dev/design/phase-8-c4.md`) — jobs/remote deploy: `JobService`
+  C4 (`design-phase-8-c4.md`) — jobs/remote deploy: `JobService`
   (`server/src/jobs/service.ts`, decorated `app.realtime.jobs`) —
   `queued → dispatched → running → succeeded | failed`, queued-only cancel,
   disconnect/ack-timeout recovery requeues with attempts+1 (≥
@@ -1724,7 +1724,7 @@ browse + save-as-skill UI (Phase 7.3), and the multi-source `SkillSearchRouter`
   `job:dispatch` handler (`cli/src/daemon/jobs.ts`) reuses the UNCHANGED 3.3
   pipeline with `job:progress`/`job:result` reporting; `/app` `job:update`
   push; MachineDetail Deployments card. C5
-  (`dev/design/phase-8-c5.md`) — ACP chat: the `chat:*` protocol + ACP
+  (`design-phase-8-c5.md`) — ACP chat: the `chat:*` protocol + ACP
   dialect schemas in `shared/realtime.ts` (semantic `ChatStreamEvent` stream +
   verbatim `optionId`), `ChatService` (`server/src/realtime/chat.ts`,
   `app.realtime.chat`) — gating order AgentInstance→remoteChatEnabled→online→
@@ -1798,7 +1798,7 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   `deepseek` is a first-class `AgentTarget` (profile enum additive; the
   supported-harnesses list user-facing docs name is **Claude Code, Codex,
   DeepSeek Harness, OpenCode** — hermes keeps working unlisted). Ground truth
-  `dev/research/phase-8-t1-deepseek-harness.md` (pinned to dsh
+  `research-phase-8-t1-deepseek-harness.md` (pinned to dsh
   `v0.1.2-rc.1`): home is `~/.dsh` (`$DSH_HOME`); the HOME-level
   `cordis.patch.yml` applies to every profile AND hot-reloads live — it is
   the MCP integration seam; skills are Agent-Skills format under
@@ -1851,11 +1851,11 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   in P9: none scoped;
   C6 (orchestration) is the open follow-up (hermes runtime management AND
   native sessions were cancelled with the user 2026-09-17).
-  Read `dev/research/phase-9-harness-runtime.md` +
-  `dev/design/phase-9-harness-runtime.md` (W1–W4) and
-  `dev/design/phase-9-portal-ui.md` (W5+W6) +
-  `dev/design/phase-9-w7-native-sessions.md` (W7) +
-  `dev/design/phase-9-w7.1-dsh-event-tap.md` (W7.1) first. Local
+  Read `research-phase-9-harness-runtime.md` +
+  `design-phase-9-harness-runtime.md` (W1–W4) and
+  `design-phase-9-portal-ui.md` (W5+W6) +
+  `design-phase-9-w7-native-sessions.md` (W7) +
+  `design-phase-9-w7.1-dsh-event-tap.md` (W7.1) first. Local
   verification-rig notes
   (machine container lifecycle, JWT minting, the FAKE dsh shim that must be
   removed before W1/W2 runtime probing) live in `docs/dev/test-rig.md` —
@@ -1868,7 +1868,7 @@ session.close`) + `/api/agent-instances/:id/sessions`; web `/chat` page
   **Phase 2.3
   (callable-function scripts) is on hold** — not currently planned. When you
   add real logic for a pillar, also add tests and update the relevant wiki
-  doc (`dev/design/…`) plus this file's section for it. Vitest is wired in `@harness-nexus/shared`, `@harness-nexus/server`, and
+  doc (`design-…`) plus this file's section for it. Vitest is wired in `@harness-nexus/shared`, `@harness-nexus/server`, and
   `@harness-nexus/cli` (`test/` dirs, excluded from build tsconfigs;
   `pnpm --filter … run test`);
   throwaway E2E scripts live in `scripts/smoke*.mjs` / `scripts/test-*.mjs`.

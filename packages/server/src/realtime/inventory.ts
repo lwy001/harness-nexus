@@ -3,7 +3,7 @@ import type { MachineInventorySnapshot } from '@harness-nexus/core';
 import type { InventoryPayloadEvent } from '@harness-nexus/shared';
 
 /**
- * Inventory request bookkeeping (Phase 8 C3). See wiki dev/design/phase-8-c3.md.
+ * Inventory request bookkeeping (Phase 8 C3). See wiki design-phase-8-c3.md.
  *
  * C3 uses direct request/response over /ctl — no Job rows: a REST handler
  * emits `inventory:scan` / `inventory:collect` into the machine's room and

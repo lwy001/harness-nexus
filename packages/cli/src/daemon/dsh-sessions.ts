@@ -3,7 +3,7 @@ import type { ChatStreamEvent, HistoryItem } from '@harness-nexus/shared';
 
 /**
  * dsh native session store reader (Phase 9 W7).
- * wiki dev/design/phase-9-w7-native-sessions.md § ground truth.
+ * wiki design-phase-9-w7-native-sessions.md § ground truth.
  *
  * dsh persists every session at `~/.dsh/sessions/<cwd-slug>/<uuid>/
  * session.jsonl.zstd` as MULTI-FRAME zstd — one frame per write batch (the

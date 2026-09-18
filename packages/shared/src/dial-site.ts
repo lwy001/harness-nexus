@@ -4,7 +4,7 @@ import { CRED_PLACEHOLDER_RE } from './utils/placeholders.js';
  * Dial-site derivation (Phase 8 C2) — replaces the Phase 3.1 proxy/direct
  * `mode`. Pure and shared so the server (pool filter + client-config API) and
  * the `hnx mcp serve` shim compute identical answers. See
- * wiki dev/design/phase-8-c2.md for the normative matrix.
+ * wiki design-phase-8-c2.md for the normative matrix.
  */
 
 /** Where an McpServer is dialed. `auto` is derived away before any dialing. */
