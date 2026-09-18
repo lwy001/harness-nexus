@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachChatHandlers, mapAcpUpdate } from '../src/daemon/chat.js';
-import { deriveSessionCaps } from '../src/daemon/acp/agent-connection.js';
+import { AcpAgentConnection, deriveSessionCaps } from '../src/daemon/acp/agent-connection.js';
 import { resolveAcpCommand } from '../src/daemon/acp/adapters.js';
 import { readAdapterLedger } from '../src/daemon/adapter-ledger.js';
 import type { ChatStreamEvent } from '@harness-nexus/shared';
@@ -918,6 +918,20 @@ describe('session round-trip vs the fixture agent', () => {
           { error?: string } | undefined,
     );
     expect(ready.error).toBeTruthy();
+  }, 15000);
+
+  it('an initialize timeout surfaces the spawn stderr tail (rig-found: corrupted npx caches must self-diagnose)', async () => {
+    // 2026-09-18 rig incident: a killed spawn left the claude wrapper's _npx
+    // cache half-renamed; every later `npx -y` died on ENOTEMPTY AFTER
+    // printing it to stderr, so the bare "initialize timed out" 504 carried
+    // no clue. The tail rides the error now.
+    await expect(
+      AcpAgentConnection.start('node', [FIXTURE], {
+        cwd: '/tmp',
+        initializeTimeoutMs: 1200,
+        env: { FIXTURE_NO_INIT: '1' },
+      }),
+    ).rejects.toThrow(/timed out after 1200ms: fixture stderr diagnostic/);
   }, 15000);
 });
 

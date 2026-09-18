@@ -248,7 +248,16 @@ export class AcpAgentConnection implements AgentConnection {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`ACP request '${method}' timed out after ${timeoutMs}ms`));
+        // initialize timeouts carry the spawn's stderr tail — the wrapper
+        // never answered, so npm/npx diagnostics (a corrupted _npx cache
+        // dying on ENOTEMPTY, a registry stall) are the ONLY clue. Established
+        // sessions keep clean timeout messages (their stderr is stale).
+        reject(
+          new Error(
+            `ACP request '${method}' timed out after ${timeoutMs}ms` +
+              (method === 'initialize' ? this.stderrTailSuffix() : ''),
+          ),
+        );
       }, timeoutMs);
       this.pending.set(id, {
         resolve,

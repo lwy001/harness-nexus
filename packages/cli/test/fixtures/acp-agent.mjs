@@ -644,6 +644,14 @@ function handleRequest(msg) {
   const { id, method, params } = msg;
   switch (method) {
     case 'initialize':
+      // FIXTURE_NO_INIT=1 — emulate a wrapper that never completes the
+      // handshake (e.g. npx dying on a corrupted cache): one stderr line as
+      // the diagnostic breadcrumb, and NO response. Tests drive start()
+      // with a short initializeTimeoutMs.
+      if (process.env.FIXTURE_NO_INIT === '1') {
+        process.stderr.write('fixture stderr diagnostic: initialize will hang\n');
+        return;
+      }
       respond(id, {
         protocolVersion: 1,
         agentInfo: { name: 'fixture-agent', version: '0.1.0' },
