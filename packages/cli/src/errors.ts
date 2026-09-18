@@ -1,6 +1,6 @@
 /**
  * Install-pipeline errors. Carry a stable `code` so the CLI can map them to
- * the right exit status / message. See `wiki dev/design/phase-3-install.md` Part 6.
+ * the right exit status / message. See `wiki design-phase-3-install.md` Part 6.
  */
 export type InstallErrorCode =
   | 'TARGET_UNSUPPORTED' // no adapter registered for this target (e.g. zcode)

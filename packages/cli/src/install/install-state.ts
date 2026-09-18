@@ -2,7 +2,7 @@
  * install-state ledger — a JSON record written on every `--apply`, enabling
  * future `doctor` (drift detection) / `repair` / `uninstall` (remove only
  * managed files). Mirrors ECC's `ecc.install.v1` ledger concept (see
- * `wiki dev/research/phase-3-ecc-install-patterns.md` Pattern 5).
+ * `wiki research-phase-3-ecc-install-patterns.md` Pattern 5).
  *
  * Phase 3.3 only writes + reads the ledger; the doctor/repair/uninstall
  * subcommands come later.

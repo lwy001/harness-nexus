@@ -14,7 +14,7 @@ import { jobView } from '../jobs/service.js';
 
 /**
  * Runtime provider-config routes (Phase 9 W3 + W4).
- * wiki dev/design/phase-9-harness-runtime.md §4.3/§6.
+ * wiki design-phase-9-harness-runtime.md §4.3/§6.
  *
  * One spec per (machine, target). GET is owner-or-admin (404 existence-hiding,
  * like every machine-scoped read); PUT is OWNER-ONLY (admins may view, not

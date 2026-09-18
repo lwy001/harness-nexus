@@ -2,7 +2,7 @@ import type { AgentTarget } from '@harness-nexus/shared';
 
 /**
  * Per-target ACP adapter wiring (Phase 8 C5) — the adapter matrix from
- * wiki dev/research/phase-8-c5-acp-web-demo.md, executable. Every adapter speaks
+ * wiki research-phase-8-c5-acp-web-demo.md, executable. Every adapter speaks
  * ACP v1 (JSON-RPC 2.0, newline-delimited) over stdio, so the daemon needs
  * only the command line per target.
  *
@@ -32,7 +32,7 @@ const DEFAULT_ACP_COMMANDS: Record<AgentTarget, AcpAdapterSpec | null> = {
   // wrapper's bundled SDK CLI (2.1.270) drops them for every model — without
   // them the agent never emits the ACP plan updates the W14 todo panel feeds
   // on. This documented opt-in revives them (rig-verified: plan snapshots
-  // flow end-to-end; ground truth in wiki dev/research/phase-9-w14.1-claude-ground-truth.md).
+  // flow end-to-end; ground truth in wiki research-phase-9-w14.1-claude-ground-truth.md).
   'claude-code': {
     command: ['npx', '-y', '@agentclientprotocol/claude-agent-acp'],
     env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },

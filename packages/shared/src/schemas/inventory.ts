@@ -4,7 +4,7 @@ import { agentTargetSchema } from './profile.js';
 /**
  * Machine inventory schemas (Phase 8 C3) — the normalized per-target snapshot
  * a daemon's scanners report, the artifact bodies an import collects, and the
- * diff/import REST shapes. See wiki dev/design/phase-8-c3.md.
+ * diff/import REST shapes. See wiki design-phase-8-c3.md.
  *
  * The snapshot is metadata-only (≤200-char previews); full bodies are fetched
  * at import time via `inventory:collect` → `inventory:payload`. These mirror

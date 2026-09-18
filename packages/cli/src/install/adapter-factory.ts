@@ -4,7 +4,7 @@
  * frozen `TargetAdapter` with sensible defaults; adapters needing format
  * transformation override `planOperations`. Adding a target = one new file.
  *
- * See `wiki dev/research/phase-3-ecc-install-patterns.md` Pattern 1–2.
+ * See `wiki research-phase-3-ecc-install-patterns.md` Pattern 1–2.
  */
 import os from 'node:os';
 import path from 'node:path';

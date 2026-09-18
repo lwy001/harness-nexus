@@ -3,7 +3,7 @@
  * hook events each Agent tool supports. Used by the hook editor (Phase 4.5) to
  * validate bindings and by the install writer (Phase 3.2) to filter per target.
  *
- * See `wiki dev/research/phase-4.5-hooks.md` for the per-target evidence.
+ * See `wiki research-phase-4.5-hooks.md` for the per-target evidence.
  *
  * Format model: Claude Code and ZCode share a `hooks.json` event→command
  * declarative format. Claude Code supports ~30 events; ZCode a strict 7-event
@@ -46,7 +46,7 @@ export const HOOK_SUPPORT: Readonly<Record<AgentTarget, ReadonlySet<HookEvent> |
   'claude-code': new Set<HookEvent>(HOOK_EVENTS),
   // zcode has no install adapter (no reference material; Phase 3 out of scope).
   // The 7-event set is retained from prior research but is moot until an adapter
-  // ships. See wiki dev/research/phase-3-ecc-install-patterns.md.
+  // ships. See wiki research-phase-3-ecc-install-patterns.md.
   zcode: new Set<HookEvent>([
     'SessionStart',
     'UserPromptSubmit',

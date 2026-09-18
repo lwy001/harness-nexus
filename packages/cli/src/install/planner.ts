@@ -3,7 +3,7 @@
  * plan file operations. Produces an `InstallPlan` with NO filesystem writes
  * (the dry-run artifact). Mirrors ECC's `planInstallTargetScaffold`.
  *
- * The target resolution rules (from `wiki dev/design/phase-3-install.md`):
+ * The target resolution rules (from `wiki design-phase-3-install.md`):
  *  - If `target` is given and the profile is target-bound and they differ →
  *    `TARGET_MISMATCH`.
  *  - If `target` is omitted, use the profile's own target.

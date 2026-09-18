@@ -8,7 +8,7 @@ import { z } from 'zod';
  * server-side `SkillCatalogService` to parse a fetched catalog before caching
  * and filtering it for the hub search UI (7.3).
  *
- * Key facts captured here (see `wiki dev/design/phase-7.2-marketplace-fetch.md`):
+ * Key facts captured here (see `wiki design-phase-7.2-marketplace-fetch.md`):
  *   - Top level has exactly 5 keys: `$schema`, `name`, `description`, `owner`,
  *     `plugins`. There is NO `renames` map in the live official catalog.
  *   - `source` is a discriminated union on the `source` field with 3 object

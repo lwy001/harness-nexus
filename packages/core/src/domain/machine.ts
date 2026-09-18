@@ -2,7 +2,7 @@
  * Phase 8 — a user's machine enrolled with this instance via the Harness
  * Nexus client (`hnx enroll`). The daemon on the machine authenticates to the
  * realtime channel (`/ctl`) with a dedicated machine PAT bound to the
- * `Machine` row. See wiki dev/design/phase-8-client.md.
+ * `Machine` row. See wiki design-phase-8-client.md.
  */
 export interface Machine {
   id: string;

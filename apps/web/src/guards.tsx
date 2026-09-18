@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card.js';
 import { Button } from '@/components/ui/button.js';
 
 /**
- * Front-end permission interceptors (see wiki dev/design/phase-1-auth.md).
+ * Front-end permission interceptors (see wiki design-phase-1-auth.md).
  *
  * `<RequireAuth>` — redirects to /login (remembering where we came from) when
  * there is no authenticated user. While the initial /me lookup is in flight it

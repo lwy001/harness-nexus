@@ -203,7 +203,7 @@ function assertKindAvailable(kind: ResourceKind): void {
  * document in `source.inline.content` and is only valid for targets that use the
  * declarative hooks.json model (CC/ZCode; not Hermes). Event keys in the JSON
  * must be supported by at least one declared target. See
- * `wiki dev/research/phase-4.5-hooks.md`.
+ * `wiki research-phase-4.5-hooks.md`.
  */
 function validateHookResource(
   kind: ResourceKind,

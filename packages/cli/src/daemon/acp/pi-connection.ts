@@ -17,7 +17,7 @@ import type {
  * method names — so this class TRANSLATES in-process instead of spawning a
  * third-party bridge: ACP requests in → pi commands out, pi events in →
  * `session/update` notifications out (design
- * wiki dev/design/phase-9-w16-pi-agent.md §2; svkozak/pi-acp is the reference
+ * wiki design-phase-9-w16-pi-agent.md §2; svkozak/pi-acp is the reference
  * for the dialect, not a dependency).
  *
  * The load-bearing dialect fact: pi's `prompt` command ACKNOWLEDGES

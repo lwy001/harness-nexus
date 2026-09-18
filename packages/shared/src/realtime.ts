@@ -15,7 +15,7 @@ import { agentTargetSchema } from './schemas/profile.js';
  * and `/app` (browser, JWT/PAT). Event names are `domain:verb`; only
  * whitelisted handlers are registered server-side, and every payload is
  * validated with the schemas below (single source for server, daemon, and
- * web). See wiki dev/design/phase-8-client.md ("Realtime protocol").
+ * web). See wiki design-phase-8-client.md ("Realtime protocol").
  */
 
 /** Wire protocol version; carried in the machine:hello ack. Breaking changes bump namespaces (`/v2/ctl`), not this silently. */
@@ -279,7 +279,7 @@ export const inventoryUpdatedEventSchema = z.object({
 //
 // The browser speaks platform-semantic chat events; the daemon adapts them to
 // each agent's protocol (ACP over stdio today — the adapter matrix lives in
-// wiki dev/research/phase-8-c5-acp-web-demo.md). These schemas are the SINGLE
+// wiki research-phase-8-c5-acp-web-demo.md). These schemas are the SINGLE
 // source for server, daemon, and web: every handler on either side validates
 // with them (whitelisted-handler isolation rule).
 

@@ -27,7 +27,7 @@ import { generateId } from '../infra/crypto.js';
 
 /**
  * Machine inventory, diff & one-click import (Phase 8 C3), plus W1's
- * capture-as-profile. wiki dev/design/phase-8-c3.md · phase-9-harness-runtime.md.
+ * capture-as-profile. wiki design-phase-8-c3.md · phase-9-harness-runtime.md.
  *
  * All endpoints hang off a machine and inherit its owner-or-admin guard with
  * 404 existence-hiding. Scan and import are direct request/response flows over

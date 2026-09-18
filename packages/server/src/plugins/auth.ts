@@ -8,7 +8,7 @@ import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
  * Fastify, hooks added within `app.register(plugin)` only apply to that plugin's
  * child context, not sibling route plugins — registering at the root fixes that.
  *
- * Two credential channels (see wiki dev/design/phase-1-auth.md):
+ * Two credential channels (see wiki design-phase-1-auth.md):
  *   - JWT access token  → verified by jose, stateless
  *   - PAT `hnpat_…`     → sha256 lookup in the tokens repository
  *
