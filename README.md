@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <em>A self-hosted control plane for your coding agents — MCP servers, skills,<br>
-  hooks, sub-agents, rules and profiles in one place, deployed to your own<br>
-  machines, with remote chat over ACP.</em>
+  <em>Self-hosted management for your coding agents: configure MCP servers,
+  skills and model settings once, deploy them to your own machines, and chat
+  with your agents from the browser.</em>
 </p>
 
 <p align="center">
@@ -16,196 +16,106 @@
   <a href="https://www.npmjs.com/package/@harness-nexus/cli"><img src="https://img.shields.io/npm/v/@harness-nexus/cli" alt="npm @harness-nexus/cli"></a>
 </p>
 
-**⚠️ Early stage.** Harness Nexus is young software under active development:
-features, APIs, and the wire protocol may change without notice, parts of the
-roadmap are still unbuilt (see [Status](#status)), and the docs sometimes lag
-the code. It is usable today for the workflows described below — but expect
-rough edges, and don't put irreplaceable data in it yet.
+If you run coding agents — Claude Code, Codex, DeepSeek, OpenCode, pi,
+Hermes — the same MCP server and API key end up configured in every tool, on
+every machine. Skills and hooks drift apart, and there is no single place to
+see what is installed where. Harness Nexus is that place: a server and web UI
+you host yourself, plus a lightweight client (`hnx`) on each machine that
+does the local work.
 
-## What it does
+## What you can do
 
-A control plane / data-plane split: the server + web UI manage everything,
-while a small client (`hnx`) on each of your machines does the local work.
-
-- **MCP, once** — register upstream MCP servers (with credentials, encrypted
-  at rest); tools are aggregated behind one endpoint per profile. Agents on
-  your machines consume them as local stdio MCP shims (`hnx mcp serve`).
-- **Resources & profiles** — versioned skills / hooks / sub-agents / rules /
-  MCP definitions, bundled into per-target profiles and deployed to a machine
-  with one job. Supported harnesses: **Claude Code, Codex, and DeepSeek
-  Harness (dsh)** — more targets are on the roadmap.
-- **Machines & deploy** — enroll a machine with `hnx enroll`, keep its daemon
-  connected over WSS, scan what's installed there, diff against a profile,
-  one-click import back into the platform, and deploy profiles as replayable
-  jobs.
-- **Manage the harnesses themselves** — install / upgrade / pin the agent
-  runtimes (Claude Code, Codex, dsh) as remote jobs, push a default LLM
-  provider & model config to a machine, and inspect each harness's native
-  config files (redacted) without SSH.
-- **Chat with your agents** — talk to any agent instance from the browser over
-  ACP: streaming replies, rich tool-call cards, permission prompts, image and
-  file attachments, per-session mode & model selectors. List and resume the
-  agent's own native sessions; the platform stores nothing session-shaped.
-  Runs on your machine; gated per machine, off by default.
-- **Multi-user from day one** — JWT + personal access tokens, global vs.
-  personal resources, admin/user roles.
+- Register MCP servers once, with credentials stored encrypted; the tools
+  are then served to your agents through one endpoint, or through a local
+  stdio shim on each machine.
+- Bundle skills, hooks, sub-agents, rules and MCP servers into a profile and
+  deploy it to a machine as one job. Claude Code installs profiles through
+  its own plugin marketplace; Codex, DeepSeek and Hermes through
+  `hnx install`.
+- Enroll a machine with `hnx enroll`, see what is installed on it, import it
+  back into the platform as resources, and push updates as jobs.
+- Manage the agent CLIs themselves (Claude Code, Codex, DeepSeek, OpenCode,
+  pi): install, upgrade or pin them remotely, push a default provider and
+  model setup, and read each agent's config files with secrets masked — no
+  SSH needed.
+- Chat with any agent from the browser: streaming replies, tool-call cards,
+  permission prompts, image and file attachments. Conversations stay on your
+  machine; the platform stores no transcripts.
 
 ## Status
 
-| Area                                   | State                           |
-| -------------------------------------- | ------------------------------- |
-| Auth, users, roles, PATs               | ✅ shipped                      |
-| MCP connections, credentials, proxy    | ✅ shipped                      |
-| Resources & profile editors (web)      | ✅ shipped                      |
-| Skill hub (browse/save/search sources) | ✅ shipped                      |
-| Claude Code marketplace emitter        | ✅ shipped                      |
-| `hnx` install / uninstall (local)      | ✅ shipped (codex, deepseek)    |
-| Machines, daemon, MCP shims            | ✅ shipped                      |
-| Inventory / diff / import              | ✅ shipped                      |
-| Remote deploy jobs                     | ✅ shipped                      |
-| Harness runtime mgmt (W1–W4)           | ✅ shipped                      |
-| ACP chat: portal UI, sessions (W5–W9)  | ✅ shipped                      |
-| LLM providers + model discovery (W10)  | ✅ shipped                      |
-| Web UI languages (en / zh-CN)          | ✅ shipped                      |
-| npm: `@harness-nexus/cli` published    | ✅ 0.1.0-alpha                  |
-| Docker Hub images                      | 🔜 lands on the next vX.Y.Z tag |
-| Orchestration (multi-agent)            | 🧪 undesigned                   |
-| Other import adapters (ECC/Superpower) | 🧪 planned                      |
+Alpha, under active development. The workflows above work today, with rough
+edges. The CLI is on npm as
+[@harness-nexus/cli](https://www.npmjs.com/package/@harness-nexus/cli)
+(0.x alpha); Docker images arrive with the next release tag. Features, APIs
+and the wire protocol can still change, so hold off on putting irreplaceable
+data in it. Work is planned in
+[issues and milestones](https://github.com/sinrimin/harness-nexus/milestones);
+feature guides and design docs live in the
+[wiki](https://github.com/sinrimin/harness-nexus/wiki).
 
-Development is organized around [GitHub issues + milestones]
-(https://github.com/sinrimin/harness-nexus/milestones). The historical phase
-plan, all PRD/design/research docs, and user-facing feature guides live in
-the [wiki](https://github.com/sinrimin/harness-nexus/wiki); see
-[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
+## Quick start
 
-## Stack
-
-Node.js ≥20 · TypeScript (strict) · Fastify · React + Vite · pnpm workspaces ·
-SQLite (default, pluggable storage) · official MCP SDK · Socket.IO · zod.
-
-## Repository layout
-
-```
-packages/
-  core/          domain entities + repository ports (pure TS, no I/O)
-  shared/        zod schemas + utils — single source of truth for wire shapes
-  server/        Fastify API + MCP registry/proxy + realtime + storage drivers
-  mcp-runtime/   UpstreamPool — shared by the server proxy and the stdio shim
-  sdk-ts/        HTTP client SDK
-  cli/           `hnx` — enroll/daemon/install/mcp-serve
-apps/
-  web/           React admin UI (Signal design system)
-docs/            architecture + ADRs (process & feature docs live in the wiki)
-```
-
-## Quick start (development)
+### Docker
 
 ```bash
-pnpm install            # install workspace deps
-
-# Required: a JWT secret to sign access tokens (≥16 chars)
-export JWT_SECRET="$(openssl rand -base64 48)"
-
-# Optional: ephemeral run without a database file
-export STORAGE_DRIVER=memory
-
-task dev                # start everything in watch mode (needs task: https://taskfile.dev)
-# or, without task:
-pnpm dev:server         # API on :8080
-pnpm dev:web            # web UI on :5173
-```
-
-The first user to register becomes the admin. Manage users and the registration
-switch from the web UI (`/admin/users`, `/admin/settings`).
-
-### CI & releases
-
-Every push and PR runs CI (install → build → typecheck → test,
-`.github/workflows/ci.yml`). Releases are **tag-driven**: bump the five
-package versions (`packages/{core,shared,sdk-ts,mcp-runtime,cli}`), merge to
-main, then `git tag vX.Y.Z && git push origin vX.Y.Z`. Pushing the tag runs
-two workflows in lockstep:
-
-- `release` — publishes the npm packages via OIDC trusted publishing (no npm
-  token is stored in the repository); already-published versions are skipped,
-  so re-running a tag is idempotent.
-- `docker` — builds and pushes both images to Docker Hub
-  (`sinrimin/harness-nexus-server` / `-web`, tagged `X.Y.Z` + `latest`) using
-  environment secrets gated by the `release` environment.
-
-## Docker
-
-Two containers make up the stack:
-
-- **`server`** — the Fastify API + MCP proxy + realtime channel (multi-stage
-  image from the root `Dockerfile`). SQLite persists to a `/data` volume.
-  No host ports — only reachable from `web`.
-- **`web`** — nginx serving the built SPA (`apps/web/Dockerfile`) and
-  reverse-proxying `/api`, `/mcp` and `/socket.io` (WebSocket) to `server`.
-  The only exposed port.
-
-Both images are published to Docker Hub on every release tag (linux/amd64),
-so pulling beats building:
-
-```bash
-# 1. Configure (copy + fill in the required JWT_SECRET)
-cp .env.example .env
-# edit .env: JWT_SECRET="$(openssl rand -base64 48)"
-
-# 2. Run from the published images…
+cp .env.example .env     # set JWT_SECRET (random string, ≥16 chars)
 docker compose pull && docker compose up -d
-# …or build from source (compiles the whole workspace inside the image):
-docker compose up --build -d
-
-# 3. Open the UI (bound to localhost by default — see ports: in docker-compose.yml)
 open http://127.0.0.1:15922
 ```
 
-By default the web port binds to `127.0.0.1` only. To expose it, change
-`ports:` in `docker-compose.yml` and put TLS in front (a reverse proxy like
-Caddy/nginx) — the API sends tokens in headers, so serve it over HTTPS before
-opening it beyond localhost.
+The web port binds to 127.0.0.1 by default. Before exposing it beyond
+localhost, put TLS in front of it (Caddy, nginx, …): the API transmits
+tokens in headers, so serve it over HTTPS. To build from source instead, run
+`docker compose up --build -d`; the images build from CN package mirrors
+(apt via TUNA, npm via npmmirror), so no proxy is needed — drop the mirror
+lines in the Dockerfiles to use the official registries.
 
-Both images build entirely from CN mirrors (TUNA for apt, npmmirror for npm) so
-builds need no proxy; to use the official registries instead, drop the mirror
-`RUN`/`ENV` lines in each Dockerfile's build stage. `JWT_SECRET` (≥16 chars)
-is required at runtime and never baked into either image.
-
-## Connecting a machine
-
-On the machine you want to manage (can be the same host):
+### From source (development)
 
 ```bash
-# one-time: install the client (Node.js ≥ 20)
-npm install -g @harness-nexus/cli
+pnpm install
+export JWT_SECRET="$(openssl rand -base64 48)"   # required
+export STORAGE_DRIVER=memory                     # optional: no database file
+pnpm dev:server        # API on :8080
+pnpm dev:web           # web UI on :5173
+```
 
-# in the web UI: Machines → Enroll — shows a one-time token + machine id
+The first user to register becomes the admin.
+
+### Connect a machine
+
+On the machine you want to manage (the same host works fine):
+
+```bash
+npm install -g @harness-nexus/cli    # needs Node.js ≥ 20
 hnx daemon --server https://your-instance --token <machine-token> --machine-id <machine-id>
 ```
 
-The daemon reports presence, serves local stdio MCP shims to your agent tools,
-executes deploy jobs, and hosts ACP chat subprocesses. Chat is disabled per
-machine by default — enable it on the machine page (it runs tools on that
-machine, owner-only).
+Create the machine in the web UI first (Machines → Enroll) to get the
+one-time token. The daemon keeps the connection, serves local MCP shims,
+runs deploy jobs and hosts the chat processes. Remote chat is off by
+default; enable it per machine (it executes tools on that machine,
+owner-only).
 
-## Security notes
+## Security
 
-This product stores and serves secrets (upstream credentials). Design choices
-that matter: credential secrets are AES-256-GCM encrypted at rest and never
-returned in full; tokens (PATs, machine enrollment) are shown exactly once;
-machine tokens only reach the realtime channel, not the REST API; remote chat
-is opt-in per machine and owner-only, and the platform stores nothing
-session-shaped — chat transcripts stay with the agent on your machine;
-env/header values are redacted before machine inventory is uploaded. Treat the
-instance (and its `JWT_SECRET`) as root for everything connected to it.
+- Credentials are encrypted at rest (AES-256-GCM); the UI only ever shows a
+  masked preview.
+- Tokens (personal access, machine enrollment) are displayed exactly once.
+- Machine tokens work on the realtime channel only, not the REST API.
+- Chat transcripts never leave the machine; inventory uploads redact env and
+  header values first.
+- Treat the instance and its `JWT_SECRET` as root for everything connected
+  to it.
 
 ## Documentation
 
-- [Wiki](https://github.com/sinrimin/harness-nexus/wiki) — feature guides,
-  per-phase PRDs/designs, research notes, the historical roadmap
-- In-repo: [`docs/architecture.md`](docs/architecture.md) (layering & storage
-  contract) and [`docs/adr/`](docs/adr)
-- [CONTRIBUTING.md](CONTRIBUTING.md) — how development is organized
+- [Wiki](https://github.com/sinrimin/harness-nexus/wiki): feature guides,
+  design docs, research notes, the historical roadmap
+- [`docs/architecture.md`](docs/architecture.md) and [`docs/adr/`](docs/adr):
+  architecture contract and decision records
+- [CONTRIBUTING.md](CONTRIBUTING.md): how development is organized
 
 ## License
 

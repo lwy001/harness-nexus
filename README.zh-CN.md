@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <em>面向编码代理的自托管控制平面——MCP 服务器、技能、钩子、子代理、规则与配置集，<br>
-  集中管理、部署到你自己的机器，并通过 ACP 远程对话。</em>
+  <em>自托管的编码代理管理平台：MCP、技能、模型配置一次配好，分发到自己的机器，
+  还能在浏览器里直接和 agent 对话。</em>
 </p>
 
 <p align="center">
@@ -15,177 +15,92 @@
   <a href="https://www.npmjs.com/package/@harness-nexus/cli"><img src="https://img.shields.io/npm/v/@harness-nexus/cli" alt="npm @harness-nexus/cli"></a>
 </p>
 
-**⚠️ 早期阶段。** Harness Nexus 尚处于活跃开发期：功能、API 与线上协议可能随时变更，
-路线图中仍有未完成的部分（见[项目状态](#项目状态)），文档偶尔滞后于代码。目前它已经
-可以支撑下文描述的工作流——但请预期各种毛边，暂不要把不可替代的数据放入其中。
+在 Claude Code、Codex、DeepSeek、OpenCode、pi、Hermes 这些编码代理之间，同一个
+MCP server 和 API key 往往每个工具配一遍，换台机器再来一遍；技能和 hooks 散落
+各处，也没有一个地方能看清每台机器上到底装了什么。Harness Nexus 补上这个位置：
+一个你自己部署的服务端和 Web 界面，加上每台机器上一个轻量客户端 `hnx` 负责本地
+执行。
 
 ## 它能做什么
 
-控制平面 / 数据平面分离：服务端 + Web UI 管理一切，而每台机器上的轻量客户端
-（`hnx`）负责本地执行。
+- MCP server 只登记一次，凭据加密保存；工具统一从一个端点提供给 agent 使用，
+  机器上也可以走本地 stdio shim 接入。
+- 把技能、hooks、子代理、规则和 MCP server 打包成 Profile（配置集），一次作业
+  部署到目标机器。Claude Code 通过它原生的 plugin marketplace 安装，Codex、
+  DeepSeek、Hermes 用 `hnx install`。
+- 用 `hnx enroll` 接入机器后，能看到机器上装了什么，一键导回平台作为资源，
+  后续更新以作业形式下发。
+- 连 agent 本身也一起管（Claude Code、Codex、DeepSeek、OpenCode、pi）：远程
+  安装、升级、锁定版本，推送默认的供应商和模型配置，不 SSH 也能查看各 agent
+  的配置文件，机密内容已脱敏。
+- 在浏览器里和任意 agent 对话：流式输出、工具调用卡片、权限确认，可以传图片
+  和文件。对话数据留在你自己的机器上，平台不保存。
 
-- **MCP，一次接入** — 注册上游 MCP 服务器（凭据静态加密存储）；工具按配置集聚合到
-  每个配置集一个端点之后。你机器上的代理以本地 stdio MCP shim（`hnx mcp serve`）
-  的方式消费它们。
-- **资源与配置集** — 带版本的技能 / 钩子 / 子代理 / 规则 / MCP 定义，按目标打包为
-  配置集，一次作业即可部署到某台机器。支持的宿主：**Claude Code、Codex、DeepSeek
-  Harness (dsh)**——更多目标在路线图上。
-- **机器与部署** — 用 `hnx enroll` 注册机器，其守护进程通过 WSS 保持连接；扫描机器
-  上已安装的内容、与配置集做对比、一键导回平台、以可重放的作业部署配置集。
-- **管理宿主本身** — 以远程作业方式安装/升级/固定代理运行时（Claude Code、Codex、
-  dsh），向机器推送默认的 LLM 供应商与模型配置，并以脱敏方式查看各宿主的原生配置
-  文件，无需 SSH。
-- **与你的代理对话** — 在浏览器中通过 ACP 与任意代理实例对话：流式回复、工具调用
-  卡片、权限请求、图片/文件附件、会话级模式与模型选择器。支持列出并恢复代理自己的
-  原生会话；平台不持久化任何会话数据。执行发生在你自己的机器上；按机器逐一开启，
-  默认关闭。
-- **从第一天起就支持多用户** — JWT + 个人访问令牌、全局 vs. 个人资源、管理员/普通
-  用户两种角色。
+## 当前状态
 
-## 项目状态
+Alpha，仍在快速迭代。上面这些工作流今天就能用，但会有毛边。CLI 已发布到 npm
+（[@harness-nexus/cli](https://www.npmjs.com/package/@harness-nexus/cli)，0.x
+alpha），Docker 镜像随下一个发布 tag 上线。功能和 API 还会调整，暂时别把找不
+回来的数据放进来。开发在 [issues 和
+milestones](https://github.com/sinrimin/harness-nexus/milestones) 里推进，功能
+说明和设计文档都在 [Wiki](https://github.com/sinrimin/harness-nexus/wiki)。
 
-| 领域                              | 状态                         |
-| --------------------------------- | ---------------------------- |
-| 认证、用户、角色、PAT             | ✅ 已完成                    |
-| MCP 连接、凭据、代理转发          | ✅ 已完成                    |
-| 资源与配置集编辑器（Web）         | ✅ 已完成                    |
-| 技能中心（浏览/保存/多源搜索）    | ✅ 已完成                    |
-| Claude Code 市场发射器            | ✅ 已完成                    |
-| `hnx` 安装/卸载（本地）           | ✅ 已完成（codex、deepseek） |
-| 机器、守护进程、MCP shim          | ✅ 已完成                    |
-| 清单 / 对比 / 导入                | ✅ 已完成                    |
-| 远程部署作业                      | ✅ 已完成                    |
-| 运行时管理（W1–W4）               | ✅ 已完成                    |
-| ACP 聊天：门户界面与会话（W5–W9） | ✅ 已完成                    |
-| LLM 供应商 + 模型发现（W10）      | ✅ 已完成                    |
-| Web UI 界面语言（英/中）          | ✅ 已完成                    |
-| npm 发布（@harness-nexus/cli）    | ✅ 0.1.0-alpha               |
-| Docker Hub 镜像                   | 🔜 下一个 vX.Y.Z tag 首发    |
-| 编排（多代理）                    | 🧪 未设计                    |
-| 其余导入适配器（ECC/Superpower）  | 🧪 计划中                    |
+## 快速开始
 
-开发围绕 [GitHub Issues + 里程碑](https://github.com/sinrimin/harness-nexus/milestones)
-组织；历史阶段计划、全部 PRD/设计/调研文档与面向使用者的功能文档都在
-[Wiki](https://github.com/sinrimin/harness-nexus/wiki)，工作流程见
-[CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 技术栈
-
-Node.js ≥20 · TypeScript (strict) · Fastify · React + Vite · pnpm workspaces ·
-SQLite（默认，可插拔存储） · 官方 MCP SDK · Socket.IO · zod。
-
-## 仓库结构
-
-```
-packages/
-  core/          领域实体 + 仓储端口（纯 TS，无 I/O）
-  shared/        zod 模式 + 工具函数——线上形状的唯一事实源
-  server/        Fastify API + MCP 注册表/代理 + realtime + 存储驱动
-  mcp-runtime/   UpstreamPool——服务端代理与 stdio shim 共用
-  sdk-ts/        HTTP 客户端 SDK
-  cli/           `hnx`——注册/守护进程/安装/MCP 服务
-apps/
-  web/           React 管理界面（Signal 设计系统，界面语言：英文/简体中文）
-docs/            架构 + ADR（过程与功能文档在 Wiki）
-```
-
-## 快速开始（开发）
+### Docker
 
 ```bash
-pnpm install            # 安装 workspace 依赖
-
-# 必需：用于签发访问令牌的 JWT 密钥（≥16 字符）
-export JWT_SECRET="$(openssl rand -base64 48)"
-
-# 可选：无数据库文件的临时运行
-export STORAGE_DRIVER=memory
-
-task dev                # 以 watch 模式启动全部（需要 task: https://taskfile.dev）
-# 或者不用 task：
-pnpm dev:server         # API 监听 :8080
-pnpm dev:web            # Web UI 监听 :5173
-```
-
-第一个注册的用户成为管理员。在 Web UI（`/admin/users`、`/admin/settings`）中管理
-用户与注册开关。界面默认跟随浏览器语言，可通过页头按钮切换英文/简体中文。
-
-### CI 与发布
-
-每次 push 与 PR 都会运行 CI（install → build → typecheck → test，
-`.github/workflows/ci.yml`）。发布是 **tag 驱动**的：改五个包的版本号
-（`packages/{core,shared,sdk-ts,mcp-runtime,cli}`）、合并到 main，然后
-`git tag vX.Y.Z && git push origin vX.Y.Z`。推送 tag 会同时触发两个工作流：
-
-- `release` —— 通过 OIDC trusted publishing 发布 npm 包（仓库中不保存任何
-  npm 令牌）；已发布的版本会被跳过，重跑同一 tag 是幂等的。
-- `docker` —— 构建两个镜像并推送到 Docker Hub（`sinrimin/harness-nexus-server` /
-  `-web`，打 `X.Y.Z` + `latest` 标签），凭据是 `release` 环境保护下的
-  environment secrets。
-
-## Docker
-
-整个栈由两个容器组成：
-
-- **`server`** — Fastify API + MCP 代理 + realtime 通道（多阶段构建镜像，来自根目录
-  `Dockerfile`）。SQLite 持久化到 `/data` 卷。不开宿主端口——仅 `web` 可达。
-- **`web`** — nginx 提供构建后的 SPA（`apps/web/Dockerfile`），并把 `/api`、`/mcp`、
-  `/socket.io`（WebSocket）反向代理到 `server`。唯一对外暴露的端口。
-
-两个镜像在每个发布 tag 上发布到 Docker Hub（linux/amd64），直接拉取比本地构建更快：
-
-```bash
-# 1. 配置（复制并填写必需的 JWT_SECRET）
-cp .env.example .env
-# 编辑 .env: JWT_SECRET="$(openssl rand -base64 48)"
-
-# 2. 用已发布的镜像运行……
+cp .env.example .env     # 填 JWT_SECRET（随机字符串，≥16 字符）
 docker compose pull && docker compose up -d
-# ……或从源码构建（需在镜像内编译整个 workspace）：
-docker compose up --build -d
-
-# 3. 打开界面（默认仅绑定 localhost——见 docker-compose.yml 中的 ports:）
 open http://127.0.0.1:15922
 ```
 
-默认 Web 端口只绑定 `127.0.0.1`。若要对外暴露，请修改 `docker-compose.yml` 中的
-`ports:` 并在前置 TLS（Caddy/nginx 之类的反向代理）——API 通过请求头传递令牌，因此在
-开放到 localhost 之外之前请务必使用 HTTPS。
+Web 端口默认只绑定 127.0.0.1。要对外开放，先在前面试一层 TLS（Caddy、nginx
+都行）：API 的 token 走请求头传输，务必上 HTTPS。也可以从源码构建，运行
+`docker compose up --build -d` 即可；镜像构建走国内源（apt 用 TUNA，npm 用
+npmmirror），不需要代理，想换回官方源就把 Dockerfile 里的镜像源配置删掉。
 
-两个镜像完全从国内镜像源构建（apt 用 TUNA，npm 用 npmmirror），构建无需代理；若想改用
-官方源，删除各 Dockerfile 构建阶段中的镜像源 `RUN`/`ENV` 行即可。`JWT_SECRET`
-（≥16 字符）在运行时必需，且不会烧入任何镜像。
-
-## 接入一台机器
-
-在你想管理的机器上（可以是同一台主机）：
+### 从源码运行（开发）
 
 ```bash
-# 一次性安装客户端（需要 Node.js ≥ 20）
-npm install -g @harness-nexus/cli
+pnpm install
+export JWT_SECRET="$(openssl rand -base64 48)"   # 必需
+export STORAGE_DRIVER=memory                     # 可选：不落数据库文件
+pnpm dev:server        # API 在 :8080
+pnpm dev:web           # 界面在 :5173
+```
 
-# 在 Web UI：机器 → 注册——会显示一次性令牌 + 机器 id
+第一个注册的用户自动成为管理员。界面默认跟随浏览器语言，可以在页头切换
+英文/简体中文。
+
+### 接入一台机器
+
+在要管理的机器上执行（和管理端同一台主机也行）：
+
+```bash
+npm install -g @harness-nexus/cli    # 需要 Node.js ≥ 20
 hnx daemon --server https://your-instance --token <machine-token> --machine-id <machine-id>
 ```
 
-守护进程上报在线状态，向你的代理工具提供本地 stdio MCP shim，执行部署作业，并承载
-ACP 聊天子进程。远程聊天默认按机器关闭——在机器页面开启（它会在该机器上运行工具，
-仅所有者可用）。
+先在 Web 界面的「机器 → 注册」创建机器，拿到一次性 token。daemon 会保持
+连接、提供本地 MCP shim、执行部署作业、承载聊天进程。远程聊天默认关闭，按
+机器开启（它会在那台机器上执行工具，仅所有者可用）。
 
-## 安全须知
+## 安全
 
-本产品存储并服务机密（上游凭据）。值得了解的设计选择：凭据密钥以 AES-256-GCM 静态
-加密且永不完整返回；令牌（PAT、机器注册）只显示一次；机器令牌只进入 realtime 通道，
-不进入 REST API；远程聊天按机器选择加入、仅所有者可用，且平台不持久化任何会话数据——
-聊天转录保留在你机器上的代理本身；机器清单上传前会先脱敏 env/header 值。请把实例
-（及其 `JWT_SECRET`）当作其连接的一切的 root 对待。
+- 凭据以 AES-256-GCM 加密存储，界面只显示掩码，不回显完整内容。
+- 各类 token（个人访问令牌、机器注册）只在创建时完整显示一次。
+- 机器 token 只能用于 realtime 通道，不能调用 REST API。
+- 聊天记录不离开你的机器；机器清单上传前会先脱敏 env 和 header 值。
+- 请把实例和它的 `JWT_SECRET` 当作所连接一切的 root 凭据来保管。
 
 ## 文档
 
-- [Wiki](https://github.com/sinrimin/harness-nexus/wiki)——功能文档、各阶段
-  PRD/设计、调研笔记与历史路线图
-- 仓库内：[`docs/architecture.md`](docs/architecture.md)（分层与存储契约）、
-  [`docs/adr/`](docs/adr)
-- [CONTRIBUTING.md](CONTRIBUTING.md)——开发组织方式
+- [Wiki](https://github.com/sinrimin/harness-nexus/wiki)：功能说明、设计文档、
+  调研笔记和历史路线图
+- [`docs/architecture.md`](docs/architecture.md) 与
+  [`docs/adr/`](docs/adr)：架构契约与决策记录
+- [CONTRIBUTING.md](CONTRIBUTING.md)：开发流程
 
 ## 许可证
 
