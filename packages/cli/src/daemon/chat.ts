@@ -217,7 +217,22 @@ export interface ChatHandlersOptions {
   auditIntervalMs?: number;
 }
 
-export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {}): void {
+/** What `attachChatHandlers` hands back for other daemon handlers (issue #2). */
+export interface ChatHandlersHandle {
+  /**
+   * A live channel's adapter connection for the target (the newest
+   * registration wins), or null when no channel is live. The sessions
+   * listing rides it — `session/list` is a plain concurrent JSON-RPC
+   * request, so a live channel answers the rail without any spawn. A dead
+   * connection rejects fast and the caller falls back to spawning.
+   */
+  liveConnectionFor: (target: string) => AgentConnection | null;
+}
+
+export function attachChatHandlers(
+  socket: Socket,
+  opts: ChatHandlersOptions = {},
+): ChatHandlersHandle {
   const env = opts.env ?? process.env;
   const home = opts.homeDir ?? homedir();
   const sessions = new Map<string, DaemonSession>();
@@ -244,6 +259,15 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
   const emitEvent = (session: DaemonSession, event: ChatStreamEvent): void => {
     pushHistory(session, { type: 'event', event });
     socket.emit('chat:event', { sessionId: session.sessionId, event });
+  };
+
+  /** Issue #2 — see `ChatHandlersHandle.liveConnectionFor`. */
+  const liveConnectionFor = (target: string): AgentConnection | null => {
+    let found: AgentConnection | null = null;
+    for (const s of sessions.values()) {
+      if (s.target === target) found = s.conn;
+    }
+    return found;
   };
 
   const pushHistory = (session: DaemonSession, item: HistoryItem): void => {
@@ -954,6 +978,8 @@ export function attachChatHandlers(socket: Socket, opts: ChatHandlersOptions = {
     }, graceMs);
     graceTimer.unref();
   });
+
+  return { liveConnectionFor };
 }
 
 /**

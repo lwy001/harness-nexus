@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Socket } from 'socket.io-client';
 import { sessionsListRequestSchema, type NativeSessionView } from '@harness-nexus/shared';
-import { AcpAgentConnection } from './acp/agent-connection.js';
+import { AcpAgentConnection, type AgentConnection } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import { currentCatalogModels, dshListSessions, nativeZstd } from './dsh-sessions.js';
 import { piSessionViews } from './pi-sessions.js';
@@ -38,6 +38,13 @@ export interface SessionsHandlersOptions {
    * default 15s, 0 = off.
    */
   cacheTtlMs?: number;
+  /**
+   * Issue #2 — live-channel lookup from `attachChatHandlers`' handle. When a
+   * channel for the target is live, its adapter connection answers
+   * `session/list` directly (a concurrent JSON-RPC request — no spawn);
+   * absent or failing falls back to the short-lived spawn.
+   */
+  liveConnectionFor?: (target: string) => AgentConnection | null;
 }
 
 export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOptions = {}): void {
@@ -93,7 +100,9 @@ export function attachSessionsHandlers(socket: Socket, opts: SessionsHandlersOpt
         if (target === 'claude-code' || target === 'codex' || target === 'opencode') {
           socket.emit('sessions:list:result', {
             requestId,
-            sessions: await listCached(target, refresh === true, () => listViaAdapter(target, env)),
+            sessions: await listCached(target, refresh === true, () =>
+              listAdapterSessions(target, env, opts.liveConnectionFor),
+            ),
           });
           return;
         }
@@ -175,6 +184,30 @@ function listDsh(home: string): NativeSessionView[] {
   });
 }
 
+/**
+ * Issue #2 — answer the rail without a spawn whenever a live channel's
+ * adapter can serve it: `session/list` is a plain concurrent request on the
+ * channel's connection (the wrapper reads the session store off disk — no
+ * session needed), the same trick the reference portal rides its resident
+ * adapter for. Any failure (dead connection, mid-turn stall, no such method)
+ * falls back to the short-lived spawn.
+ */
+async function listAdapterSessions(
+  target: 'claude-code' | 'codex' | 'opencode',
+  env: NodeJS.ProcessEnv,
+  liveConnectionFor?: (target: string) => AgentConnection | null,
+): Promise<NativeSessionView[]> {
+  const live = liveConnectionFor?.(target) ?? null;
+  if (live !== null) {
+    try {
+      return parseSessionList(await live.request('session/list', {}, 10_000));
+    } catch {
+      // fall through — spawn path is the fallback, never a dead end
+    }
+  }
+  return listViaAdapter(target, env);
+}
+
 /** Spawn the target's adapter, `session/list`, kill. Bounded, best-effort. */
 async function listViaAdapter(
   target: 'claude-code' | 'codex' | 'opencode',
@@ -187,33 +220,36 @@ async function listViaAdapter(
   });
   try {
     if (!sessionCaps.list) throw new Error(`adapter for '${target}' does not support session/list`);
-    const result = (await conn.request('session/list', {}, 10000)) as {
-      sessions?: unknown;
-    };
-    const raw = Array.isArray(result?.sessions) ? (result!.sessions as unknown[]) : [];
-    const out: NativeSessionView[] = [];
-    for (const s of raw.slice(0, 200)) {
-      if (s === null || typeof s !== 'object') continue;
-      const r = s as Record<string, unknown>;
-      if (typeof r['sessionId'] !== 'string' || r['sessionId'] === '') continue;
-      if (typeof r['cwd'] !== 'string' || !r['cwd'].startsWith('/')) continue;
-      out.push({
-        sessionId: r['sessionId'],
-        cwd: r['cwd'],
-        ...(typeof r['title'] === 'string' && r['title'] !== ''
-          ? { title: r['title'].slice(0, 256) }
-          : {}),
-        // Adapters speak different timestamp dialects (codex-acp's chrono
-        // emits `+00:00` offsets). Normalize to ISO-Z when parseable and
-        // DROP the field when not — a malformed timestamp must never fail
-        // the whole listing downstream.
-        ...isoTimestamp(r['updatedAt']),
-      });
-    }
-    return out;
+    return parseSessionList(await conn.request('session/list', {}, 10000));
   } finally {
     conn.kill();
   }
+}
+
+/** A raw `session/list` result → bounded rail rows (shared by both paths). */
+function parseSessionList(result: unknown): NativeSessionView[] {
+  const r0 = (result ?? {}) as { sessions?: unknown };
+  const raw = Array.isArray(r0.sessions) ? (r0.sessions as unknown[]) : [];
+  const out: NativeSessionView[] = [];
+  for (const s of raw.slice(0, 200)) {
+    if (s === null || typeof s !== 'object') continue;
+    const r = s as Record<string, unknown>;
+    if (typeof r['sessionId'] !== 'string' || r['sessionId'] === '') continue;
+    if (typeof r['cwd'] !== 'string' || !r['cwd'].startsWith('/')) continue;
+    out.push({
+      sessionId: r['sessionId'],
+      cwd: r['cwd'],
+      ...(typeof r['title'] === 'string' && r['title'] !== ''
+        ? { title: r['title'].slice(0, 256) }
+        : {}),
+      // Adapters speak different timestamp dialects (codex-acp's chrono
+      // emits `+00:00` offsets). Normalize to ISO-Z when parseable and
+      // DROP the field when not — a malformed timestamp must never fail
+      // the whole listing downstream.
+      ...isoTimestamp(r['updatedAt']),
+    });
+  }
+  return out;
 }
 
 /** `{updatedAt}` only when the value parses as a real timestamp (ISO-Z normalized). */
