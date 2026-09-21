@@ -444,10 +444,14 @@ describe('resolveAcpCommand', () => {
     });
     // The official ACP-project wrapper (thinking streams on gateway models —
     // the pre-2026-09 @zed-industries 0.23.x never requested it). 9 W14.1 —
-    // the claude row additionally carries the todo-tool opt-in env.
-    expect(resolveAcpCommand('claude-code', {})).toEqual({
+    // the claude row additionally carries the todo-tool opt-in env. Issue #2
+    // — the spec is VERSION-PINNED and an empty tmp home forces the npx
+    // fallback (a provisioned machine would resolve the pinned bin).
+    expect(
+      resolveAcpCommand('claude-code', {}, { homeDir: mkdtempSync(join(tmpdir(), 'hnx-home-')) }),
+    ).toEqual({
       command: 'npx',
-      args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+      args: ['-y', '@agentclientprotocol/claude-agent-acp@0.79.0'],
       env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
     });
     // 9 W12 — opencode speaks ACP NATIVELY (`opencode acp`).

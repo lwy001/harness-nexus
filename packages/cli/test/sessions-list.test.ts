@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { attachSessionsHandlers } from '../src/daemon/sessions.js';
+import type { AgentConnection } from '../src/daemon/acp/agent-connection.js';
 
 /**
  * sessions:list TTL cache (Phase 9 W11 D): a rail paint used to pay an
@@ -224,5 +225,87 @@ describe('sessions:list TTL cache (9 W11 D)', () => {
     // Malformed → proto:invalid ack, no result event; unsupported target →
     // accepted ack + `supported:false` result.
     expect(ackResults).toEqual([{ error: 'proto:invalid' }, { accepted: true }]);
+  });
+
+  it('issue #2 — a live channel answers session/list with zero spawns', async () => {
+    const adapter = makeCountedAdapter();
+    const socket = new FakeSocket();
+    let liveRequests = 0;
+    const live: AgentConnection = {
+      pgid: null,
+      request: async () => {
+        liveRequests++;
+        return {
+          sessions: [{ sessionId: 'native-1', cwd: '/root', title: 'from live channel' }],
+        };
+      },
+      respondPermission: () => {},
+      respondElicitation: () => {},
+      setNotificationHandler: () => {},
+      setPermissionHandler: () => {},
+      setElicitationHandler: () => {},
+      onExit: () => {},
+      isGroupAlive: () => false,
+      kill: () => {},
+    };
+    attachSessionsHandlers(socket as never, {
+      env: ENV(adapter.command),
+      homeDir: mkdtempSync(join(tmpdir(), 'hnx-sessions-home-')),
+      liveConnectionFor: (target) => (target === 'claude-code' ? live : null),
+    });
+
+    socket.receive('sessions:list', { requestId: 'l1', target: 'claude-code' });
+    const r1 = await waitFor(() => {
+      const r = socket.resultOf('l1');
+      return r.sessions !== undefined ? r : undefined;
+    });
+    expect(r1.sessions).toEqual([
+      { sessionId: 'native-1', cwd: '/root', title: 'from live channel' },
+    ]);
+    expect(liveRequests).toBe(1);
+    expect(adapter.spawns()).toBe(0);
+
+    // Manual refresh also rides the live connection — it is the freshest
+    // possible source, not a cached one.
+    socket.receive('sessions:list', { requestId: 'l2', target: 'claude-code', refresh: true });
+    await waitFor(() => {
+      const r = socket.resultOf('l2');
+      return r.sessions !== undefined ? r : undefined;
+    });
+    expect(liveRequests).toBe(2);
+    expect(adapter.spawns()).toBe(0);
+  });
+
+  it('issue #2 — a failing live connection falls back to the spawn', async () => {
+    const adapter = makeCountedAdapter();
+    const socket = new FakeSocket();
+    const live: AgentConnection = {
+      pgid: null,
+      request: async () => {
+        throw new Error('agent process is not running');
+      },
+      respondPermission: () => {},
+      respondElicitation: () => {},
+      setNotificationHandler: () => {},
+      setPermissionHandler: () => {},
+      setElicitationHandler: () => {},
+      onExit: () => {},
+      isGroupAlive: () => false,
+      kill: () => {},
+    };
+    attachSessionsHandlers(socket as never, {
+      env: ENV(adapter.command),
+      homeDir: mkdtempSync(join(tmpdir(), 'hnx-sessions-home-')),
+      liveConnectionFor: () => live,
+    });
+
+    socket.receive('sessions:list', { requestId: 'f1', target: 'claude-code' });
+    const r1 = await waitFor(() => {
+      const r = socket.resultOf('f1');
+      return r.sessions !== undefined ? r : undefined;
+    });
+    // The fixture agent's session row — i.e. the spawn path answered.
+    expect(r1.sessions).toHaveLength(1);
+    expect(adapter.spawns()).toBe(1);
   });
 });

@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { AgentTarget } from '@harness-nexus/shared';
 
 /**
@@ -13,6 +16,16 @@ import type { AgentTarget } from '@harness-nexus/shared';
  */
 interface AcpAdapterSpec {
   readonly command: readonly string[];
+  /**
+   * Issue #2 — the npm identity behind an `npx -y` row: `[spec, bin]` where
+   * the spec CARRIES the version (validated on the rig; upgrading = bumping
+   * this constant — `npx` used to float `latest`). The daemon provisions a
+   * pinned install once (`adapter-provision.ts`: `npm i --prefix
+   * ~/.hnx/acp-adapters` + patch set) and `resolveAcpCommand` prefers its
+   * absolute bin; npx stays the fallback while/when provisioning has not
+   * landed.
+   */
+  readonly pkg?: readonly [string, string];
   /** Extra spawn env, layered UNDER the daemon's spawn env (9 W14.1). */
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -34,11 +47,15 @@ const DEFAULT_ACP_COMMANDS: Record<AgentTarget, AcpAdapterSpec | null> = {
   // on. This documented opt-in revives them (rig-verified: plan snapshots
   // flow end-to-end; ground truth in wiki research-phase-9-w14.1-claude-ground-truth.md).
   'claude-code': {
-    command: ['npx', '-y', '@agentclientprotocol/claude-agent-acp'],
+    command: ['npx', '-y', '@agentclientprotocol/claude-agent-acp@0.79.0'],
+    pkg: ['@agentclientprotocol/claude-agent-acp@0.79.0', 'claude-agent-acp'],
     env: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
   },
   // Official Zed adapter wrapping the OpenAI Codex CLI (needs `codex` on PATH).
-  codex: { command: ['npx', '-y', '@zed-industries/codex-acp'] },
+  codex: {
+    command: ['npx', '-y', '@zed-industries/codex-acp@0.16.0'],
+    pkg: ['@zed-industries/codex-acp@0.16.0', 'codex-acp'],
+  },
   // DeepSeek Harness ships a native ACP v1 profile (needs `dsh` on PATH and a
   // configured provider route — T1 research § ACP).
   deepseek: { command: ['dsh', '--profile', 'acp'] },
@@ -63,7 +80,31 @@ export interface AcpCommand {
   env?: Record<string, string>;
 }
 
-export function resolveAcpCommand(target: AgentTarget, env: NodeJS.ProcessEnv): AcpCommand | null {
+/** The pinned-install bin path for an npx-backed row, or null when absent. */
+function pinnedAcpCommand(
+  def: AcpAdapterSpec,
+  home: string,
+): { command: string; args: string[] } | null {
+  if (def.pkg === undefined) return null;
+  const bin = join(home, '.hnx', 'acp-adapters', 'node_modules', '.bin', def.pkg[1]);
+  return existsSync(bin) ? { command: bin, args: [] } : null;
+}
+
+/** The npx-backed rows' npm identities — what `adapter-provision.ts` installs. */
+export interface PinnedAdapterSpec {
+  spec: string;
+  bin: string;
+}
+
+export const PINNED_ADAPTER_SPECS: readonly PinnedAdapterSpec[] = Object.values(
+  DEFAULT_ACP_COMMANDS,
+).flatMap((def) => (def?.pkg !== undefined ? [{ spec: def.pkg[0], bin: def.pkg[1] }] : []));
+
+export function resolveAcpCommand(
+  target: AgentTarget,
+  env: NodeJS.ProcessEnv,
+  opts: { homeDir?: string } = {},
+): AcpCommand | null {
   const override = env[`HN_ACP_COMMAND_${target.toUpperCase().replace(/-/g, '_')}`];
   const def = DEFAULT_ACP_COMMANDS[target];
   if (def === null) return null;
@@ -73,6 +114,9 @@ export function resolveAcpCommand(target: AgentTarget, env: NodeJS.ProcessEnv): 
           const parts = override.trim().split(/\s+/);
           return { command: parts[0]!, args: parts.slice(1) };
         })()
-      : { command: def.command[0]!, args: def.command.slice(1) };
+      : (pinnedAcpCommand(def, opts.homeDir ?? homedir()) ?? {
+          command: def.command[0]!,
+          args: def.command.slice(1),
+        });
   return { ...base, ...(def.env !== undefined ? { env: { ...def.env } } : {}) };
 }
