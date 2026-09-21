@@ -1589,6 +1589,42 @@ startedAt, command}`. The operator kill is `POST
   ready/closed) take the cached rows — the B push overlay keeps open-channel
   marks correct between refreshes.
 
+## Adapter provisioning & the fast session pipeline (Issue #2)
+
+Investigation + measurements live in issue #2's comments (root cause chain,
+wrapper `set-model` decomposition, reference-implementation comparison).
+Summary for daily work:
+
+- **Every spawn used to pay `npx -y` re-resolution** (~1–2.5s per listing
+  and per channel open; ~13s in the 2026-09-18 npx-cache incident). The
+  daemon now **provisions pinned adapters once** into
+  `~/.hnx/acp-adapters` (`acp/adapter-provision.ts`, fire-and-forget at
+  boot: `npm i --prefix` into a staging dir + atomic rename; complete
+  stores only re-check patches; ANY failure degrades to the npx fallback;
+  kill switch `HN_ACP_NO_AUTO_PROVISION=1`).
+- **An idempotent dist patch set rides the store.** Anchored string
+  replaces (`ADAPTER_PATCHES`), marker-detected, anchor-missing ⇒ skip with
+  warning (correct-but-slow, never broken). Patch #1:
+  `skip-redundant-setmodel-on-resume` on the claude wrapper — the wrapper
+  re-asserts the pinned model on EVERY resume via a `set_model` IPC the CLI
+  does not service until its resume bootstrap completes (upstream issues
+  #886/#880), ~2.2s of pure queueing per session/load; the skip fires only
+  when the resumed model already matches the resolved pin.
+- **Specs are VERSION-PINNED in `acp/adapters.ts`** (`pkg: [spec, bin]`)
+  for BOTH the pinned install and the `npx -y` fallback — upgrading an
+  adapter = bump the constant + re-check patch anchors. Resolution order:
+  `HN_ACP_COMMAND_*` override → pinned bin → npx.
+- **Listings reuse a live channel's adapter** (`attachChatHandlers` returns
+  `liveConnectionFor`; `sessions:list` rides it — `session/list` is a plain
+  concurrent JSON-RPC request, the same trick the reference portal uses on
+  its resident adapter — and falls back to a short-lived spawn on
+  error/timeout). Rig numbers: claude listing 2.7s → 0.13s cold / 0.09s
+  with a live channel; claude resume-open 6.1s → ~1.2s.
+- **Known follow-ups (not built):** event-driven listing-cache
+  invalidation, dsh listing bounded reads (today whole-file reads), and
+  W3's settings `model` key is what triggers the wrapper's re-assert path —
+  keep it (default-model feature); the patch, not config, is the fix.
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `design-phase-1-auth.md` — read it before touching auth. Summary for daily work:
