@@ -506,7 +506,11 @@ function EditProfile({
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="grid gap-2">
+          {/* content-start: the version cell carries a hint <p>, and without
+              it the default align-content:stretch distributes that extra
+              height into the OTHER cells' rows — pushing their inputs down
+              out of the row (the #6 alignment bug). */}
+          <div className="grid content-start gap-2">
             <Label htmlFor="prof-edit-name">{t('common.name')}</Label>
             <Input
               id="prof-edit-name"
@@ -517,7 +521,7 @@ function EditProfile({
               required
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid content-start gap-2">
             <Label htmlFor="prof-edit-desc">{t('common.description')}</Label>
             <Input
               id="prof-edit-desc"
@@ -527,7 +531,7 @@ function EditProfile({
               autoComplete="off"
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid content-start gap-2">
             <Label htmlFor="prof-edit-version">{t('profiles.versionLabel')}</Label>
             <Input
               id="prof-edit-version"
