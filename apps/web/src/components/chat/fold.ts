@@ -475,6 +475,14 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
       let next = createFoldState();
       for (const item of action.items) {
         if (item.type === 'user') {
+          // A user item is a turn BOUNDARY (#8): close whatever step is open
+          // so the next deltas open a NEW step BELOW this row. Replay batches
+          // (load capture, resync ring) carry no per-turn turn_result — the
+          // only other closer — so without this, turn N's text patched turn
+          // N-1's still-open step and rendered ABOVE this question. The
+          // boundary applies even when the item renders no blocks: the turn
+          // break is real regardless.
+          next = { ...next, currentStepIdx: -1, stepClosed: true };
           const blocks = promptBlocksToUserBlocks(item.blocks);
           if (blocks.length === 0) continue;
           next = {
