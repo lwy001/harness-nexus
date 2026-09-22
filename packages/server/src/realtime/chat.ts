@@ -70,6 +70,9 @@ export type ChatOpenResult =
 
 export type ChatSimpleResult = { ok: true } | { ok: false; code: string };
 
+/** #10 — `onMessageSend` distinguishes a direct send from a queued one. */
+export type ChatSendResult = { ok: true; queued: boolean } | { ok: false; code: string };
+
 /** A native-session resume arm as it travels browser → server → daemon (9 W7). */
 export interface ChatResumeArm {
   sessionId: string;
@@ -88,6 +91,13 @@ interface LiveSession {
   cwd: string;
   /** Last reported turn state — the server-side SESSION_BUSY gate. */
   busy: boolean;
+  /**
+   * #10 — the live Sender's send queue (SERVER-owned, depth 1). A message
+   * sent while `busy` parks here instead of bouncing; the idle transition
+   * in `onStream` flushes it as the next turn. `null` = slot free. Rides
+   * the session record, so a channel close drops it for free.
+   */
+  queuedPrompt: PromptBlock[] | null;
   /** Viewers all left while a turn ran — close when the turn ends. */
   closeWhenIdle: boolean;
   /** When the channel was opened — the eviction order (oldest first). */
@@ -248,6 +258,7 @@ export class ChatService {
       phase: 'starting',
       cwd,
       busy: false,
+      queuedPrompt: null,
       closeWhenIdle: false,
       openedAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -369,6 +380,12 @@ export class ChatService {
     this.deps.io.toCtl(existing.machineId, 'chat:session.resync', {
       sessionId: existing.sessionId,
     });
+    // #10 — re-push the send-queue slot so a re-joining viewer restores the
+    // queued chip. The daemon ring never carries the parked entry — it only
+    // becomes a transcript user row when it actually runs.
+    if (existing.queuedPrompt !== null) {
+      this.emitQueueState(existing, existing.queuedPrompt, false);
+    }
     return { ok: true, sessionId: existing.sessionId, joined: true, phase: existing.phase };
   }
 
@@ -566,12 +583,30 @@ export class ChatService {
       // Viewers left while this turn ran — once it ends, the channel closes
       // (relay the idle event first; the room may still have a rejoiner).
       if (wasBusy && !session.busy && session.closeWhenIdle) {
+        session.queuedPrompt = null; // #10 — closing drops the parked entry (no emit: the room is going away).
         this.deps.io.toChannel(sessionId, 'chat:event', { sessionId, event });
         await this.closeInternal(session, 'connection-lost', { notifyDaemon: true });
         return { ok: true };
       }
     }
     this.deps.io.toChannel(sessionId, 'chat:event', { sessionId, event });
+    // #10 — the busy→idle transition is the flush hook: the parked message
+    // now runs as the NEXT turn. Emitted after the idle relay so the viewer
+    // first sees the turn complete, then the queue drain, then the new turn.
+    if (
+      event.kind === 'session_status' &&
+      event.state === 'idle' &&
+      session.queuedPrompt !== null &&
+      session.phase === 'ready'
+    ) {
+      const queued = session.queuedPrompt;
+      session.queuedPrompt = null;
+      this.emitQueueState(session, null, true);
+      this.deps.io.toCtl(session.machineId, 'chat:message.send', {
+        sessionId,
+        prompt: queued,
+      });
+    }
     return { ok: true };
   }
 
@@ -583,16 +618,28 @@ export class ChatService {
     return { ok: true };
   }
 
-  /** Browser's `chat:message.send` — owner check, busy gate, prompt normalization. */
+/** Browser's `chat:message.send` — owner check, queue-on-busy, normalization. */
   onMessageSend(
     ownerId: string,
     sessionId: string,
     content: string | PromptBlock[],
-  ): ChatSimpleResult {
+  ): ChatSendResult {
     const session = this.live.get(sessionId);
     if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
     if (session.phase !== 'ready') return { ok: false, code: 'SESSION_NOT_READY' };
-    if (session.busy) return { ok: false, code: 'SESSION_BUSY' };
+    const prompt: PromptBlock[] =
+      typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+    // #10 — a busy session no longer bounces: the message parks in the
+    // server-owned slot (depth 1) and flushes when the running turn goes
+    // idle. A queued send serializes behind that turn, so it cannot add
+    // concurrency — the per-machine ACTIVE budget deliberately does not
+    // apply to it (it still guards idle-session sends below).
+    if (session.busy) {
+      if (session.queuedPrompt !== null) return { ok: false, code: 'QUEUE_FULL' };
+      session.queuedPrompt = prompt;
+      this.emitQueueState(session, prompt, false);
+      return { ok: true, queued: true };
+    }
     // Active budget (post-W8 redesign): mid-turn sessions cost a second,
     // smaller per-machine budget — starting a turn while the machine already
     // has `maxActiveSessionsPerMachine` turns generating bounces here (this
@@ -603,15 +650,46 @@ export class ChatService {
     if (activeOnMachine >= this.opts.maxActiveSessionsPerMachine) {
       return { ok: false, code: 'MACHINE_BUSY' };
     }
-    const prompt = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
     this.deps.io.toCtl(session.machineId, 'chat:message.send', { sessionId, prompt });
+    return { ok: true, queued: false };
+  }
+
+  /**
+   * Browser's `chat:queue.cancel` (#10) — drop the parked entry (atomic at
+   * the server; the "edit" flow is cancel + prefill the composer draft from
+   * the chip the browser already holds). Idempotent: an empty slot is ok.
+   */
+  onQueueCancel(ownerId: string, sessionId: string): ChatSimpleResult {
+    const session = this.live.get(sessionId);
+    if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
+    if (session.queuedPrompt !== null) {
+      session.queuedPrompt = null;
+      this.emitQueueState(session, null, false);
+    }
     return { ok: true };
+  }
+
+  /** #10 — push the slot's state to the channel room (the chip's truth). */
+  private emitQueueState(
+    session: LiveSession,
+    prompt: PromptBlock[] | null,
+    flushed: boolean,
+  ): void {
+    this.deps.io.toChannel(session.sessionId, 'chat:event', {
+      sessionId: session.sessionId,
+      event: { kind: 'queue_state', prompt, flushed },
+    });
   }
 
   /** Browser's `chat:turn.cancel` — idempotent; the daemon resolves the turn as cancelled. */
   onTurnCancel(ownerId: string, sessionId: string): ChatSimpleResult {
     const session = this.live.get(sessionId);
     if (!session || session.ownerId !== ownerId) return { ok: false, code: 'SESSION_NOT_FOUND' };
+    // #10 — stopping the turn DROPS the parked entry (it does not auto-send).
+    if (session.queuedPrompt !== null) {
+      session.queuedPrompt = null;
+      this.emitQueueState(session, null, false);
+    }
     this.deps.io.toCtl(session.machineId, 'chat:turn.cancel', { sessionId });
     return { ok: true };
   }

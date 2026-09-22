@@ -20,6 +20,7 @@ import {
   chatHistoryEventSchema,
   chatAdapterPrewarmRequestSchema,
   chatMessageSendRequestSchema,
+  chatQueueCancelRequestSchema,
   chatPermissionRespondRequestSchema,
   chatElicitationRespondRequestSchema,
   chatConfigSetRequestSchema,
@@ -603,6 +604,19 @@ export async function registerRealtime(
         parsed.data.sessionId,
         parsed.data.content,
       );
+      // #10 — `queued` tells the Sender its message parked in the slot (the
+      // queue_state event follows as the durable truth).
+      ack?.(result.ok ? { accepted: true, queued: result.queued } : { error: result.code });
+    });
+
+    // #10 — drop the parked send-queue entry (edit = cancel + re-draft).
+    socket.on('chat:queue.cancel', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatQueueCancelRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ error: 'proto:invalid' });
+        return;
+      }
+      const result = realtime.chat.onQueueCancel(socket.data.userId as string, parsed.data.sessionId);
       ack?.(result.ok ? { accepted: true } : { error: result.code });
     });
 

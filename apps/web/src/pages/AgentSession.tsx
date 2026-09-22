@@ -49,7 +49,7 @@ import {
   type DraftAttachment,
 } from '@/components/chat/image-attach.js';
 import { createFoldState, fold, type UserBlock } from '@/components/chat/fold.js';
-import type { ChatConfigSetPayload } from '@/realtime';
+import type { ChatConfigSetPayload, PromptBlock } from '@/realtime';
 
 /**
  * The Agent session page (Phase 9 W6, rewired 9 W7) — left: the AGENT'S OWN
@@ -506,7 +506,7 @@ export function AgentSessionPage() {
   async function send(): Promise<void> {
     const text = draft.trim();
     const canSend = text !== '' || attachments.length > 0 || fileRefs.length > 0;
-    if (!canSend || sessionId === '' || phase !== 'ready' || conversation.turnActive) return;
+    if (!canSend || sessionId === '' || phase !== 'ready') return;
     const blocks: UserBlock[] = [
       ...(text !== '' ? [{ type: 'text' as const, text }] : []),
       ...fileRefs.map((f) => ({ type: 'resource_link' as const, name: f.name, uri: f.uri })),
@@ -519,24 +519,64 @@ export function AgentSessionPage() {
     setDraft('');
     setAttachments([]);
     setFileRefs([]);
-    dispatch({ type: 'user_message', blocks });
-    const ack = await emitWithAck<{ accepted?: boolean; error?: string }>('chat:message.send', {
-      sessionId,
-      content: blocks,
-    });
+    // #10 — mid-turn the message QUEUES (server-owned slot): no optimistic
+    // user row; the chip is the queue_state projection, and the row appears
+    // when the flush actually starts the turn (fold converts on
+    // queue_state {prompt: null, flushed: true}).
+    if (!conversation.turnActive) dispatch({ type: 'user_message', blocks });
+    const ack = await emitWithAck<{ accepted?: boolean; queued?: boolean; error?: string }>(
+      'chat:message.send',
+      {
+        sessionId,
+        content: blocks,
+      },
+    );
     if (ack.error !== undefined) {
       // The turn never started — put everything back so nothing is lost.
       setDraft(text);
       setAttachments(attachments);
       setFileRefs(fileRefs);
       toast.error(
-        ack.error === 'SESSION_BUSY'
-          ? t('chat.turnBusy')
+        ack.error === 'QUEUE_FULL'
+          ? t('chat.queueFull')
           : ack.error === 'MACHINE_BUSY'
             ? t('chat.errMachineBusy')
             : ack.error,
       );
+    } else if (ack.queued === true) {
+      toast.info(t('chat.queuedToast'));
     }
+  }
+
+  /** #10 — drop the parked queue entry (the chip's ×). */
+  async function queueCancel(): Promise<void> {
+    if (sessionId === '') return;
+    await emitWithAck('chat:queue.cancel', { sessionId });
+  }
+
+  /** #10 — "edit" = take the chip back into the draft, then drop the slot. */
+  function queueEdit(): void {
+    const parked = conversation.queued;
+    if (parked === null) return;
+    const text = parked
+      .filter((b): b is Extract<PromptBlock, { type: 'text' }> => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n');
+    if (text !== '') setDraft(text);
+    setFileRefs(
+      parked.flatMap((b) =>
+        b.type === 'resource_link' ? [{ name: b.name, uri: b.uri }] : [],
+      ),
+    );
+    setAttachments((prev) => [
+      ...prev,
+      ...parked.flatMap((b, i) =>
+        b.type === 'image'
+          ? [{ id: `queued-${String(i)}`, name: `image-${String(i + 1)}`, data: b.data, mimeType: b.mimeType }]
+          : [],
+      ),
+    ]);
+    void queueCancel();
   }
 
   async function cancelTurn(): Promise<void> {
@@ -883,6 +923,9 @@ export function AgentSessionPage() {
                   turnActive={conversation.turnActive}
                   usage={conversation.usage}
                   onSend={() => void send()}
+                  queued={conversation.queued}
+                  onQueueEdit={queueEdit}
+                  onQueueCancel={() => void queueCancel()}
                   onCancel={() => void cancelTurn()}
                   attachments={attachments}
                   fileRefs={fileRefs}

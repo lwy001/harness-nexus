@@ -89,6 +89,13 @@ export type ChatStreamEvent =
     }
   | { kind: 'turn_result'; stopReason: 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' }
   | { kind: 'session_status'; state: 'active' | 'idle' }
+  | {
+      /** #10 — the server-owned send queue slot (depth 1). `flushed`
+       * distinguishes a clear-because-it-runs from a clear-because-cancelled. */
+      kind: 'queue_state';
+      prompt: PromptBlock[] | null;
+      flushed: boolean;
+    }
   | ({ kind: 'session_config' } & SessionConfigPatch)
   | ({ kind: 'plan' } & PlanPatch)
   | ({ kind: 'commands' } & CommandsPatch)

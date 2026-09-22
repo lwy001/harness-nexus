@@ -490,7 +490,7 @@ describe('session lifecycle', () => {
         sessionId,
         content: 'hello agent',
       });
-      expect(sendAck).toEqual({ accepted: true });
+      expect(sendAck).toEqual({ accepted: true, queued: false });
       const prompt = (await promptP) as { sessionId: string; prompt: unknown[] };
       expect(prompt.sessionId).toBe(sessionId);
       expect(prompt.prompt).toEqual([{ type: 'text', text: 'hello agent' }]);
@@ -508,11 +508,27 @@ describe('session lifecycle', () => {
       expect(await activeP).toEqual({ kind: 'session_status', state: 'active' });
       expect(await deltaP).toEqual({ kind: 'message_delta', delta: 'working on it' });
 
-      const busy = await emitAck(browser, 'chat:message.send', {
+      // #10 — a second prompt mid-turn QUEUES (server-owned slot, depth 1):
+      // ack carries queued:true and the chip rides a queue_state event.
+      const chipP = nextEvent(browser, (e) => e.kind === 'queue_state');
+      const queued = await emitAck(browser, 'chat:message.send', {
         sessionId,
         content: 'too early',
       });
-      expect(busy).toEqual({ error: 'SESSION_BUSY' });
+      expect(queued).toEqual({ accepted: true, queued: true });
+      expect(await chipP).toEqual({
+        kind: 'queue_state',
+        prompt: [{ type: 'text', text: 'too early' }],
+        flushed: false,
+      });
+      // Drop the chip so the rest of this test's idle→send flow is clean.
+      const droppedP = nextEvent(
+        browser,
+        (e) => e.kind === 'queue_state' && e.prompt === null,
+      );
+      const dropAck = await emitAck(browser, 'chat:queue.cancel', { sessionId });
+      expect(dropAck).toEqual({ accepted: true });
+      expect(await droppedP).toEqual({ kind: 'queue_state', prompt: null, flushed: false });
 
       const permReqP = nextEvent(browser, (e) => e.kind === 'permission_request');
       daemon.emit('chat:event', {
@@ -559,7 +575,7 @@ describe('session lifecycle', () => {
       await idleP;
       const secondPromptP = once(daemon, 'chat:message.send');
       const ok = await emitAck(browser, 'chat:message.send', { sessionId, content: 'again' });
-      expect(ok).toEqual({ accepted: true });
+      expect(ok).toEqual({ accepted: true, queued: false });
       await secondPromptP;
 
       // Re-join: a second tab opens the SAME session and sees new events.
@@ -828,7 +844,7 @@ describe('session lifecycle', () => {
         sessionId: s2.sessionId,
         content: 'goes through',
       });
-      expect(ok).toEqual({ accepted: true });
+      expect(ok).toEqual({ accepted: true, queued: false });
 
       await emitAck(browser, 'chat:session.close', { sessionId: s1.sessionId });
       await emitAck(browser, 'chat:session.close', { sessionId: s2.sessionId });
@@ -998,6 +1014,98 @@ describe('session lifecycle', () => {
     expect(closed.reason).toBe('agent-exited');
   });
 });
+
+  it(
+    '#10: the send queue parks, fills, cancels, flushes on idle, and replays on rejoin',
+    { timeout: 15000 },
+    async () => {
+    const startP = once(daemon, 'chat:session.start');
+    const res = await openSession(browser, agentId);
+    const sessionId = res.sessionId!;
+    const start = (await startP) as { sessionId: string };
+    const readyP = once(browser, 'chat:session.ready');
+    readyFor(daemon, start);
+    await readyP;
+
+    // Turn 1 running.
+    daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'active' } });
+    await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'active');
+
+    // Park one message.
+    const chipP = nextEvent(browser, (e) => e.kind === 'queue_state');
+    const queued = await emitAck(browser, 'chat:message.send', {
+      sessionId,
+      content: 'follow-up question',
+    });
+    expect(queued).toEqual({ accepted: true, queued: true });
+    expect(await chipP).toEqual({
+      kind: 'queue_state',
+      prompt: [{ type: 'text', text: 'follow-up question' }],
+      flushed: false,
+    });
+
+    // Depth 1: a second parked send bounces with QUEUE_FULL.
+    const full = await emitAck(browser, 'chat:message.send', {
+      sessionId,
+      content: 'another',
+    });
+    expect(full).toEqual({ error: 'QUEUE_FULL' });
+
+    // Rejoin replays the chip (a second tab opening the same channel).
+    const tab2 = io(`${baseUrl}/app`, { auth: { token: jwt }, transports: ['websocket'] });
+    await once(tab2, 'connect');
+    const replayP = nextEvent(tab2, (e) => e.kind === 'queue_state' && e.prompt !== null);
+    await openSession(tab2, agentId, sessionId);
+    expect(await replayP).toEqual({
+      kind: 'queue_state',
+      prompt: [{ type: 'text', text: 'follow-up question' }],
+      flushed: false,
+    });
+    tab2.disconnect();
+
+    // Turn 1 ends — the idle transition flushes: queue_state(null, flushed)
+    // to the room AND the parked prompt forwarded to the daemon.
+    const flushEvtP = nextEvent(
+      browser,
+      (e) => e.kind === 'queue_state' && e.prompt === null && e.flushed === true,
+    );
+    const flushPromptP = once(daemon, 'chat:message.send');
+    daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'idle' } });
+    await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'idle');
+    expect(await flushEvtP).toEqual({ kind: 'queue_state', prompt: null, flushed: true });
+    const flushed = (await flushPromptP) as { sessionId: string; prompt: unknown[] };
+    expect(flushed.sessionId).toBe(sessionId);
+    expect(flushed.prompt).toEqual([{ type: 'text', text: 'follow-up question' }]);
+
+    // A parked entry is DROPPED by turn cancel (not auto-sent).
+    daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'active' } });
+    await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'active');
+    let sendsAfterPark = 0;
+    daemon.on('chat:message.send', () => {
+      sendsAfterPark += 1;
+    });
+    await emitAck(browser, 'chat:message.send', { sessionId, content: 'park then stop' });
+    const dropP = nextEvent(
+      browser,
+      (e) => e.kind === 'queue_state' && e.prompt === null && e.flushed === false,
+    );
+    const cancelP = once(daemon, 'chat:turn.cancel');
+    await emitAck(browser, 'chat:turn.cancel', { sessionId });
+    expect(await dropP).toEqual({ kind: 'queue_state', prompt: null, flushed: false });
+    await cancelP;
+    daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'idle' } });
+    await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'idle');
+    // No flush followed the cancel-idle: the parked 'park then stop' never
+    // reached the daemon.
+    await new Promise((r) => setTimeout(r, 150));
+    expect(sendsAfterPark).toBe(0);
+    daemon.off('chat:message.send', () => {
+      sendsAfterPark += 1;
+    });
+
+    await emitAck(browser, 'chat:session.close', { sessionId });
+    },
+  );
 
 describe('REST surface', () => {
   // The 'user disconnect' test above (re)creates the suite daemon and leaves
