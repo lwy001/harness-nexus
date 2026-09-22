@@ -36,7 +36,7 @@ const en = {
   // Edit dialog (#6) — the version field is the marketplace publish switch.
   editTitle: 'Edit profile',
   editDesc:
-    'Rename or re-describe the profile, or bump its version — Claude Code compares versions, so a bump is what publishes an update to marketplace installs.',
+    'Rename, re-describe, or re-pick the profile entries — or bump its version: Claude Code compares versions, so a bump is what publishes an update to marketplace installs.',
   versionLabel: 'Version',
   versionHint: 'Bump to publish a marketplace update.',
   updated: 'Profile saved',
@@ -80,7 +80,7 @@ const zh: typeof en = {
   created: '已创建配置集',
   editTitle: '编辑配置集',
   editDesc:
-    '重命名或修改描述，或升级版本号——Claude Code 按版本号比较，升级版本号即向市场安装发布更新。',
+    '重命名、修改描述或增删条目，也可升级版本号——Claude Code 按版本号比较，升级版本号即向市场安装发布更新。',
   versionLabel: '版本',
   versionHint: '升级版本号即发布市场更新。',
   updated: '配置集已保存',

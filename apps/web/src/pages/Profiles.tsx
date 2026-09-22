@@ -44,6 +44,7 @@ import { MoreHorizontalIcon } from 'lucide-react';
 import {
   HarnessNexusError,
   type Profile,
+  type ProfileEntryInput,
   type McpServer,
   type Resource,
   type ResourceKind,
@@ -51,6 +52,163 @@ import {
 } from '@harness-nexus/sdk';
 
 type Scope = 'global' | 'personal';
+
+/** A stored profile entry row (the domain shape) — used when carrying
+ * pinnedVersion/installOptions over from the profile being edited. */
+type ProfileEntryRow = Profile['entries'][number];
+
+/**
+ * Fetch the MCP servers + resources the caller can see — the entry-checkbox
+ * universe for both the create and the edit dialogs (independent → Promise.all).
+ */
+function useEntryLists(): {
+  servers: McpServer[] | null;
+  resources: Resource[] | null;
+} {
+  const [servers, setServers] = useState<McpServer[] | null>(null);
+  const [resources, setResources] = useState<Resource[] | null>(null);
+  useEffect(() => {
+    Promise.all([api.listMcpServers(), api.listResources()])
+      .then(([s, r]) => {
+        setServers(s);
+        setResources(r);
+      })
+      .catch(() => {
+        setServers([]);
+        setResources([]);
+      });
+  }, []);
+  return { servers, resources };
+}
+
+/** Toggle one id in a Set — functional setState (Vercel React rules). */
+function toggleIn(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string): void {
+  setter((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+}
+
+/**
+ * Build the PATCH entries from the checkbox state. Still-selected ids that
+ * already had a row keep their pinnedVersion/installOptions; ids absent from
+ * the fetched lists (their target was deleted) drop out — saving self-heals
+ * dead references instead of 409-ing forever.
+ */
+function buildEntries(
+  originals: ProfileEntryRow[],
+  resources: Resource[],
+  selectedServers: Set<string>,
+  selectedResources: Set<string>,
+): ProfileEntryInput[] {
+  const extrasFor = (id: string) => {
+    const o = originals.find((e) => e.resourceId === id);
+    return {
+      ...(o?.pinnedVersion ? { pinnedVersion: o.pinnedVersion } : {}),
+      ...(o?.installOptions && o.kind !== 'mcp'
+        ? { installOptions: o.installOptions as Record<string, unknown> }
+        : {}),
+    };
+  };
+  return [
+    ...[...selectedServers].map((mcpServerId) => ({ mcpServerId, ...extrasFor(mcpServerId) })),
+    ...[...selectedResources].map((resourceId) => ({
+      resourceId,
+      kind: resources.find((r) => r.id === resourceId)!.kind as NonMcpKind,
+      ...extrasFor(resourceId),
+    })),
+  ];
+}
+
+/** Shared entry checkboxes: MCP servers + one fieldset per resource kind. */
+function EntryPickers({
+  servers,
+  resources,
+  selectedServers,
+  selectedResources,
+  onToggleServer,
+  onToggleResource,
+}: {
+  servers: McpServer[] | null;
+  resources: Resource[] | null;
+  selectedServers: Set<string>;
+  selectedResources: Set<string>;
+  onToggleServer: (id: string) => void;
+  onToggleResource: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      <fieldset className="grid gap-2">
+        <legend className="text-sm font-medium">{t('profiles.serversLegend')}</legend>
+        {servers === null ? (
+          <p className="text-muted-foreground text-sm">{t('profiles.loadingServers')}</p>
+        ) : servers.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{t('profiles.noServers')}</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {servers.map((s) => (
+              <label
+                key={s.id}
+                className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedServers.has(s.id)}
+                  onChange={() => onToggleServer(s.id)}
+                  className="size-4"
+                />
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                <span className="text-muted-foreground font-mono text-[10px]">
+                  {s.transport.type}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
+
+      {RESOURCE_KINDS.map((kind) => {
+        const of = (resources ?? []).filter((r) => r.kind === kind);
+        return (
+          <fieldset key={kind} className="grid gap-2">
+            <legend className="text-sm font-medium">
+              {t(KIND_LEGEND[kind])}
+              <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                {t('profiles.visibleCount', { count: of.length })}
+              </span>
+            </legend>
+            {resources === null ? (
+              <p className="text-muted-foreground text-sm">{t('common.loading')}</p>
+            ) : of.length === 0 ? (
+              <p className="text-muted-foreground text-sm">{t('profiles.noneInResources')}</p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {of.map((r) => (
+                  <label
+                    key={r.id}
+                    className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedResources.has(r.id)}
+                      onChange={() => onToggleResource(r.id)}
+                      className="size-4"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                    <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+        );
+      })}
+    </>
+  );
+}
 
 /** The Agent targets a profile can be shaped for (Phase 3.2 + codex + 8 T1). */
 const TARGETS: AgentTarget[] = [
@@ -280,10 +438,10 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
 }
 
 /**
- * Edit dialog (#6): name / description / version only — `target` is immutable
- * post-create and entries are shaped at create time. The version field is the
- * publish switch for marketplace installs: Claude Code compares versions, so
- * bumping is what makes `plugin update` pull the new build.
+ * Edit dialog (#6): name / description / version + the entry checkboxes —
+ * `target` is immutable post-create. The version field is the publish switch
+ * for marketplace installs: Claude Code compares versions, so bumping is what
+ * makes `plugin update` pull the new build.
  */
 function EditProfile({
   profile,
@@ -300,6 +458,15 @@ function EditProfile({
   const [description, setDescription] = useState(profile.description ?? '');
   const [version, setVersion] = useState(profile.version);
   const [busy, setBusy] = useState(false);
+  const { servers, resources } = useEntryLists();
+  // Preselect from the stored entries: mcp rows reference McpServer.ids,
+  // everything else references Resource.ids (3.5's two arms).
+  const [selectedServers, setSelectedServers] = useState<Set<string>>(
+    () => new Set(profile.entries.filter((e) => e.kind === 'mcp').map((e) => e.resourceId)),
+  );
+  const [selectedResources, setSelectedResources] = useState<Set<string>>(
+    () => new Set(profile.entries.filter((e) => e.kind !== 'mcp').map((e) => e.resourceId)),
+  );
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -311,6 +478,12 @@ function EditProfile({
             name,
             ...(description ? { description } : {}),
             version,
+            entries: buildEntries(
+              profile.entries,
+              resources ?? [],
+              selectedServers,
+              selectedResources,
+            ),
           }),
         logout,
       );
@@ -329,6 +502,7 @@ function EditProfile({
       onClose={onClose}
       title={t('profiles.editTitle')}
       description={t('profiles.editDesc')}
+      size="xl"
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-3">
@@ -367,6 +541,16 @@ function EditProfile({
             <p className="text-muted-foreground text-xs">{t('profiles.versionHint')}</p>
           </div>
         </div>
+
+        <EntryPickers
+          servers={servers}
+          resources={resources}
+          selectedServers={selectedServers}
+          selectedResources={selectedResources}
+          onToggleServer={(id) => toggleIn(setSelectedServers, id)}
+          onToggleResource={(id) => toggleIn(setSelectedResources, id)}
+        />
+
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             {t('common.cancel')}
@@ -391,31 +575,7 @@ function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated:
   const [selectedServers, setSelectedServers] = useState<Set<string>>(new Set());
   const [selectedResources, setSelectedResources] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [servers, setServers] = useState<McpServer[] | null>(null);
-  const [resources, setResources] = useState<Resource[] | null>(null);
-
-  // Fetch the MCP servers + resources the caller can see, to populate the
-  // entry checkboxes (independent lists → Promise.all).
-  useEffect(() => {
-    Promise.all([api.listMcpServers(), api.listResources()])
-      .then(([s, r]) => {
-        setServers(s);
-        setResources(r);
-      })
-      .catch(() => {
-        setServers([]);
-        setResources([]);
-      });
-  }, []);
-
-  function toggle(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const { servers, resources } = useEntryLists();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -423,13 +583,7 @@ function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated:
     try {
       // Mixed entry arms (Phase 3.5): mcpServerId for MCP, {resourceId, kind}
       // for everything else — exactly the two REST shapes.
-      const entries = [
-        ...[...selectedServers].map((mcpServerId) => ({ mcpServerId })),
-        ...[...selectedResources].map((resourceId) => ({
-          resourceId,
-          kind: (resources ?? []).find((r) => r.id === resourceId)!.kind as NonMcpKind,
-        })),
-      ];
+      const entries = buildEntries([], resources ?? [], selectedServers, selectedResources);
       await withAuthGuard(
         () =>
           api.createProfile({
@@ -514,71 +668,14 @@ function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated:
           </div>
         </div>
 
-        <fieldset className="grid gap-2">
-          <legend className="text-sm font-medium">{t('profiles.serversLegend')}</legend>
-          {servers === null ? (
-            <p className="text-muted-foreground text-sm">{t('profiles.loadingServers')}</p>
-          ) : servers.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t('profiles.noServers')}</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {servers.map((s) => (
-                <label
-                  key={s.id}
-                  className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedServers.has(s.id)}
-                    onChange={() => toggle(setSelectedServers, s.id)}
-                    className="size-4"
-                  />
-                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                  <span className="text-muted-foreground font-mono text-[10px]">
-                    {s.transport.type}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </fieldset>
-
-        {RESOURCE_KINDS.map((kind) => {
-          const of = (resources ?? []).filter((r) => r.kind === kind);
-          return (
-            <fieldset key={kind} className="grid gap-2">
-              <legend className="text-sm font-medium">
-                {t(KIND_LEGEND[kind])}
-                <span className="text-muted-foreground ml-1.5 text-xs font-normal">
-                  {t('profiles.visibleCount', { count: of.length })}
-                </span>
-              </legend>
-              {resources === null ? (
-                <p className="text-muted-foreground text-sm">{t('common.loading')}</p>
-              ) : of.length === 0 ? (
-                <p className="text-muted-foreground text-sm">{t('profiles.noneInResources')}</p>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {of.map((r) => (
-                    <label
-                      key={r.id}
-                      className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedResources.has(r.id)}
-                        onChange={() => toggle(setSelectedResources, r.id)}
-                        className="size-4"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                      <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </fieldset>
-          );
-        })}
+        <EntryPickers
+          servers={servers}
+          resources={resources}
+          selectedServers={selectedServers}
+          selectedResources={selectedResources}
+          onToggleServer={(id) => toggleIn(setSelectedServers, id)}
+          onToggleResource={(id) => toggleIn(setSelectedResources, id)}
+        />
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
