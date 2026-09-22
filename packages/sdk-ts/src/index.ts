@@ -20,6 +20,7 @@ import type {
   SkillMeta,
   SkillBundle,
   Machine,
+  ChatPrewarmSettings,
 } from '@harness-nexus/core';
 import type {
   JobView,
@@ -58,6 +59,7 @@ export {
   type HookEvent,
 } from '@harness-nexus/shared';
 export type {
+  ChatPrewarmSettings,
   JobView,
   InventorySnapshot,
   InventoryDiff,
@@ -359,7 +361,7 @@ export class HarnessNexusClient {
       remoteChatEnabled?: boolean;
       baseWorkspace?: string | null;
       /** Issue #3 — machine-scoped per-target pre-warm switches (replace semantics). */
-      chatPrewarm?: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
+      chatPrewarm?: ChatPrewarmSettings;
     },
   ): Promise<MachineView> {
     const res = await this.request('PATCH', `/api/machines/${id}`, input);

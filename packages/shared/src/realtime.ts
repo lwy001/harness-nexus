@@ -631,8 +631,8 @@ export const chatSessionStartEventSchema = z.object({
 
 // ---- adapter pre-warm (Issue #3) ----
 
-/** Targets the pre-warm pool serves (pi = in-daemon façade, opencode = out of scope). */
-export const PREWARM_ADAPTER_TARGETS = ['claude-code', 'codex', 'deepseek'] as const;
+/** Targets the pre-warm pool serves (pi = in-daemon façade, nothing to boot). */
+export const PREWARM_ADAPTER_TARGETS = ['claude-code', 'codex', 'deepseek', 'opencode'] as const;
 
 export type PrewarmAdapterTarget = (typeof PREWARM_ADAPTER_TARGETS)[number];
 

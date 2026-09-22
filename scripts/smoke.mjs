@@ -2931,14 +2931,26 @@ r = await req('POST', '/api/auth/login', {
 const pwOtherToken = r.json.token;
 r = await req('PATCH', `/api/machines/${pwMachineId}`, {
   token: pwOtherToken,
-  body: { chatPrewarm: { 'claude-code': true, codex: true, deepseek: true } },
+  body: { chatPrewarm: { 'claude-code': true, codex: true, deepseek: true, opencode: true } },
 });
 expect('foreign non-owner PATCH hidden 404', r.status, 404);
 r = await req('PATCH', `/api/machines/${pwMachineId}`, {
   token: userToken,
-  body: { chatPrewarm: { 'claude-code': false, codex: true, deepseek: true } },
+  body: { chatPrewarm: { 'claude-code': false, codex: true, deepseek: true, opencode: false } },
 });
 expect('owner PATCH ok', r.status, 200);
+// The map is strict replace-semantics — a legacy 3-key payload is a 400, not
+// a silent default-fill (the web normalizes with defaults before sending).
+r = await req('PATCH', `/api/machines/${pwMachineId}`, {
+  token: userToken,
+  body: { chatPrewarm: { 'claude-code': false, codex: true, deepseek: true } },
+});
+expect('legacy 3-key PATCH rejected 400', r.status, 400);
+r = await req('PATCH', `/api/machines/${pwMachineId}`, {
+  token: userToken,
+  body: { chatPrewarm: { 'claude-code': false, codex: true, deepseek: true, opencode: false } },
+});
+expect('owner PATCH ok (restore)', r.status, 200);
 r = await req('PATCH', `/api/machines/${pwMachineId}`, {
   token: userToken,
   body: { name: 'prewarm-box-2' },
@@ -2946,7 +2958,7 @@ r = await req('PATCH', `/api/machines/${pwMachineId}`, {
 expect(
   'unrelated PATCH keeps the map',
   JSON.stringify(r.json.machine.chatPrewarm),
-  JSON.stringify({ 'claude-code': false, codex: true, deepseek: true }),
+  JSON.stringify({ 'claude-code': false, codex: true, deepseek: true, opencode: false }),
 );
 await req('DELETE', `/api/machines/${pwMachineId}`, { token: userToken });
 

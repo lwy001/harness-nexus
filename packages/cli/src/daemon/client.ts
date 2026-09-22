@@ -19,7 +19,7 @@ import { attachChatHandlers } from './chat.js';
 import { attachSessionsHandlers } from './sessions.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.23.0-i3';
+export const DAEMON_VERSION = '0.24.0-i4';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
