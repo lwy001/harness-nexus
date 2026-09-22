@@ -2911,33 +2911,44 @@ if (w7Err.includes('Error:')) {
   );
 }
 
-log('\n--- [#3] chat pre-warm settings: defaults, admin write, non-admin 403 ---');
-r = await req('GET', '/api/settings/chat-prewarm', { token: userToken });
-expect(
-  'prewarm defaults (deepseek on)',
-  JSON.stringify(r.json.chatPrewarm),
-  JSON.stringify({ 'claude-code': false, codex: false, deepseek: true }),
-);
-r = await req('PUT', '/api/settings/chat-prewarm', {
+log('\n--- [#3] machine-scoped chat pre-warm switches ---');
+r = await req('POST', '/api/machines', {
   token: userToken,
-  body: { 'claude-code': true, codex: false, deepseek: true },
+  body: { name: 'prewarm-box' },
 });
-expect('prewarm PUT non-admin rejected', r.status, 403);
-r = await req('PUT', '/api/settings/chat-prewarm', {
+expect('enroll prewarm machine', r.status, 201);
+const pwMachineId = r.json.machine.id;
+r = await req('GET', `/api/machines/${pwMachineId}`, { token: userToken });
+expect('map absent by default (defaults apply)', r.json.machine.chatPrewarm, undefined);
+// Registration may be toggled off by earlier sections — admin-create instead.
+await req('POST', '/api/users', {
   token: adminToken,
-  body: { 'claude-code': false, codex: true, deepseek: true },
+  body: { username: 'pwother', password: 'hunter2hunter2' },
 });
-expect('prewarm PUT admin ok', r.status, 200);
-r = await req('GET', '/api/settings/chat-prewarm', { token: userToken });
+r = await req('POST', '/api/auth/login', {
+  body: { username: 'pwother', password: 'hunter2hunter2' },
+});
+const pwOtherToken = r.json.token;
+r = await req('PATCH', `/api/machines/${pwMachineId}`, {
+  token: pwOtherToken,
+  body: { chatPrewarm: { 'claude-code': true, codex: true, deepseek: true } },
+});
+expect('foreign non-owner PATCH hidden 404', r.status, 404);
+r = await req('PATCH', `/api/machines/${pwMachineId}`, {
+  token: userToken,
+  body: { chatPrewarm: { 'claude-code': false, codex: true, deepseek: true } },
+});
+expect('owner PATCH ok', r.status, 200);
+r = await req('PATCH', `/api/machines/${pwMachineId}`, {
+  token: userToken,
+  body: { name: 'prewarm-box-2' },
+});
 expect(
-  'prewarm read back after write',
-  JSON.stringify(r.json.chatPrewarm),
+  'unrelated PATCH keeps the map',
+  JSON.stringify(r.json.machine.chatPrewarm),
   JSON.stringify({ 'claude-code': false, codex: true, deepseek: true }),
 );
-await req('PUT', '/api/settings/chat-prewarm', {
-  token: adminToken,
-  body: { 'claude-code': false, codex: false, deepseek: true },
-});
+await req('DELETE', `/api/machines/${pwMachineId}`, { token: userToken });
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

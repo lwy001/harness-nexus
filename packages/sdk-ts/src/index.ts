@@ -45,6 +45,8 @@ export {
   SCANNABLE_TARGETS,
   RUNTIME_API_SUPPORT,
   PROVIDER_API_SUPPORT,
+  PREWARM_ADAPTER_TARGETS,
+  DEFAULT_CHAT_PREWARM_SETTINGS,
   providerApiToSpecApi,
   jobViewSchema,
   HOOK_EVENTS,
@@ -352,7 +354,13 @@ export class HarnessNexusClient {
 
   async updateMachine(
     id: string,
-    input: { name?: string; remoteChatEnabled?: boolean; baseWorkspace?: string | null },
+    input: {
+      name?: string;
+      remoteChatEnabled?: boolean;
+      baseWorkspace?: string | null;
+      /** Issue #3 — machine-scoped per-target pre-warm switches (replace semantics). */
+      chatPrewarm?: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
+    },
   ): Promise<MachineView> {
     const res = await this.request('PATCH', `/api/machines/${id}`, input);
     return res.machine;
@@ -606,23 +614,6 @@ export class HarnessNexusClient {
 
   async setRegistration(allowRegistration: boolean): Promise<{ allowRegistration: boolean }> {
     return this.request('PUT', '/api/settings/registration', { allowRegistration });
-  }
-
-  /** Issue #3 — per-target adapter pre-warm switches (admin writes). */
-  async getChatPrewarm(): Promise<{
-    chatPrewarm: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
-  }> {
-    return this.request('GET', '/api/settings/chat-prewarm');
-  }
-
-  async setChatPrewarm(input: {
-    'claude-code': boolean;
-    codex: boolean;
-    deepseek: boolean;
-  }): Promise<{
-    chatPrewarm: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
-  }> {
-    return this.request('PUT', '/api/settings/chat-prewarm', input);
   }
 
   // ---- credentials ----

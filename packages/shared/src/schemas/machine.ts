@@ -10,6 +10,26 @@ export const createMachineSchema = z.object({
   name: z.string().min(1).max(64),
 });
 
+/**
+ * Issue #3 — per-target adapter pre-warm switches, MACHINE-scoped (the idle
+ * processes live on the machine, so its owner decides). The zod layer mirrors
+ * `core/domain/machine.ts`; keep the shapes in sync. pi/opencode are out of
+ * scope (pi chats through the in-daemon RPC façade; the wire mechanism is
+ * target-generic, so extending later is additive).
+ */
+export const chatPrewarmSettingsSchema = z.object({
+  'claude-code': z.boolean(),
+  codex: z.boolean(),
+  deepseek: z.boolean(),
+});
+
+/** Applied when the machine row predates the feature (NULL column) — mirrors core. */
+export const DEFAULT_CHAT_PREWARM_SETTINGS = {
+  'claude-code': false,
+  codex: false,
+  deepseek: true,
+};
+
 export const updateMachineSchema = z
   .object({
     name: z.string().min(1).max(64).optional(),
@@ -20,10 +40,15 @@ export const updateMachineSchema = z
      * under which chat sessions may pick their cwd. Explicit `null` clears it.
      */
     baseWorkspace: z.string().min(1).max(1024).nullable().optional(),
+    /** Issue #3 — replace-semantics per-target pre-warm map (full object). */
+    chatPrewarm: chatPrewarmSettingsSchema.optional(),
   })
   .refine(
     (v) =>
-      v.name !== undefined || v.remoteChatEnabled !== undefined || v.baseWorkspace !== undefined,
+      v.name !== undefined ||
+      v.remoteChatEnabled !== undefined ||
+      v.baseWorkspace !== undefined ||
+      v.chatPrewarm !== undefined,
     { message: 'at least one of name / remoteChatEnabled / baseWorkspace is required' },
   );
 

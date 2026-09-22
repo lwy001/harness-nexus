@@ -103,6 +103,8 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
         ? { remoteChatEnabled: input.remoteChatEnabled }
         : {}),
       ...(input.baseWorkspace !== undefined ? { baseWorkspace: input.baseWorkspace } : {}),
+      // Issue #3 — machine-scoped pre-warm switches (replace semantics).
+      ...(input.chatPrewarm !== undefined ? { chatPrewarm: input.chatPrewarm } : {}),
     });
     return { machine: machineView(updated, app.realtime.presence.isOnline(updated.id)) };
   });
