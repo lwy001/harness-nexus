@@ -18,6 +18,7 @@ import {
   chatChannelsCloseAllRequestSchema,
   chatChannelsSyncRequestSchema,
   chatHistoryEventSchema,
+  chatAdapterPrewarmRequestSchema,
   chatMessageSendRequestSchema,
   chatPermissionRespondRequestSchema,
   chatElicitationRespondRequestSchema,
@@ -571,6 +572,23 @@ export async function registerRealtime(
         // `phase` lets the browser settle its pane from the ack alone — the
         // ready push can predate the caller's event listeners.
         ack?.({ sessionId: result.sessionId, phase: result.phase });
+      })();
+    });
+
+    // Issue #3 — best-effort adapter pre-warm (the session page fires it on
+    // mount; ack false is a normal answer: switch off, offline, unsupported).
+    socket.on('chat:adapter.prewarm', (payload: unknown, ack?: (res: unknown) => void) => {
+      const parsed = chatAdapterPrewarmRequestSchema.safeParse(payload);
+      if (!parsed.success) {
+        ack?.({ accepted: false, error: 'proto:invalid' });
+        return;
+      }
+      void (async () => {
+        const result = await realtime.chat.prewarmAdapter(
+          socket.data.userId as string,
+          parsed.data.agentInstanceId,
+        );
+        ack?.(result.ok ? { accepted: true } : { accepted: false, error: result.code });
       })();
     });
 

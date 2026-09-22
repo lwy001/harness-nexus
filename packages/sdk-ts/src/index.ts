@@ -608,6 +608,23 @@ export class HarnessNexusClient {
     return this.request('PUT', '/api/settings/registration', { allowRegistration });
   }
 
+  /** Issue #3 — per-target adapter pre-warm switches (admin writes). */
+  async getChatPrewarm(): Promise<{
+    chatPrewarm: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
+  }> {
+    return this.request('GET', '/api/settings/chat-prewarm');
+  }
+
+  async setChatPrewarm(input: {
+    'claude-code': boolean;
+    codex: boolean;
+    deepseek: boolean;
+  }): Promise<{
+    chatPrewarm: { 'claude-code': boolean; codex: boolean; deepseek: boolean };
+  }> {
+    return this.request('PUT', '/api/settings/chat-prewarm', input);
+  }
+
   // ---- credentials ----
   async createCredential(input: {
     name: string;

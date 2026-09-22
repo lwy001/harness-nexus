@@ -575,6 +575,73 @@ describe('session round-trip vs the fixture agent', () => {
     expect(lateAck).toHaveBeenCalledWith({ error: 'unknown-session' });
   }, 15000);
 
+  it('prewarm → start ADOPTS the pooled adapter, re-arms, and tears down on disconnect (issue #3)', async () => {
+    const socket = new FakeSocket();
+    const handle = attachChatHandlers(socket as never, {
+      env: {
+        HN_ACP_COMMAND_CODEX: `node ${FIXTURE}`,
+        PATH: process.env.PATH ?? '',
+      },
+      homeDir: LEDGER_HOME,
+    });
+
+    // Unsupported target → declined without spawning.
+    const badAck = vi.fn();
+    socket.receive('chat:adapter.prewarm', { target: 'hermes' }, badAck);
+    expect(badAck).toHaveBeenCalledWith({ accepted: false });
+
+    // Supported target → pooled spawn ledgered under the pseudo id, ready
+    // (initialized) shortly after.
+    const ack = vi.fn();
+    socket.receive('chat:adapter.prewarm', { target: 'codex' }, ack);
+    expect(ack).toHaveBeenCalledWith({ accepted: true });
+    await waitFor(() => (handle.prewarmReady('codex') ? true : undefined));
+    const prewarmed = readAdapterLedger(LEDGER_HOME).find(
+      (e) => e.wireSessionId === 'prewarm-codex',
+    );
+    expect(prewarmed).toBeDefined();
+
+    // The channel ADOPTS the pooled process — same pgid, pseudo file replaced
+    // by the channel's own entry. No second spawn happened.
+    socket.receive('chat:session.start', {
+      sessionId: 'pw-1',
+      agentInstanceId: 'ag-1',
+      target: 'codex',
+      cwd: '/tmp',
+      prewarm: true,
+    });
+    const ready = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+    expect(ready.error).toBeUndefined();
+    const adopted = await waitFor(() =>
+      readAdapterLedger(LEDGER_HOME).find((e) => e.wireSessionId === 'pw-1'),
+    );
+    expect(adopted.pgid).toBe(prewarmed!.pgid);
+    // The adopted process's pseudo entry is gone (a re-armed entry with a NEW
+    // pgid may already exist by now — the re-arm fires right after registration).
+    expect(
+      readAdapterLedger(LEDGER_HOME).find(
+        (e) => e.wireSessionId === 'prewarm-codex' && e.pgid === prewarmed!.pgid,
+      ),
+    ).toBeUndefined();
+
+    // prewarm:true on the start event → the pool re-armed with a FRESH process.
+    await waitFor(() => (handle.prewarmReady('codex') ? true : undefined));
+    const reArmed = readAdapterLedger(LEDGER_HOME).find(
+      (e) => e.wireSessionId === 'prewarm-codex' && e.pgid !== prewarmed!.pgid,
+    );
+    expect(reArmed).toBeDefined();
+
+    // A deliberate /ctl stop tears the channel AND the pooled adapter down.
+    socket.receive('chat:session.close', { sessionId: 'pw-1', reason: 'user' });
+    await waitFor(() => (socket.eventsOf('chat:session.closed').length > 0 ? true : undefined));
+    socket.receive('disconnect', 'io client disconnect');
+    await waitFor(() => (handle.prewarmReady('codex') ? undefined : true));
+  }, 20000);
+
   it('a plan turn surfaces full-replace snapshots and the history ring replays them (9 W14)', async () => {
     const socket = new FakeSocket();
     attachChatHandlers(socket as never, {

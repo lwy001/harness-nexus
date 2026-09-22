@@ -1,6 +1,10 @@
 import { resolve as resolvePath } from 'node:path';
 import type { UnitOfWork } from '@harness-nexus/core';
-import { isRuntimeTarget } from '@harness-nexus/shared';
+import {
+  DEFAULT_CHAT_PREWARM_SETTINGS,
+  PREWARM_ADAPTER_TARGETS,
+  isRuntimeTarget,
+} from '@harness-nexus/shared';
 import type {
   ChatChannelView,
   ChatStreamEvent,
@@ -279,6 +283,22 @@ export class ChatService {
       }
     }
 
+    // Issue #3 — stamp the target's pre-warm switch so the daemon re-arms one
+    // fresh prewarmed adapter after this channel took (or missed) one.
+    // Best-effort, like modelOptions: a read failure never blocks the open.
+    let prewarm = false;
+    if ((PREWARM_ADAPTER_TARGETS as readonly string[]).includes(agent.target)) {
+      try {
+        const settings = await this.deps.uow.settings.get();
+        prewarm =
+          (settings.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
+            agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
+          ] === true;
+      } catch {
+        prewarm = false;
+      }
+    }
+
     this.deps.io.toCtl(machine.id, 'chat:session.start', {
       sessionId,
       agentInstanceId: agent.id,
@@ -286,9 +306,41 @@ export class ChatService {
       cwd,
       ...(resume !== undefined ? { resume } : {}),
       ...(modelOptions !== undefined ? { modelOptions } : {}),
+      ...(prewarm ? { prewarm: true } : {}),
     });
     this.pushSnapshot(ownerId);
     return { ok: true, sessionId, joined: false, phase: 'starting' };
+  }
+
+  /**
+   * Issue #3 — `chat:adapter.prewarm`. Best-effort: gates mirror `open()`
+   * (owner + remote-chat + online + chat capability), then the switch check,
+   * then a fire-and-forget `/ctl` nudge — the daemon owns the actual pool
+   * (dedupe, idle TTL, ledger). Never a channel: no budget slot, no snapshot.
+   */
+  async prewarmAdapter(ownerId: string, agentInstanceId: string): Promise<ChatSimpleResult> {
+    const agent = await this.deps.uow.agentInstances.findById(agentInstanceId);
+    if (!agent || agent.ownerId !== ownerId) return { ok: false, code: 'AGENT_INSTANCE_NOT_FOUND' };
+    if (!(PREWARM_ADAPTER_TARGETS as readonly string[]).includes(agent.target)) {
+      return { ok: false, code: 'PREWARM_UNSUPPORTED_TARGET' };
+    }
+    const machine = await this.deps.uow.machines.findById(agent.machineId);
+    if (!machine) return { ok: false, code: 'AGENT_INSTANCE_NOT_FOUND' };
+    if (!machine.remoteChatEnabled) return { ok: false, code: 'REMOTE_CHAT_DISABLED' };
+    if (!this.deps.isOnline(machine.id)) return { ok: false, code: 'MACHINE_OFFLINE' };
+    if (!machine.capabilities.includes('chat')) return { ok: false, code: 'DAEMON_NO_CHAT' };
+    try {
+      const settings = await this.deps.uow.settings.get();
+      const on =
+        (settings.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
+          agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
+        ] === true;
+      if (!on) return { ok: false, code: 'PREWARM_DISABLED' };
+    } catch {
+      return { ok: false, code: 'PREWARM_DISABLED' };
+    }
+    this.deps.io.toCtl(machine.id, 'chat:adapter.prewarm', { target: agent.target });
+    return { ok: true };
   }
 
   /**

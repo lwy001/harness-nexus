@@ -14,6 +14,7 @@ import type { Socket } from 'socket.io-client';
 import {
   acpPermissionOptionSchema,
   acpToolCallViewSchema,
+  chatAdapterPrewarmEventSchema,
   chatConfigSetEventSchema,
   chatElicitationRespondEventSchema,
   chatPermissionRespondEventSchema,
@@ -26,10 +27,12 @@ import {
   chatTurnCancelEventSchema,
   availableCommandViewSchema,
   planEntrySchema,
+  PREWARM_ADAPTER_TARGETS,
   sessionConfigOptionSchema,
   sessionModeStateSchema,
   type AcpPermissionOption,
   type AcpToolCallView,
+  type AgentTarget,
   type AvailableCommandView,
   type ChatStreamEvent,
   type ElicitationField,
@@ -46,7 +49,12 @@ import {
 } from './acp/agent-connection.js';
 import { resolveAcpCommand } from './acp/adapters.js';
 import { PiRpcConnection, resolvePiCommand } from './acp/pi-connection.js';
-import { auditAdapterLedger, writeAdapterLedgerEntry } from './adapter-ledger.js';
+import {
+  auditAdapterLedger,
+  deleteAdapterLedgerEntry,
+  writeAdapterLedgerEntry,
+} from './adapter-ledger.js';
+import { PrewarmPool } from './prewarm.js';
 import { rewriteHistoryItems, rewriteSessionConfigOptions } from './model-options.js';
 import {
   createDshLiveMapper,
@@ -227,6 +235,8 @@ export interface ChatHandlersHandle {
    * connection rejects fast and the caller falls back to spawning.
    */
   liveConnectionFor: (target: string) => AgentConnection | null;
+  /** Issue #3 — is a prewarmed adapter READY (initialized, alive) for the target? */
+  prewarmReady: (target: string) => boolean;
 }
 
 export function attachChatHandlers(
@@ -443,6 +453,109 @@ export function attachChatHandlers(
     tailAttaches.set(session.acpSessionId, attach);
   };
 
+  // ---- Issue #3: adapter pre-warm pool ----
+
+  /** Idle retention for a prewarmed adapter; 0 disables pre-warm entirely. */
+  const prewarmTtlMs = (() => {
+    const raw = Number.parseInt(env.HN_PREWARM_TTL_MS ?? '', 10);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 120_000;
+  })();
+
+  /**
+   * A prewarmed adapter: the FULL `start` result (the session caps and agent
+   * identity came from initialize — already paid) plus the dsh tap that raced
+   * its spawn. Consumed by `chat:session.start`, which skips spawn+initialize
+   * and goes straight to session establishment.
+   */
+  type PrewarmedAdapter = {
+    started: Awaited<ReturnType<typeof AcpAgentConnection.start>>;
+    tapArmed: Awaited<ReturnType<typeof armTap>>;
+    tapLive: boolean;
+  };
+
+  /**
+   * Boot ONE adapter per target to a completed initialize — ledgered under a
+   * `prewarm-<target>` pseudo id (the consuming channel deletes that file and
+   * re-ledgers under its own id; TTL/teardown kills leave the file for the
+   * audit, per the W11 A rule). All failures are silent: the pool is a cache,
+   * a miss just means the channel spawns fresh exactly as before.
+   */
+  const prewarmPool = new PrewarmPool<PrewarmedAdapter>({
+    ttlMs: prewarmTtlMs,
+    spawn: async (key) => {
+      const cmd = resolveAcpCommand(key as AgentTarget, env, { homeDir: home });
+      if (cmd === null) return null;
+      const tapArmed = await armTap(key);
+      // Same env layering as the channel spawn (target env + test spawnEnv),
+      // minus the cwd — a prewarm has no session yet, so it boots in `home`.
+      const baseEnv = { ...(cmd.env ?? {}), ...(opts.spawnEnv ?? {}) };
+      const ledgerPrewarm = (pgid: number): void => {
+        writeAdapterLedgerEntry(home, {
+          pgid,
+          target: key,
+          command: cmd.command,
+          wireSessionId: `prewarm-${key}`,
+          startedAt: Date.now(),
+        });
+      };
+      try {
+        let started: Awaited<ReturnType<typeof AcpAgentConnection.start>>;
+        let tapLive = false;
+        if (tapArmed === null) {
+          started = await AcpAgentConnection.start(cmd.command, cmd.args, {
+            cwd: home,
+            ...(Object.keys(baseEnv).length > 0 ? { env: baseEnv } : {}),
+            onSpawned: ledgerPrewarm,
+          });
+        } else {
+          [started, tapLive] = await Promise.all([
+            AcpAgentConnection.start(cmd.command, [...cmd.args, '--patch', tapArmed.patchPath], {
+              cwd: home,
+              env: {
+                ...baseEnv,
+                HNX_TAP_PORT: String(tapArmed.listener.port),
+                HNX_TAP_TOKEN: tapArmed.listener.token,
+              },
+              onSpawned: ledgerPrewarm,
+            }),
+            tapArmed.hello,
+          ]);
+          if (!tapLive) {
+            // A session-less listener that never handshook is dead weight; the
+            // consuming channel falls back to the transcript tail, same as a
+            // tap-less spawn.
+            tapArmed.listener.close();
+            return { started, tapArmed: null, tapLive: false };
+          }
+        }
+        return { started, tapArmed, tapLive };
+      } catch {
+        tapArmed?.listener.close();
+        return null; // spawn/init failure — cleaned up inside start
+      }
+    },
+    isAlive: (v) => v.started.conn.isGroupAlive(),
+    kill: (v) => {
+      v.tapArmed?.listener.close();
+      v.started.conn.kill();
+    },
+  });
+
+  // ---- server → daemon: keep one adapter warm (Issue #3) ----
+  socket.on('chat:adapter.prewarm', (payload: unknown, ack?: (res: unknown) => void) => {
+    const parsed = chatAdapterPrewarmEventSchema.safeParse(payload);
+    if (
+      !parsed.success ||
+      prewarmTtlMs <= 0 ||
+      !(PREWARM_ADAPTER_TARGETS as readonly string[]).includes(parsed.data.target)
+    ) {
+      ack?.({ accepted: false });
+      return;
+    }
+    prewarmPool.prewarm(parsed.data.target);
+    ack?.({ accepted: true });
+  });
+
   // ---- server → daemon: spawn the channel ----
   socket.on('chat:session.start', (payload: unknown, ack?: (res: unknown) => void) => {
     const parsed = chatSessionStartEventSchema.safeParse(payload);
@@ -451,7 +564,7 @@ export function attachChatHandlers(
       return;
     }
     ack?.({ accepted: true });
-    const { sessionId, target, cwd, resume, modelOptions } = parsed.data;
+    const { sessionId, target, cwd, resume, modelOptions, prewarm } = parsed.data;
     void (async () => {
       inFlightStarts.add(sessionId);
       // 9 W16 — pi rides the in-daemon ACP façade (PiRpcConnection), not an
@@ -465,6 +578,18 @@ export function attachChatHandlers(
         });
         return;
       }
+      // Issue #3 — adopt a READY prewarmed adapter (skip spawn + initialize;
+      // the tap already raced ITS spawn). A miss — no entry, still booting,
+      // dead, or pi — spawns fresh exactly as before this feature.
+      const prewarmed =
+        !isPi && prewarmTtlMs > 0 && (PREWARM_ADAPTER_TARGETS as readonly string[]).includes(target)
+          ? prewarmPool.consume(target)
+          : null;
+      if (prewarmed !== null) {
+        // The pseudo ledger entry's group IS this conn — replace it below with
+        // the channel's own entry (re-ledgered after registration).
+        deleteAdapterLedgerEntry(home, `prewarm-${target}`);
+      }
       // A failed establishment (resume model/cwd mismatch, "already active",
       // the startup race giving up, initialize timeout) must NOT leave the
       // spawned adapter running: the channel dies server-side, so nothing
@@ -472,7 +597,8 @@ export function attachChatHandlers(
       let liveConn: AgentConnection | null = null;
       // 9 W7.1 — arm the tap before the spawn (the child needs the port/token
       // env); the spawn and the plugin's hello then race in parallel.
-      const tapArmed = await armTap(target);
+      // (A consumed prewarm already carries its tap arm.)
+      const tapArmed = prewarmed !== null ? prewarmed.tapArmed : await armTap(target);
       // Consumes the id: true once the channel was closed while we were busy.
       // Called at every checkpoint — a close that raced the establishment must
       // not leave the spawned adapter behind with no channel to own it.
@@ -491,52 +617,59 @@ export function attachChatHandlers(
         // session id; removal is the audit's job, never a kill path.
         const ledgerStartedAt = Date.now();
         let ledgerPgid: number | null = null;
-        const onSpawned = (pgid: number): void => {
-          ledgerPgid = pgid;
-          writeAdapterLedgerEntry(home, {
-            pgid,
-            target,
-            command: cmd.command,
-            wireSessionId: sessionId,
-            startedAt: ledgerStartedAt,
-          });
-        };
-        // 9 W14.1 — target-scoped adapter env (claude-code's todo-tool
-        // opt-in) layers UNDER the daemon spawn env and the tap vars.
-        const baseEnv = { ...(cmd.env ?? {}), ...(opts.spawnEnv ?? {}) };
-        const spawnOpts = {
-          cwd,
-          onSpawned,
-          ...(tapArmed === null
-            ? Object.keys(baseEnv).length > 0
-              ? { env: baseEnv }
-              : {}
-            : {
-                env: {
-                  ...baseEnv,
-                  HNX_TAP_PORT: String(tapArmed.listener.port),
-                  HNX_TAP_TOKEN: tapArmed.listener.token,
-                },
-              }),
-        };
-        const args = tapArmed === null ? cmd.args : [...cmd.args, '--patch', tapArmed.patchPath];
         let started:
           | Awaited<ReturnType<typeof AcpAgentConnection.start>>
           | Awaited<ReturnType<typeof PiRpcConnection.start>>;
         let tapLive = false;
-        if (isPi) {
-          // The tap is dsh-only, so args are bare here by construction.
-          started = await PiRpcConnection.start(cmd.command, args, {
-            ...spawnOpts,
-            sessionsDir: join(home, '.pi', 'agent', 'sessions'),
-          });
-        } else if (tapArmed === null) {
-          started = await AcpAgentConnection.start(cmd.command, args, spawnOpts);
+        if (prewarmed !== null) {
+          started = prewarmed.started;
+          tapLive = prewarmed.tapLive;
+          ledgerPgid = prewarmed.started.conn.pgid;
+          liveConn = prewarmed.started.conn;
         } else {
-          [started, tapLive] = await Promise.all([
-            AcpAgentConnection.start(cmd.command, args, spawnOpts),
-            tapArmed.hello,
-          ]);
+          const onSpawned = (pgid: number): void => {
+            ledgerPgid = pgid;
+            writeAdapterLedgerEntry(home, {
+              pgid,
+              target,
+              command: cmd.command,
+              wireSessionId: sessionId,
+              startedAt: ledgerStartedAt,
+            });
+          };
+          // 9 W14.1 — target-scoped adapter env (claude-code's todo-tool
+          // opt-in) layers UNDER the daemon spawn env and the tap vars.
+          const baseEnv = { ...(cmd.env ?? {}), ...(opts.spawnEnv ?? {}) };
+          const spawnOpts = {
+            cwd,
+            onSpawned,
+            ...(tapArmed === null
+              ? Object.keys(baseEnv).length > 0
+                ? { env: baseEnv }
+                : {}
+              : {
+                  env: {
+                    ...baseEnv,
+                    HNX_TAP_PORT: String(tapArmed.listener.port),
+                    HNX_TAP_TOKEN: tapArmed.listener.token,
+                  },
+                }),
+          };
+          const args = tapArmed === null ? cmd.args : [...cmd.args, '--patch', tapArmed.patchPath];
+          if (isPi) {
+            // The tap is dsh-only, so args are bare here by construction.
+            started = await PiRpcConnection.start(cmd.command, args, {
+              ...spawnOpts,
+              sessionsDir: join(home, '.pi', 'agent', 'sessions'),
+            });
+          } else if (tapArmed === null) {
+            started = await AcpAgentConnection.start(cmd.command, args, spawnOpts);
+          } else {
+            [started, tapLive] = await Promise.all([
+              AcpAgentConnection.start(cmd.command, args, spawnOpts),
+              tapArmed.hello,
+            ]);
+          }
         }
         const { conn, agentInfo, sessionCaps, promptCaps } = started;
         liveConn = conn;
@@ -634,6 +767,8 @@ export function attachChatHandlers(
         liveConn = null; // registered — teardown owns the connection from here
         // 9 W11 A — enrich the ledger entry with the native session id (the
         // adapter report in slice C and post-mortem forensics key off it).
+        // A consumed prewarm's pgid rides along — its `prewarm-<target>` file
+        // was already deleted at adoption, so this is now the only entry.
         if (ledgerPgid !== null) {
           writeAdapterLedgerEntry(home, {
             pgid: ledgerPgid,
@@ -644,6 +779,10 @@ export function attachChatHandlers(
             startedAt: ledgerStartedAt,
           });
         }
+        // Issue #3 — the switch was on at open time: re-arm one fresh
+        // prewarmed adapter so the NEXT open on this target is warm too
+        // (fire-and-forget; the pool dedupes and the TTL bounds it).
+        if (prewarm === true && !isPi && prewarmTtlMs > 0) prewarmPool.prewarm(target);
         wireSession(session, emitEvent);
         conn.onExit(() => {
           // Crash/quit outside our control — end the channel honestly.
@@ -969,17 +1108,23 @@ export function attachChatHandlers(
         graceTimer = null;
       }
       for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
+      prewarmPool.teardownAll(); // Issue #3 — deliberate stop owns idle adapters too
       return;
     }
     if (graceTimer !== null) return; // already armed by an earlier blip cycle
     graceTimer = setTimeout(() => {
       graceTimer = null;
       for (const session of [...sessions.values()]) teardown(session, 'daemon-disconnected');
+      prewarmPool.teardownAll();
     }, graceMs);
     graceTimer.unref();
   });
 
-  return { liveConnectionFor };
+  return {
+    liveConnectionFor,
+    /** Issue #3 — is a prewarmed adapter READY (initialized, alive) for the target? */
+    prewarmReady: (target: string): boolean => prewarmPool.readyKeys().includes(target),
+  };
 }
 
 /**

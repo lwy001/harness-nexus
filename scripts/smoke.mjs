@@ -1472,14 +1472,32 @@ const { readFileSync: rf } = await import('node:fs');
 const t1Skill = rf(pathMod.join(t1Root, 'skills', 't1-skill', 'SKILL.md'), 'utf8');
 expect(
   'skill frontmatter synthesized (dsh requires name+description)',
-  t1Skill.startsWith('---\nname: t1-skill\ndescription: "Synthesizes frontmatter on install"\n---\n'),
+  t1Skill.startsWith(
+    '---\nname: t1-skill\ndescription: "Synthesizes frontmatter on install"\n---\n',
+  ),
   true,
 );
-expect('flat command written', rf(pathMod.join(t1Root, 'skills', 't1-cmd.md'), 'utf8').includes('T1 command body.'), true);
+expect(
+  'flat command written',
+  rf(pathMod.join(t1Root, 'skills', 't1-cmd.md'), 'utf8').includes('T1 command body.'),
+  true,
+);
 const t1Patch = rf(pathMod.join(t1Root, 'cordis.patch.yml'), 'utf8');
-expect('patch mounts the mcp bridge', t1Patch.includes("name: '@deepseek-ai/dsh-mcp-client'"), true);
-expect('patch row targets our profile outlet', t1Patch.includes(`"--profile", "${t1ProfileId}"`), true);
-expect('patch serverName platform-prefixed', t1Patch.includes('serverName: harness-nexus-t1-dsh-kit'), true);
+expect(
+  'patch mounts the mcp bridge',
+  t1Patch.includes("name: '@deepseek-ai/dsh-mcp-client'"),
+  true,
+);
+expect(
+  'patch row targets our profile outlet',
+  t1Patch.includes(`"--profile", "${t1ProfileId}"`),
+  true,
+);
+expect(
+  'patch serverName platform-prefixed',
+  t1Patch.includes('serverName: harness-nexus-t1-dsh-kit'),
+  true,
+);
 expect(
   'ledger written',
   rf(pathMod.join(t1Root, 'harness-nexus-install-state.json'), 'utf8').includes('deepseek'),
@@ -1887,7 +1905,11 @@ openAck = await c5EmitAck('chat:session.open', { agentInstanceId: c5AgentId });
 const closedP2 = c5Once('chat:session.closed');
 c5Daemon.kill('SIGTERM');
 const closedEvt2 = await closedP2;
-expect('daemon disconnect closes the channel (native sessions survive)', closedEvt2.reason, 'connection-lost');
+expect(
+  'daemon disconnect closes the channel (native sessions survive)',
+  closedEvt2.reason,
+  'connection-lost',
+);
 
 c5App.close();
 await req('DELETE', `/api/machines/${c5MachineId}`, { token: userToken });
@@ -1967,7 +1989,11 @@ for (let i = 0; i < 100 && !w1Online; i++) {
 }
 expect('w1 daemon online', w1Online, true);
 r = await req('GET', `/api/machines/${w1MachineId}`, { token: userToken });
-expect('daemon advertises runtime capability', r.json.machine.capabilities.includes('runtime'), true);
+expect(
+  'daemon advertises runtime capability',
+  r.json.machine.capabilities.includes('runtime'),
+  true,
+);
 
 log('\n--- [9 W1] scan carries the runtimes arm ---');
 r = await req('POST', `/api/machines/${w1MachineId}/inventory/scan`, {
@@ -1995,10 +2021,17 @@ const w1Detected = r.json.agents.filter((a) => a.source === 'detected');
 expect('two detected instances (claude-code + deepseek)', w1Detected.length, 2);
 expect(
   'detected targets',
-  w1Detected.map((a) => a.target).sort().join(','),
+  w1Detected
+    .map((a) => a.target)
+    .sort()
+    .join(','),
   'claude-code,deepseek',
 );
-expect('detected instance has no profile', w1Detected.every((a) => a.profileId === null), true);
+expect(
+  'detected instance has no profile',
+  w1Detected.every((a) => a.profileId === null),
+  true,
+);
 
 log('\n--- [9 W1] capture-as-profile (no baseline) ---');
 r = await req('POST', `/api/machines/${w1MachineId}/inventory/capture`, {
@@ -2214,11 +2247,7 @@ writeFileSync(
   'utf8',
 );
 mkdirSync(pathMod.join(w3Home, '.dsh'), { recursive: true });
-writeFileSync(
-  pathMod.join(w3Home, '.dsh', '.env'),
-  'DEEPSEEK_API_KEY=user-key\n',
-  'utf8',
-);
+writeFileSync(pathMod.join(w3Home, '.dsh', '.env'), 'DEEPSEEK_API_KEY=user-key\n', 'utf8');
 
 r = await req('POST', '/api/credentials', {
   token: userToken,
@@ -2293,12 +2322,24 @@ const w3Toml = readFileSync(pathMod.join(w3Home, '.codex', 'config.toml'), 'utf8
 expect('codex: user comment survives', w3Toml.includes('# my config'), true);
 expect('codex: user MCP section survives', w3Toml.includes('[mcp_servers.user-thing]'), true);
 expect('codex: root model set', w3Toml.includes('model = "w3-model"'), true);
-expect('codex: model_provider selects our route', w3Toml.includes('model_provider = "harness_nexus"'), true);
-expect('codex: provider section with auth.json auth', w3Toml.includes('requires_openai_auth = true'), true);
+expect(
+  'codex: model_provider selects our route',
+  w3Toml.includes('model_provider = "harness_nexus"'),
+  true,
+);
+expect(
+  'codex: provider section with auth.json auth',
+  w3Toml.includes('requires_openai_auth = true'),
+  true,
+);
 expect('codex: wire_api absent (Responses-only)', w3Toml.includes('wire_api'), false);
 const w3Auth = JSON.parse(readFileSync(pathMod.join(w3Home, '.codex', 'auth.json'), 'utf8'));
 expect('codex: auth.json apikey mode with our key', w3Auth.OPENAI_API_KEY, 'sk-w3-secret');
-expect('codex: auth.json 0600', statSync(pathMod.join(w3Home, '.codex', 'auth.json')).mode & 0o777, 0o600);
+expect(
+  'codex: auth.json 0600',
+  statSync(pathMod.join(w3Home, '.codex', 'auth.json')).mode & 0o777,
+  0o600,
+);
 
 log('\n--- [9 W3] PUT deepseek config → patch region + default-model + ~/.dsh/.env ---');
 r = await req('PUT', `/api/machines/${w3MachineId}/runtime-config/deepseek`, {
@@ -2315,11 +2356,23 @@ for (let i = 0; i < 150; i++) {
 }
 expect('w3 deepseek apply job succeeded', w3job?.status, 'succeeded');
 const w3Settings = readFileSync(pathMod.join(w3Home, '.dsh', 'settings.yaml'), 'utf8');
-expect('dsh: settings managed region', w3Settings.includes('# BEGIN harness-nexus (managed)'), true);
+expect(
+  'dsh: settings managed region',
+  w3Settings.includes('# BEGIN harness-nexus (managed)'),
+  true,
+);
 expect('dsh: llm namespace carries the route', w3Settings.includes('llm-pi-ai:'), true);
 expect('dsh: anthropic api flavor', w3Settings.includes('api: anthropic-messages'), true);
-expect('dsh: key channel is the env var name', w3Settings.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'), true);
-expect('dsh: default-model namespace selects the route', w3Settings.includes('agent-default-model:'), true);
+expect(
+  'dsh: key channel is the env var name',
+  w3Settings.includes('apiKeyEnv: HARNESS_NEXUS_API_KEY'),
+  true,
+);
+expect(
+  'dsh: default-model namespace selects the route',
+  w3Settings.includes('agent-default-model:'),
+  true,
+);
 const w3Patch = readFileSync(pathMod.join(w3Home, '.dsh', 'cordis.patch.yml'), 'utf8');
 expect('dsh: acp entry overridden onto our route', w3Patch.includes('- id: acp'), true);
 expect('dsh: override selects harness-nexus', w3Patch.includes('provider: harness-nexus'), true);
@@ -2364,7 +2417,11 @@ expect('w4 codex view status', r.status, 200);
 expect('w4 view target', r.json.target, 'codex');
 const w4Paths = (r.json.files ?? []).map((f) => f.path).join(',');
 expect('w4 codex view lists both files', w4Paths, '~/.codex/config.toml,~/.codex/auth.json');
-expect('w4 view carries NO plaintext secret', JSON.stringify(r.json).includes('sk-w3-secret'), false);
+expect(
+  'w4 view carries NO plaintext secret',
+  JSON.stringify(r.json).includes('sk-w3-secret'),
+  false,
+);
 const w4AuthFile = r.json.files.find((f) => f.path === '~/.codex/auth.json');
 expect('w4 auth.json key masked', JSON.parse(w4AuthFile.content).OPENAI_API_KEY, '${redacted}');
 expect(
@@ -2382,7 +2439,11 @@ expect(
 log('\n--- [9 W4] redacted view: deepseek patch rows + fully masked .env ---');
 r = await req('GET', `/api/machines/${w3MachineId}/runtimes/deepseek/config`, { token: userToken });
 expect('w4 deepseek view status', r.status, 200);
-expect('w4 deepseek view carries NO plaintext secret', JSON.stringify(r.json).includes('sk-w3-secret'), false);
+expect(
+  'w4 deepseek view carries NO plaintext secret',
+  JSON.stringify(r.json).includes('sk-w3-secret'),
+  false,
+);
 const w4Env = r.json.files.find((f) => f.path === '~/.dsh/.env');
 expect(
   'w4 .env fully masked (both the planted user key and ours)',
@@ -2390,12 +2451,12 @@ expect(
   'DEEPSEEK_API_KEY=${redacted}\nHARNESS_NEXUS_API_KEY=${redacted}\n',
 );
 const w4Settings = r.json.files.find((f) => f.path === '~/.dsh/settings.yaml');
+expect('w4 settings rows readable', w4Settings.content.includes('llm-pi-ai:'), true);
 expect(
-  'w4 settings rows readable',
-  w4Settings.content.includes('llm-pi-ai:'),
+  'w4 settings key channel masked',
+  w4Settings.content.includes('apiKeyEnv: ${redacted}'),
   true,
 );
-expect('w4 settings key channel masked', w4Settings.content.includes('apiKeyEnv: ${redacted}'), true);
 
 log('\n--- [9 W4] gates: admin view ok, bad target 400 ---');
 r = await req('GET', `/api/machines/${w3MachineId}/runtimes/codex/config`, { token: adminToken });
@@ -2473,7 +2534,11 @@ r = await req('PUT', `/api/machines/${w10Machine.json.machine.id}/runtime-config
 });
 expect('provider-mode spec accepted (queues while offline)', r.status, 201);
 expect('providerId echoed', r.json.config.providerId, w10ProviderId);
-expect('models stored as extras only (default dropped)', r.json.config.models.join(','), 'gpt-5-mini');
+expect(
+  'models stored as extras only (default dropped)',
+  r.json.config.models.join(','),
+  'gpt-5-mini',
+);
 
 r = await req('POST', '/api/llm-providers/query-models', {
   token: userToken,
@@ -2626,8 +2691,7 @@ mkdirSync(w7Proj, { recursive: true });
 const w7DshId = '828c9ddc-2fa8-44b4-9cff-00c4c886a77f';
 const w7Zstd = await import('node:zlib');
 const w7HasZstd =
-  typeof w7Zstd.zstdCompressSync === 'function' &&
-  typeof w7Zstd.zstdDecompressSync === 'function';
+  typeof w7Zstd.zstdCompressSync === 'function' && typeof w7Zstd.zstdDecompressSync === 'function';
 if (w7HasZstd) {
   const dshDir = pathMod.join(w7Home, '.dsh', 'sessions', '--w7-proj--', w7DshId);
   mkdirSync(dshDir, { recursive: true });
@@ -2665,7 +2729,9 @@ if (w7HasZstd) {
   ];
   writeFileSync(
     pathMod.join(dshDir, 'session.jsonl.zstd'),
-    Buffer.concat(dshEntries.map((e) => w7Zstd.zstdCompressSync(Buffer.from(`${JSON.stringify(e)}\n`)))),
+    Buffer.concat(
+      dshEntries.map((e) => w7Zstd.zstdCompressSync(Buffer.from(`${JSON.stringify(e)}\n`))),
+    ),
   );
 } else {
   log('(w7 note: Node lacks zstd — the dsh file-scan listing is skipped)');
@@ -2844,6 +2910,34 @@ if (w7Err.includes('Error:')) {
       .join(' | ')}`,
   );
 }
+
+log('\n--- [#3] chat pre-warm settings: defaults, admin write, non-admin 403 ---');
+r = await req('GET', '/api/settings/chat-prewarm', { token: userToken });
+expect(
+  'prewarm defaults (deepseek on)',
+  JSON.stringify(r.json.chatPrewarm),
+  JSON.stringify({ 'claude-code': false, codex: false, deepseek: true }),
+);
+r = await req('PUT', '/api/settings/chat-prewarm', {
+  token: userToken,
+  body: { 'claude-code': true, codex: false, deepseek: true },
+});
+expect('prewarm PUT non-admin rejected', r.status, 403);
+r = await req('PUT', '/api/settings/chat-prewarm', {
+  token: adminToken,
+  body: { 'claude-code': false, codex: true, deepseek: true },
+});
+expect('prewarm PUT admin ok', r.status, 200);
+r = await req('GET', '/api/settings/chat-prewarm', { token: userToken });
+expect(
+  'prewarm read back after write',
+  JSON.stringify(r.json.chatPrewarm),
+  JSON.stringify({ 'claude-code': false, codex: true, deepseek: true }),
+);
+await req('PUT', '/api/settings/chat-prewarm', {
+  token: adminToken,
+  body: { 'claude-code': false, codex: false, deepseek: true },
+});
 
 log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

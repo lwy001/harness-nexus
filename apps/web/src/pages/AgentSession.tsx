@@ -226,6 +226,11 @@ export function AgentSessionPage() {
         const res = await withAuthGuard(() => api.getAgentInstance(agentId), logout);
         setAgent(res.agent);
         setMachine(res.machine);
+        // Issue #3 — best-effort adapter pre-warm now that the rail is about
+        // to render (a resume click is the likely next action). The server
+        // acks false when the target's switch is off / unsupported — fire and
+        // forget either way.
+        appSocket().emit('chat:adapter.prewarm', { agentInstanceId: agentId });
       } catch {
         setLoadFailed(true);
       }

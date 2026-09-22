@@ -335,6 +335,15 @@ CREATE TABLE IF NOT EXISTS llm_providers (
 );
     `,
   },
+  {
+    version: 16,
+    description: 'issue #3 — per-target chat adapter pre-warm switches (system settings)',
+    sql: `
+-- JSON of { 'claude-code', codex, deepseek } booleans; NULL on rows written
+-- before the feature → readers apply the shared defaults.
+ALTER TABLE system_settings ADD COLUMN chat_prewarm TEXT;
+    `,
+  },
 ] as const;
 
 /**
