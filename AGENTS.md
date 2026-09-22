@@ -356,7 +356,7 @@ covers layering; `docs/adr/` the stack decisions.
 | pi target (9 W16)                      | `design-phase-9-w16-pi-agent.md`                    | Self-developed `PiRpcConnection` (no ACP); payload under `data`; `switch_session` takes the session FILE path; Node ≥22.19                                                                                                |
 | Fast session pipeline (#2)             | `design-fast-session-pipeline.md`                   | Pinned wrapper provisioning (npx fallback, `HN_ACP_NO_AUTO_PROVISION`); dist patch set; rail reuses `liveConnectionFor`                                                                                                   |
 | Adapter pre-warm pool (#3–#4)          | `design-adapter-prewarm.md`                         | Machine-scoped `chatPrewarm` map, strict 4-key replace (legacy 3-key → 400; web normalizes); pool holds ONE initialized adapter per target; TTL 120s; opencode default OFF                                                |
-| claude-code marketplace deploy (#6)    | `design-cc-marketplace-deploy.md`                   | claude-code deploys ride the emitter: daemon drives CC's plugin CLI headless (`-y`), state read from CC's JSON files; emitter accepts machine-ctl PATs; `profile.version` editable = the publish switch; no AgentInstance |
+| claude-code marketplace deploy (#6)    | `design-cc-marketplace-deploy.md`                   | claude-code deploys ride the emitter: daemon drives CC's plugin CLI headless (`-y`), state read from CC's JSON files; emitter accepts machine-ctl PATs; web Edit dialog = name/desc/version + entry re-pick (`version` bump = the publish switch); no AgentInstance |
 
 ## Authentication & authorization (permission interceptors)
 
