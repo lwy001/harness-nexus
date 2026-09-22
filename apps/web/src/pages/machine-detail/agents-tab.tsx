@@ -207,15 +207,17 @@ function PrewarmToggle({
   }
 
   return (
-    <div className="mb-4 flex items-center justify-between rounded-lg border px-4 py-3">
-      <div className="flex flex-col gap-1">
-        <Label htmlFor={`prewarm-${target}`} className="text-sm font-medium">
-          {t('machineDetail.prewarm')}
-        </Label>
-        <span className="text-muted-foreground text-xs">{t('machineDetail.prewarmDesc')}</span>
+    // Same section idiom as the provider block below (title + muted desc,
+    // px-6, no box): the card reads [prewarm row] ─ hairline ─ [provider],
+    // not a stuck-on patch. The form's own border-t is the divider.
+    <div className="flex items-center justify-between gap-4 px-6 pb-4 pt-1">
+      <div>
+        <p className="text-sm font-medium">{t('machineDetail.prewarm')}</p>
+        <p className="text-muted-foreground text-xs">{t('machineDetail.prewarmDesc')}</p>
       </div>
       <Switch
         id={`prewarm-${target}`}
+        aria-label={t('machineDetail.prewarm')}
         checked={checked}
         disabled={busy || machine === null}
         onCheckedChange={(v) => void toggle(v)}
