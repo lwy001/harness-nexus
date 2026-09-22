@@ -9,6 +9,7 @@ import {
   sessionsListRequestSchema,
 } from '@harness-nexus/shared';
 import { jobView } from '../jobs/service.js';
+import { marketplaceNameFor } from '../marketplace/emitter.js';
 
 /**
  * Deploy jobs + harness jobs + agent instances (Phase 8 C4 · Phase 9 W2).
@@ -26,9 +27,10 @@ import { jobView } from '../jobs/service.js';
 
 /**
  * Targets that have a local-write install adapter in the CLI registry.
- * claude-code is served by the 3.5 marketplace emitter (Claude Code installs
- * the plugin itself) — deploying into it from here is not a path. deepseek
- * (T1) writes skills + a home cordis-patch MCP row like the others.
+ * claude-code branches BEFORE this list (#6): its deploys ride the 3.5
+ * marketplace emitter — the daemon drives CC's own `claude plugin` CLI, not
+ * an adapter. deepseek (T1) writes skills + a home cordis-patch MCP row like
+ * the others.
  */
 export const DEPLOYABLE_TARGETS = ['hermes', 'codex', 'deepseek', 'pi'] as const;
 
@@ -114,12 +116,49 @@ export async function jobsRoutes(app: FastifyInstance): Promise<void> {
       );
     }
     if (!DEPLOYABLE_TARGETS.includes(profile.target as (typeof DEPLOYABLE_TARGETS)[number])) {
+      if (profile.target === 'claude-code') {
+        // #6 — marketplace deploy: the daemon drives CC's own plugin CLI with
+        // its machine PAT (the emitter accepts machine-ctl tokens). The
+        // catalog the daemon reads belongs to the MACHINE OWNER, so the
+        // profile must be visible to them — global, or personal + theirs.
+        // (An admin deploying their own personal profile onto a user's
+        // machine would emit a catalog that never contains it.)
+        if (
+          app.realtime.presence.isOnline(machine.id) &&
+          !machine.capabilities.includes('marketplace-deploy')
+        ) {
+          throw new AppError(
+            'Daemon does not advertise the marketplace-deploy capability (upgrade hnx on the machine)',
+            409,
+            'DAEMON_NO_MARKETPLACE_DEPLOY',
+          );
+        }
+        if (profile.scope !== 'global' && profile.ownerId !== machine.ownerId) {
+          throw new AppError(
+            "claude-code deploys install from the machine owner's marketplace — the profile must be global or owned by the machine owner",
+            409,
+            'PROFILE_NOT_IN_OWNER_MARKETPLACE',
+          );
+        }
+        const owner = await app.uow.users.findById(machine.ownerId);
+        if (!owner) throw new AppError('Machine not found', 404, 'MACHINE_NOT_FOUND');
+        const job = await app.realtime.jobs.createJob({
+          machineId: machine.id,
+          ownerId: req.user!.id,
+          type: 'deploy',
+          payload: {
+            profileId: profile.id,
+            marketplace: {
+              baseUrl: app.publicBaseUrl,
+              marketplaceName: marketplaceNameFor(owner.username),
+              pluginName: profile.name,
+            },
+          },
+        });
+        return reply.code(201).send({ job: jobView(job) });
+      }
       throw new AppError(
-        `Profiles for target '${profile.target}' are deployed via ${
-          profile.target === 'claude-code'
-            ? 'the Claude Code plugin marketplace (3.5)'
-            : 'a path this instance does not serve'
-        }, not a remote deploy job`,
+        `Profiles for target '${profile.target}' are deployed via a path this instance does not serve`,
         409,
         'TARGET_NOT_DEPLOYABLE',
       );

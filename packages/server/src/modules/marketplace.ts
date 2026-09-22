@@ -52,11 +52,17 @@ export async function marketplaceRoutes(app: FastifyInstance): Promise<void> {
 /**
  * Resolve the emit token embedded in the URL path into the requesting user.
  * Mirrors the auth plugin's PAT path (sha256 lookup + expiry + active check +
- * touchLastUsed) with one extra gate: only tokens carrying the `marketplace`
- * scope (created via `POST /api/pats {kind:'marketplace'}`) are accepted —
- * general API PATs are not URL-capability tokens and must not leak through
- * URLs into logs. Returns the full user row — the emitter needs `username`
- * for the marketplace name.
+ * touchLastUsed) with two accepted scopes:
+ *  - `marketplace` — created via `POST /api/pats {kind:'marketplace'}`, the
+ *    manual emit flow's URL-capability token;
+ *  - `machine-ctl` (#6) — a daemon's machine PAT, so the daemon can drive
+ *    `claude plugin marketplace add|install` with the token it already holds
+ *    (no secret rides the job payload). The REST auth hook still rejects
+ *    machine tokens, and reading the owner's marketplace is strictly weaker
+ *    than the /ctl control the token already grants.
+ * General API PATs remain rejected — they are not URL-capability tokens and
+ * must not leak through URLs into logs. Unknown or revoked tokens answer 404.
+ * Returns the full user row — the emitter needs `username` for the name.
  */
 async function resolveTokenUser(
   app: FastifyInstance,
@@ -69,7 +75,7 @@ async function resolveTokenUser(
   const record = await app.uow.tokens.findByTokenHash(hashToken(raw));
   if (
     record &&
-    record.scopes.includes('marketplace') &&
+    (record.scopes.includes('marketplace') || record.scopes.includes('machine-ctl')) &&
     (!record.expiresAt || Date.parse(record.expiresAt) > Date.now())
   ) {
     const user = await app.uow.users.findById(record.userId);

@@ -88,6 +88,7 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
       ...existing,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.version !== undefined ? { version: input.version } : {}),
       entries,
       updatedAt: new Date().toISOString(),
     };

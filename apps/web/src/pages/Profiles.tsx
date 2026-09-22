@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { LayersIcon, PlusIcon, TrashIcon, GlobeIcon, UserIcon, TerminalIcon } from 'lucide-react';
+import {
+  LayersIcon,
+  PlusIcon,
+  TrashIcon,
+  GlobeIcon,
+  UserIcon,
+  TerminalIcon,
+  PencilIcon,
+} from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
 import { useI18n, type TranslationKey } from '@/i18n';
@@ -78,6 +86,7 @@ export function ProfilesPage() {
   const { t } = useI18n();
   const [items, setItems] = useState<Profile[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Profile | null>(null);
   const isAdmin = user?.role === 'admin';
 
   async function refresh() {
@@ -180,7 +189,12 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
                 items.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="pl-6">
-                      <div className="font-medium">{p.name}</div>
+                      <div className="font-medium">
+                        {p.name}{' '}
+                        <span className="text-muted-foreground font-mono text-[10px]">
+                          v{p.version}
+                        </span>
+                      </div>
                       {p.description && (
                         <div className="text-muted-foreground mt-0.5 text-xs">{p.description}</div>
                       )}
@@ -218,6 +232,12 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
+                            disabled={p.scope === 'global' && !isAdmin}
+                            onClick={() => setEditing(p)}
+                          >
+                            <PencilIcon /> {t('common.edit')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             variant="destructive"
                             disabled={p.scope === 'global' && !isAdmin}
                             onClick={() => remove(p)}
@@ -244,7 +264,119 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
           }}
         />
       ) : null}
+
+      {editing ? (
+        <EditProfile
+          profile={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void refresh();
+          }}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+/**
+ * Edit dialog (#6): name / description / version only — `target` is immutable
+ * post-create and entries are shaped at create time. The version field is the
+ * publish switch for marketplace installs: Claude Code compares versions, so
+ * bumping is what makes `plugin update` pull the new build.
+ */
+function EditProfile({
+  profile,
+  onClose,
+  onSaved,
+}: {
+  profile: Profile;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [name, setName] = useState(profile.name);
+  const [description, setDescription] = useState(profile.description ?? '');
+  const [version, setVersion] = useState(profile.version);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await withAuthGuard(
+        () =>
+          api.updateProfile(profile.id, {
+            name,
+            ...(description ? { description } : {}),
+            version,
+          }),
+        logout,
+      );
+      toast.success(t('profiles.updated'));
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.saveFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormDialog
+      open
+      onClose={onClose}
+      title={t('profiles.editTitle')}
+      description={t('profiles.editDesc')}
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-2">
+            <Label htmlFor="prof-edit-name">{t('common.name')}</Label>
+            <Input
+              id="prof-edit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="prof-edit-desc">{t('common.description')}</Label>
+            <Input
+              id="prof-edit-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('profiles.optional')}
+              autoComplete="off"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="prof-edit-version">{t('profiles.versionLabel')}</Label>
+            <Input
+              id="prof-edit-version"
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              className="font-mono"
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
+            <p className="text-muted-foreground text-xs">{t('profiles.versionHint')}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? t('common.saving') : t('common.save')}
+          </Button>
+        </div>
+      </form>
+    </FormDialog>
   );
 }
 

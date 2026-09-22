@@ -2,6 +2,7 @@ import type { Socket } from 'socket.io-client';
 import {
   jobDispatchEventSchema,
   harnessJobPayloadSchema,
+  deployJobPayloadSchema,
   type JobView,
   deployResultDataSchema,
 } from '@harness-nexus/shared';
@@ -11,6 +12,7 @@ import { applyInstall } from '../install/installer.js';
 import type { ResolvedProfile } from '../install/types.js';
 import { runHarnessJob } from './runtime.js';
 import { runApplyConfigJob } from './runtime-config.js';
+import { runMarketplaceDeploy } from './cc-marketplace.js';
 
 /**
  * Daemon-side job executor (Phase 8 C4 + Phase 9 W2).
@@ -75,7 +77,23 @@ export function attachJobHandlers(socket: Socket, opts: JobExecutorOptions): voi
 }
 
 async function runDeploy(socket: Socket, opts: JobExecutorOptions, job: JobView): Promise<void> {
-  const payload = job.payload as { profileId: string; directory?: string | undefined };
+  const parsed = deployJobPayloadSchema.safeParse(job.payload);
+  if (!parsed.success) {
+    socket.emit('job:result', {
+      jobId: job.id,
+      ok: false,
+      error: 'deploy payload invalid (upgrade hnx on the machine)',
+    });
+    return;
+  }
+  // #6: the marketplace arm routes claude-code deploys to CC's own plugin CLI.
+  if (parsed.data.marketplace) {
+    await runMarketplaceDeploy(socket, job, parsed.data.profileId, parsed.data.marketplace, {
+      token: opts.token,
+    });
+    return;
+  }
+  const payload = parsed.data;
   const progress = (phase: string, message?: string): void => {
     socket.emit('job:progress', { jobId: job.id, phase, ...(message ? { message } : {}) });
   };

@@ -92,11 +92,29 @@ export const jobViewSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+/**
+ * The claude-code arm of a deploy payload (#6): presence routes the daemon to
+ * the CC marketplace executor (`claude plugin marketplace add|update` +
+ * install/update) instead of the 3.3 adapter pipeline. The daemon fills its
+ * own machine PAT into the URL — no secret rides the payload or the job row.
+ */
+export const marketplaceDeployArmSchema = z.object({
+  /** PUBLIC_BASE_URL origin (CC enforces https + non-loopback on archives). */
+  baseUrl: z.string().min(1).max(512),
+  /** `harness-nexus-<username>` — one marketplace per user (CC rejects name/URL remixing). */
+  marketplaceName: z.string().min(1).max(128),
+  /** The profile's name = the CC plugin name inside that marketplace. */
+  pluginName: z.string().min(1).max(128),
+});
+export type MarketplaceDeployArm = z.infer<typeof marketplaceDeployArmSchema>;
+
 /** `Job.payload` for `type: 'deploy'` (C4). */
 export const deployJobPayloadSchema = z.object({
   profileId: z.string().min(1).max(64),
   /** Optional install-root override on the machine (maps to the planner's `outDir`). */
   directory: z.string().min(1).max(512).optional(),
+  /** claude-code deploys carry the marketplace arm (#6); adapter deploys omit it. */
+  marketplace: marketplaceDeployArmSchema.optional(),
 });
 
 /**
@@ -159,10 +177,15 @@ export const jobUpdateEventSchema = z.object({ job: jobViewSchema });
 /** What a daemon reports in `job:result.data` for a successful deploy (C4). */
 export const deployResultDataSchema = z.object({
   name: z.string().min(1).max(128),
+  /** Adapter deploys: the install root. Marketplace deploys: `~/.claude/plugins`. */
   directory: z.string().min(1).max(512),
   target: z.string().min(1).max(32),
   profileId: z.string().min(1).max(64),
   profileVersion: z.string().max(64).optional(),
+  /** #6: which deploy path ran — absent = the 3.3 adapter pipeline. */
+  method: z.enum(['adapter', 'marketplace']).optional(),
+  /** #6 marketplace deploys: the version CC reports after install/update. */
+  installedVersion: z.string().max(64).optional(),
 });
 export type DeployResultData = z.infer<typeof deployResultDataSchema>;
 

@@ -196,7 +196,12 @@ export class JobService {
 
     if (job.type === 'deploy') {
       const parsed = deployResultDataSchema.safeParse(event.data);
-      if (parsed.success) await this.registerInstance(succeeded, parsed.data);
+      // #6: marketplace deploys (claude-code plugins) never register an
+      // AgentInstance — Claude Code owns the install, and a plugin install is
+      // not a runtime install; chat keys off the runtime detector's instance.
+      if (parsed.success && parsed.data.method !== 'marketplace') {
+        await this.registerInstance(succeeded, parsed.data);
+      }
     }
   }
 

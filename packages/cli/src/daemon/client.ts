@@ -19,14 +19,15 @@ import { attachChatHandlers } from './chat.js';
 import { attachSessionsHandlers } from './sessions.js';
 
 /** Client-side daemon version, reported in every `machine:hello`. */
-export const DAEMON_VERSION = '0.24.0-i4';
+export const DAEMON_VERSION = '0.25.0-i6';
 
 /**
  * Capabilities this daemon build carries (C3: inventory; C4: deploy; C5:
  * chat; 9 W1: runtime probe; 9 W2: harness install/upgrade/pin jobs;
  * 9 W3: provider-config apply; 9 W4: redacted config view; 9 W6: workspace
  * directory listing for the chat picker; 9 W7: native session list/resume;
- * 9 W9: session-config selectors, prompt images, workspace files).
+ * 9 W9: session-config selectors, prompt images, workspace files;
+ * #6: claude-code marketplace deploys via the local `claude` CLI).
  */
 export const DAEMON_CAPABILITIES = [
   'inventory',
@@ -38,6 +39,7 @@ export const DAEMON_CAPABILITIES = [
   'runtime-config-view',
   'workspace',
   'sessions',
+  'marketplace-deploy',
 ];
 
 /** Placeholder snapshot for a target this daemon build has no scanner for. */

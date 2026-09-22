@@ -74,6 +74,25 @@ const JOB_STATUS_CLASS: Record<string, string> = {
   cancelled: 'bg-muted-foreground/40',
 };
 
+/**
+ * The job-table detail cell: error text, the queued hint, or — for succeeded
+ * #6 marketplace deploys — `marketplace · <plugin> v<version>` from the result
+ * payload (read defensively; adapter results have no `method`).
+ */
+function jobDetailText(job: JobView, t: ReturnType<typeof useI18n>['t']): string {
+  if (job.error) return job.error;
+  if (job.status === 'queued') return t('machineDetail.waitingDaemon');
+  if (job.status === 'succeeded' && job.result && typeof job.result === 'object') {
+    const r = job.result as { method?: unknown; name?: unknown; installedVersion?: unknown };
+    if (r.method === 'marketplace') {
+      const name = typeof r.name === 'string' ? r.name : '';
+      const ver = typeof r.installedVersion === 'string' ? ` v${r.installedVersion}` : '';
+      return `${t('machineDetail.viaMarketplace')} · ${name}${ver}`;
+    }
+  }
+  return '—';
+}
+
 function JobStatusBadge({ status }: { status: string }) {
   return (
     <span className="inline-flex items-center gap-2">
@@ -113,14 +132,17 @@ function DeploymentsCard({
     void (async () => {
       try {
         const all = await withAuthGuard(() => api.listProfiles(), logout);
-        // Only targets with a local-write install adapter can be deployed.
+        // Local-write adapters (hermes/codex/deepseek/pi) + claude-code, which
+        // deploys through the 3.5 marketplace emitter (#6): the daemon drives
+        // CC's own plugin CLI — same button, install-or-update.
         setProfiles(
           all.filter(
             (p) =>
               p.target === 'hermes' ||
               p.target === 'codex' ||
               p.target === 'deepseek' ||
-              p.target === 'pi',
+              p.target === 'pi' ||
+              p.target === 'claude-code',
           ),
         );
       } catch {
@@ -172,7 +194,11 @@ function DeploymentsCard({
               <SelectContent>
                 {(profiles ?? []).map((p) => (
                   <SelectItem key={p.id} value={p.id} className="font-mono text-xs">
-                    {p.name} ({p.target})
+                    {p.name} (
+                    {p.target === 'claude-code'
+                      ? `claude-code · ${t('machineDetail.viaMarketplace')}`
+                      : p.target}
+                    )
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -231,8 +257,7 @@ function DeploymentsCard({
                       <JobStatusBadge status={job.status} />
                     </TableCell>
                     <TableCell className="max-w-[24rem] truncate text-muted-foreground text-xs">
-                      {job.error ??
-                        (job.status === 'queued' ? t('machineDetail.waitingDaemon') : '—')}
+                      {jobDetailText(job, t)}
                     </TableCell>
                     <TableCell className="pr-4 text-right">
                       {job.status === 'queued' ? (

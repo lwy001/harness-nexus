@@ -109,6 +109,13 @@ export const createProfileSchema = z.object({
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   description: z.string().max(512).optional(),
+  /**
+   * Editable post-create (#6): bumping the version is what publishes an
+   * update — the marketplace emitter writes it into plugin.json and Claude
+   * Code's `plugin update` compares versions, so content-only changes with a
+   * frozen version are invisible to installed machines.
+   */
+  version: z.string().min(1).max(64).optional(),
   entries: z.array(profileEntryInputSchema).optional(),
 });
 

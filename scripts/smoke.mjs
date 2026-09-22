@@ -1123,7 +1123,7 @@ expect('missing profile param 400', r.status, 400);
 
 log('\n--- [8 C3] fixture HOME + REAL daemon (dist) enrollment ---');
 const { spawn } = await import('node:child_process');
-const { mkdtempSync, mkdirSync, writeFileSync, rmSync, accessSync, readFileSync, statSync } =
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync, accessSync, readFileSync, statSync, chmodSync } =
   await import('node:fs');
 const { tmpdir } = await import('node:os');
 const pathMod = await import('node:path');
@@ -1670,17 +1670,162 @@ const c4RedeployRows = r.json.agents.filter((a) => a.profileId !== null);
 expect('still exactly one deploy instance (upsert)', c4RedeployRows.length, 1);
 expect('instance upgraded by job 3', c4RedeployRows[0].jobId, c4Job3);
 
-log('\n--- [8 C4] claude-code target is refused with the marketplace hint ---');
+log('\n--- [#6] claude-code marketplace deploy via a FAKE claude shim ---');
+// The executor drives `claude plugin …` headless — here that CLI is a shim on
+// the daemon's PATH recording argv and maintaining CC's own state files under
+// the fixture HOME (same trick as the [9 W2] fake npm). Two jobs: fresh
+// install (1.0.0), then one-click update (2.0.0) — the version bump on the
+// profile is what publishes the update.
 r = await req('POST', '/api/profiles', {
   token: userToken,
   body: { name: 'c4-cc', target: 'claude-code', scope: 'personal', entries: [] },
 });
-r = await req('POST', `/api/machines/${c4LiveId}/jobs`, {
+const ccProfileId = r.json.profile.id;
+r = await req('PATCH', `/api/profiles/${ccProfileId}`, {
   token: userToken,
-  body: { profileId: r.json.profile.id },
+  body: { version: '1.1.0' },
 });
-expect('claude-code deploy refused', r.status, 409);
-expect('refusal code', r.json.error, 'TARGET_NOT_DEPLOYABLE');
+expect('profile version editable (publish switch)', r.json.profile.version, '1.1.0');
+
+r = await req('POST', '/api/machines', { token: userToken, body: { name: 'c4-cc-box' } });
+const c4CcMachineId = r.json.machine.id;
+const c4CcToken = r.json.token;
+
+const ccShimDir = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-cc-shim-'));
+writeFileSync(
+  pathMod.join(ccShimDir, 'claude'),
+  `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const dir = path.join(process.env.HOME, '.claude', 'plugins');
+fs.mkdirSync(dir, { recursive: true });
+fs.appendFileSync(path.join(dir, 'argv.log'), process.argv.slice(2).join(' ') + '\\n');
+const read = (f, d) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { return d; } };
+const write = (f, v) => fs.writeFileSync(path.join(dir, f), JSON.stringify(v, null, 2));
+const [cmd, sub, ...rest] = process.argv.slice(2);
+if (cmd === 'plugin' && sub === 'marketplace') {
+  const [action, arg] = rest;
+  if (action === 'add') { const k = read('known_marketplaces.json', {}); k['harness-nexus-smoke-user'] = { source: { source: 'url', url: arg } }; write('known_marketplaces.json', k); process.exit(0); }
+  if (action === 'update') process.exit(0);
+  if (action === 'remove') { const k = read('known_marketplaces.json', {}); delete k[arg]; write('known_marketplaces.json', k); process.exit(0); }
+  process.exit(1);
+}
+if (cmd === 'plugin' && (sub === 'install' || sub === 'update')) {
+  const [pluginId] = rest;
+  const cur = read('installed_plugins.json', { version: 2, plugins: {} });
+  const rows = (cur.plugins[pluginId] = cur.plugins[pluginId] || [{ scope: 'user' }]);
+  rows[0].version = sub === 'update' ? '2.0.0' : '1.0.0';
+  write('installed_plugins.json', cur);
+  process.exit(0);
+}
+process.exit(1);
+`,
+  'utf8',
+);
+chmodSync(pathMod.join(ccShimDir, 'claude'), 0o755);
+
+const c4CcDaemon = spawn(
+  process.execPath,
+  [
+    'packages/cli/dist/index.js',
+    'daemon',
+    '--server',
+    B,
+    '--token',
+    c4CcToken,
+    '--machine-id',
+    c4CcMachineId,
+  ],
+  {
+    env: { ...process.env, HOME: c4Home, PATH: `${ccShimDir}:${process.env.PATH}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  },
+);
+let c4CcErr = '';
+c4CcDaemon.stderr.on('data', (d) => {
+  c4CcErr += d.toString();
+});
+for (let i = 0; i < 50; i++) {
+  r = await req('GET', `/api/machines/${c4CcMachineId}`, { token: userToken });
+  if (r.json.machine?.online) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+
+r = await req('POST', `/api/machines/${c4CcMachineId}/jobs`, {
+  token: userToken,
+  body: { profileId: ccProfileId },
+});
+expect('claude-code deploy accepted (#6)', r.status, 201);
+// The smoke server sets no PUBLIC_BASE_URL — the arm carries the default.
+const ccMp = r.json.job.payload.marketplace.marketplaceName;
+const ccBase = r.json.job.payload.marketplace.baseUrl;
+expect('marketplace arm baseUrl is the server default', ccBase, 'http://localhost:8080');
+expect('marketplace arm name is the owner marketplace', ccMp.startsWith('harness-nexus-'), true);
+expect('marketplace arm plugin', r.json.job.payload.marketplace.pluginName, 'c4-cc');
+const ccJob1 = r.json.job.id;
+let ccJob = null;
+for (let i = 0; i < 100; i++) {
+  r = await req('GET', `/api/machines/${c4CcMachineId}/jobs`, { token: userToken });
+  ccJob = r.json.jobs.find((j) => j.id === ccJob1);
+  if (ccJob && (ccJob.status === 'succeeded' || ccJob.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('marketplace deploy succeeded', ccJob?.status, 'succeeded');
+expect('result method', ccJob?.result?.method, 'marketplace');
+expect('result installedVersion', ccJob?.result?.installedVersion, '1.0.0');
+
+const ccArgv = readFileSync(pathMod.join(c4Home, '.claude', 'plugins', 'argv.log'), 'utf8');
+expect(
+  'marketplace add URL carries the machine PAT',
+  ccArgv.includes(`plugin marketplace add ${ccBase}/api/marketplace/${c4CcToken}/marketplace.json`),
+  true,
+);
+expect('headless install flag', ccArgv.includes(`plugin install c4-cc@${ccMp} -y`), true);
+
+// The emitter serves the daemon's machine PAT (machine-ctl scope).
+r = await req('GET', `/api/marketplace/${c4CcToken}/marketplace.json`, { token: null });
+expect('machine PAT accepted by emitter', r.status, 200);
+expect('catalog is the owner marketplace', r.json.name, ccMp);
+expect('unknown token 404s', (await req('GET', '/api/marketplace/hnpat_nope0000000000000000/marketplace.json', { token: null })).status, 404);
+
+// One-click update: same job again — the daemon sees installed 1.0.0 and
+// routes to `plugin update`, reporting the shim's 2.0.0.
+r = await req('POST', `/api/machines/${c4CcMachineId}/jobs`, {
+  token: userToken,
+  body: { profileId: ccProfileId },
+});
+const ccJob2 = r.json.job.id;
+for (let i = 0; i < 100; i++) {
+  r = await req('GET', `/api/machines/${c4CcMachineId}/jobs`, { token: userToken });
+  ccJob = r.json.jobs.find((j) => j.id === ccJob2);
+  if (ccJob && (ccJob.status === 'succeeded' || ccJob.status === 'failed')) break;
+  await new Promise((s2) => setTimeout(s2, 200));
+}
+expect('marketplace update job succeeded', ccJob?.status, 'succeeded');
+expect('update reports the new version', ccJob?.result?.installedVersion, '2.0.0');
+const ccArgv2 = readFileSync(pathMod.join(c4Home, '.claude', 'plugins', 'argv.log'), 'utf8');
+expect('second run used plugin update', ccArgv2.includes(`plugin update c4-cc@${ccMp} -y`), true);
+
+// claude-code deploys never register an AgentInstance (chat keys off the
+// runtime-detected row — a plugin install is not a runtime install).
+r = await req('GET', `/api/machines/${c4CcMachineId}/agents`, { token: userToken });
+expect(
+  'no agent instance for marketplace deploys',
+  r.json.agents.some((a) => a.profileId === ccProfileId),
+  false,
+);
+
+c4CcDaemon.kill('SIGTERM');
+await new Promise((resolve) => {
+  c4CcDaemon.once('exit', resolve);
+  setTimeout(resolve, 3000);
+});
+await req('DELETE', `/api/machines/${c4CcMachineId}`, { token: userToken });
+rmSync(ccShimDir, { recursive: true, force: true });
+rmSync(pathMod.join(c4Home, '.claude'), { recursive: true, force: true });
+if (c4CcErr.includes('Error:')) {
+  log(`(c4-cc daemon stderr note): ${c4CcErr.split('\n').filter((l) => l.includes('Error:')).slice(0, 3).join(' | ')}`);
+}
 
 c4Daemon.kill('SIGTERM');
 await new Promise((resolve) => {
@@ -1934,7 +2079,6 @@ if (c5Err.includes('Error:')) {
 // codex deliberately absent so the not-installed arm is exercised too.
 // ===========================================================================
 log('\n--- [9 W1] fixture HOME + fake runtime bins ---');
-const { chmodSync } = await import('node:fs');
 const w1Home = mkdtempSync(pathMod.join(tmpdir(), 'hnx-smoke-9w1-'));
 const w1Bin = pathMod.join(w1Home, 'bin');
 mkdirSync(w1Bin, { recursive: true });
