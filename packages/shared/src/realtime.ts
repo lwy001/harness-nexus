@@ -583,6 +583,17 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
     stopReason: z.enum(['end_turn', 'cancelled', 'max_tokens', 'refusal']),
   }),
   z.object({ kind: z.literal('session_status'), state: z.enum(['active', 'idle']) }),
+  // #10 — the live Sender's send queue (SERVER-owned, depth 1). Emitted by
+  // the SERVER — never the daemon — whenever the slot changes: enqueue,
+  // flush, cancel, turn cancel. `prompt: null` = empty slot; `flushed`
+  // distinguishes a clear-because-it-RUNS (the viewer folds the parked
+  // blocks into a user row) from a clear-because-cancelled. A channel
+  // (re)join replays the current state so the browser restores the chip.
+  z.object({
+    kind: z.literal('queue_state'),
+    prompt: z.array(promptBlockSchema).min(1).max(16).nullable(),
+    flushed: z.boolean(),
+  }),
   // 9 W9 A — the session's mode/config snapshot (patch semantics above).
   z.object({ kind: z.literal('session_config') }).merge(sessionConfigPatchSchema),
   // 9 W14 — the agent's todo/task plan (full-replace snapshot; empty = cleared).
@@ -752,6 +763,9 @@ export const chatConfigSetEventSchema = chatConfigSetRequestSchema;
 
 /** browser → server and server → daemon: cancel the running turn (idempotent). */
 export const chatTurnCancelEventSchema = z.object({ sessionId: z.string().min(1).max(64) });
+
+/** browser → server: drop the parked send-queue entry (#10; edit = cancel + re-draft). */
+export const chatQueueCancelRequestSchema = z.object({ sessionId: z.string().min(1).max(64) });
 
 /** browser → server: answer a permission request; absent `optionId` = cancelled. */
 export const chatPermissionRespondRequestSchema = z.object({

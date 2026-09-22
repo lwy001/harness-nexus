@@ -97,6 +97,39 @@ describe('fold history ingestion (#8: user item = turn boundary)', () => {
     expect(stepTextAt(state, 4)).toBe('reply to Q1');
   });
 
+  it('#10: queue_state parks and clears the chip without transcript rows', () => {
+    const parked: HistoryItem[] = [
+      { type: 'user', blocks: [{ type: 'text', text: 'Q0' }] },
+      { type: 'event', event: { kind: 'message_delta', delta: 'reply to Q0' } },
+    ];
+    let state = fold(createFoldState(), { type: 'history', items: parked });
+    state = fold(state, {
+      type: 'event',
+      event: { kind: 'queue_state', prompt: [{ type: 'text', text: 'meanwhile' }], flushed: false },
+    });
+    expect(state.queued?.[0]).toEqual({ type: 'text', text: 'meanwhile' });
+    const rowsBefore = state.rows.length;
+    // A cancel clear drops the chip WITHOUT folding a user row.
+    state = fold(state, { type: 'event', event: { kind: 'queue_state', prompt: null, flushed: false } });
+    expect(state.queued).toBeNull();
+    expect(state.rows.length).toBe(rowsBefore);
+  });
+
+  it('#10: a flush folds the parked blocks into the user row of the next turn', () => {
+    let state = fold(createFoldState(), {
+      type: 'event',
+      event: { kind: 'queue_state', prompt: [{ type: 'text', text: 'next question' }], flushed: false },
+    });
+    state = fold(state, {
+      type: 'event',
+      event: { kind: 'queue_state', prompt: null, flushed: true },
+    });
+    expect(state.queued).toBeNull();
+    const last = state.rows[state.rows.length - 1];
+    if (last === undefined || last.row !== 'user') throw new Error('expected a user row');
+    expect(last.blocks).toEqual([{ type: 'text', text: 'next question' }]);
+  });
+
   it('re-ingesting the same batch converges (resync idempotence)', () => {
     const once = fold(createFoldState(), { type: 'history', items: replayedTurns });
     const twice = fold(once, { type: 'history', items: replayedTurns });

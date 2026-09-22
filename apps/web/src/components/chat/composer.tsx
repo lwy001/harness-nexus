@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpIcon,
   CircleStopIcon,
+  ClockIcon,
   ImageIcon,
   PaperclipIcon,
+  PencilIcon,
   PlusIcon,
   SquareSlashIcon,
+  XIcon,
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
@@ -26,7 +29,12 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { DraftAttachment } from './image-attach.js';
-import type { ChatConfigSetPayload, CommandView, SessionConfigOption } from '@/realtime';
+import type {
+  ChatConfigSetPayload,
+  CommandView,
+  PromptBlock,
+  SessionConfigOption,
+} from '@/realtime';
 
 /**
  * The chat Sender (Phase 9 W8; controls added 9 W9). One card: the attachment
@@ -79,6 +87,13 @@ interface ComposerProps {
   onConfigSet: (set: ChatConfigSetPayload) => void;
   /** 9 W15 — the agent's advertised slash commands (fold slice). */
   commands: CommandView[];
+  // ---- #10 — the live sender while a turn runs ----
+  /** The parked queue slot (fold slice, server-owned depth 1). */
+  queued: PromptBlock[] | null;
+  /** Take the parked chip back into the draft (cancel + prefill). */
+  onQueueEdit: () => void;
+  /** Drop the parked chip. */
+  onQueueCancel: () => void;
 }
 
 /** Mode ids that WEAKEN the permission gate — confirm before switching. */
@@ -93,6 +108,22 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${compact(1_000_000)}M`;
   if (n >= 1_000) return `${compact(1_000)}k`;
   return String(n);
+}
+
+/** #10 — one-line preview of the parked queue chip's blocks. */
+function queuedPreview(blocks: PromptBlock[]): string {
+  const parts: string[] = [];
+  const text = blocks
+    .filter((b): b is Extract<PromptBlock, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.text.trim())
+    .filter((txt) => txt !== '')
+    .join(' ');
+  if (text !== '') parts.push(text);
+  const files = blocks.filter((b) => b.type === 'resource_link').length;
+  const images = blocks.filter((b) => b.type === 'image').length;
+  if (files > 0) parts.push(`+${String(files)}📎`);
+  if (images > 0) parts.push(`+${String(images)}🖼`);
+  return parts.join(' ');
 }
 
 /** Context pressure from the fold's usage slice — hidden when the target's
@@ -148,12 +179,15 @@ function ConfigSelect({
   value,
   choices,
   disabled,
+  hint,
   onPick,
 }: {
   label: string;
   value: string | undefined;
   choices: SelectChoice[];
   disabled: boolean;
+  /** Overrides the trigger title (e.g. the mid-turn "applies next turn" note). */
+  hint?: string;
   onPick: (value: string) => void;
 }) {
   if (choices.length === 0) return null;
@@ -173,11 +207,9 @@ function ConfigSelect({
       <SelectTrigger
         size="sm"
         aria-label={label}
-        title={
-          value === undefined
-            ? label
-            : (choices.find((c) => c.value === value)?.description ?? label)
-        }
+        title={hint ?? (value === undefined
+          ? label
+          : (choices.find((c) => c.value === value)?.description ?? label))}
         className="text-muted-foreground hover:text-foreground h-7 max-w-40 gap-1 border-none px-1.5 text-xs font-normal shadow-none focus:ring-0 dark:hover:bg-accent/50"
       >
         <SelectValue placeholder={label} />
@@ -294,17 +326,22 @@ export function Composer({
   config,
   onConfigSet,
   commands,
+  queued,
+  onQueueEdit,
+  onQueueCancel,
 }: ComposerProps) {
   const { t } = useI18n();
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const disabled = phase !== 'ready';
-  const controlsDisabled = disabled || turnActive;
+  // #10 — the selects stay WRITABLE mid-turn: every target accepts the write
+  // (server+daemon forward config.set unconditionally); the running turn
+  // keeps its pinned config, so the honest contract is "applies from the
+  // next turn" — surfaced as the trigger hint below.
+  const controlsDisabled = disabled;
   const canSend =
-    !disabled &&
-    !turnActive &&
-    (value.trim() !== '' || attachments.length > 0 || fileRefs.length > 0);
+    !disabled && (value.trim() !== '' || attachments.length > 0 || fileRefs.length > 0);
 
   // 9 W15 — the `/` palette: open while the draft starts with '/', the agent
   // advertised commands, the channel is usable, and the user hasn't dismissed
@@ -466,6 +503,37 @@ export function Composer({
         </div>
       ) : null}
 
+      {queued !== null ? (
+        <div className="flex px-3.5 pt-3">
+          <span
+            className="bg-muted inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-xs"
+            title={t('chat.queuedLabel')}
+          >
+            <ClockIcon className="text-muted-foreground size-3 shrink-0" />
+            <span className="text-muted-foreground shrink-0">{t('chat.queuedLabel')}</span>
+            <span className="truncate font-mono">{queuedPreview(queued)}</span>
+            <button
+              type="button"
+              onClick={onQueueEdit}
+              className="text-muted-foreground hover:text-foreground ml-0.5 shrink-0"
+              aria-label={t('chat.queuedEditAria')}
+              title={t('chat.queuedEditAria')}
+            >
+              <PencilIcon className="size-3" />
+            </button>
+            <button
+              type="button"
+              onClick={onQueueCancel}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+              aria-label={t('chat.queuedCancelAria')}
+              title={t('chat.queuedCancelAria')}
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          </span>
+        </div>
+      ) : null}
+
       {paletteOpen ? (
         <CommandPalette
           commands={filteredCommands}
@@ -560,14 +628,14 @@ export function Composer({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem
-              disabled={!imageSupported || turnActive}
+              disabled={!imageSupported}
               title={imageSupported ? undefined : t('chat.imageUnsupported')}
               onClick={() => fileInputRef.current?.click()}
             >
               <ImageIcon className="size-4" />
               {t('chat.attachImage')}
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={turnActive} onClick={onOpenFilePicker}>
+            <DropdownMenuItem disabled={disabled} onClick={onOpenFilePicker}>
               <PaperclipIcon className="size-4" />
               {t('chat.attachFile')}
             </DropdownMenuItem>
@@ -579,6 +647,7 @@ export function Composer({
           value={modeValue}
           choices={modeChoices}
           disabled={controlsDisabled}
+          hint={turnActive ? t('chat.appliesNextTurn') : undefined}
           onPick={pickMode}
         />
         {modelOption === undefined ? null : (
@@ -594,6 +663,7 @@ export function Composer({
               })) ?? []
             }
             disabled={controlsDisabled}
+            hint={turnActive ? t('chat.appliesNextTurn') : undefined}
             onPick={(v) => onConfigSet({ kind: 'option', configId: modelOption.id, value: v })}
           />
         )}
@@ -609,6 +679,7 @@ export function Composer({
               })) ?? []
             }
             disabled={controlsDisabled}
+            hint={turnActive ? t('chat.appliesNextTurn') : undefined}
             onPick={(v) => onConfigSet({ kind: 'option', configId: effortOption.id, value: v })}
           />
         )}
@@ -616,17 +687,35 @@ export function Composer({
         <span className="min-w-0 flex-1" />
         <ContextMeter usage={usage} />
         {turnActive ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="hover:border-destructive/40 hover:text-destructive size-9 shrink-0 rounded-full"
-            onClick={onCancel}
-            title={t('chat.stopAria')}
-            aria-label={t('chat.stopAria')}
-          >
-            <CircleStopIcon className="size-4" />
-          </Button>
+          <>
+            {/* #10 — a non-empty draft mid-turn offers Send (the message
+                queues server-side) ALONGSIDE Stop; an empty draft is Stop
+                only. Send keeps the primary look; Stop stays the outlined
+                danger-leaning outline. */}
+            {canSend ? (
+              <Button
+                type="button"
+                size="icon"
+                className="size-9 shrink-0 rounded-full"
+                onClick={onSend}
+                title={t('chat.queueSendAria')}
+                aria-label={t('chat.queueSendAria')}
+              >
+                <ArrowUpIcon className="size-4" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="hover:border-destructive/40 hover:text-destructive size-9 shrink-0 rounded-full"
+              onClick={onCancel}
+              title={t('chat.stopAria')}
+              aria-label={t('chat.stopAria')}
+            >
+              <CircleStopIcon className="size-4" />
+            </Button>
+          </>
         ) : (
           <Button
             type="button"

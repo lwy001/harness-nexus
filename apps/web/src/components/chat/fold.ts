@@ -138,6 +138,15 @@ export interface FoldState {
     contextUsed?: number;
     contextSize?: number;
   } | null;
+  /**
+   * #10 — the server-owned send queue (depth 1) as a fold slice: the parked
+   * prompt renders as a chip above the composer, never a transcript row.
+   * A `queue_state {prompt: null, flushed: true}` while a chip exists folds
+   * the parked blocks into a USER row first (every viewer saw the chip, so
+   * every viewer can make the row — the daemon ring only carries it from
+   * the moment the flushed prompt actually runs).
+   */
+  queued: PromptBlock[] | null;
   permissions: PermissionCardState[];
   elicitations: ElicitationCardState[];
   turnActive: boolean;
@@ -167,6 +176,7 @@ export function createFoldState(): FoldState {
     permissions: [],
     elicitations: [],
     turnActive: false,
+    queued: null,
   };
 }
 
@@ -396,6 +406,22 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
     }
     case 'session_status':
       return { ...state, turnActive: event.state === 'active' };
+    case 'queue_state': {
+      // #10 — flush conversion: the parked blocks become the user row of
+      // the turn that is about to start; a cancel/take clear drops them.
+      if (event.prompt === null && event.flushed && state.queued !== null) {
+        const blocks = promptBlocksToUserBlocks(state.queued);
+        const next: FoldState =
+          blocks.length > 0
+            ? {
+                ...state,
+                rows: [...state.rows, { row: 'user', key: nextKey(state, 'u'), blocks }],
+              }
+            : state;
+        return { ...next, queued: null };
+      }
+      return { ...state, queued: event.prompt };
+    }
     case 'session_config':
       return {
         ...state,
