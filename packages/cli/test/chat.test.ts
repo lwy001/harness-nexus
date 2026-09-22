@@ -575,6 +575,90 @@ describe('session round-trip vs the fixture agent', () => {
     expect(lateAck).toHaveBeenCalledWith({ error: 'unknown-session' });
   }, 15000);
 
+  it('an answered permission rides the ring as RESOLVED; turn.cancel settles pending cards (#7)', async () => {
+    const socket = new FakeSocket();
+    attachChatHandlers(socket as never, {
+      env: { HN_ACP_COMMAND_HERMES: `node ${FIXTURE}`, PATH: process.env.PATH ?? '' },
+      homeDir: LEDGER_HOME,
+    });
+
+    socket.receive('chat:session.start', {
+      sessionId: 'sess-perm',
+      agentInstanceId: 'ag-1',
+      target: 'hermes',
+      cwd: '/tmp',
+    });
+    await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:session.ready')?.payload as
+          { error?: string } | undefined,
+    );
+
+    // Answer a permission, let the turn finish…
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-perm',
+      prompt: [{ type: 'text', text: 'please ask-permission now' }],
+    });
+    const perm = await waitFor(() =>
+      socket.chatEvents().find((e) => e.kind === 'permission_request'),
+    );
+    if (perm.kind !== 'permission_request') throw new Error('not a permission event');
+    socket.receive('chat:permission.respond', {
+      sessionId: 'sess-perm',
+      requestId: perm.requestId,
+      optionId: 'allow_always',
+    });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'message_delta' && e.delta === 'permission granted: allow_always'),
+    );
+
+    // …then a resync (session switch back) must replay BOTH halves — the
+    // request AND its resolution. Before #7 the ring only held the request,
+    // so every rejoin re-showed the answered card as unsettled.
+    socket.receive('chat:session.resync', { sessionId: 'sess-perm' });
+    const history = await waitFor(
+      () =>
+        socket.emitted.find((e) => e.event === 'chat:history')?.payload as
+          { items: { type: string; event?: { kind: string; requestId?: string } }[] } | undefined,
+    );
+    const ringKinds = history.items
+      .filter((i) => i.type === 'event' && i.event?.requestId === perm.requestId)
+      .map((i) => i.event?.kind);
+    expect(ringKinds).toContain('permission_request');
+    expect(ringKinds).toContain('permission_resolved');
+
+    // A NEW pending permission must settle immediately on turn.cancel — not
+    // linger for the 75s backstop ("cannot stop while a permission is up").
+    socket.receive('chat:message.send', {
+      sessionId: 'sess-perm',
+      prompt: [{ type: 'text', text: 'please ask-permission now' }],
+    });
+    const perm2 = await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'permission_request' && e.requestId !== perm.requestId),
+    );
+    if (perm2.kind !== 'permission_request') throw new Error('not a permission event');
+    socket.receive('chat:turn.cancel', { sessionId: 'sess-perm' });
+    await waitFor(() =>
+      socket
+        .chatEvents()
+        .find((e) => e.kind === 'permission_resolved' && e.requestId === perm2.requestId),
+    );
+    // The cancel-settled request is gone from the pending map.
+    const staleAck = vi.fn();
+    socket.receive(
+      'chat:permission.respond',
+      { sessionId: 'sess-perm', requestId: perm2.requestId, optionId: 'reject_once' },
+      staleAck,
+    );
+    expect(staleAck).toHaveBeenCalledWith({ error: 'unknown-permission' });
+
+    socket.receive('chat:session.close', { sessionId: 'sess-perm', reason: 'user' });
+  }, 15000);
+
   it('prewarm → start ADOPTS the pooled adapter, re-arms, and tears down on disconnect (issue #3)', async () => {
     const socket = new FakeSocket();
     const handle = attachChatHandlers(socket as never, {
