@@ -13,14 +13,15 @@ export const createMachineSchema = z.object({
 /**
  * Issue #3 — per-target adapter pre-warm switches, MACHINE-scoped (the idle
  * processes live on the machine, so its owner decides). The zod layer mirrors
- * `core/domain/machine.ts`; keep the shapes in sync. pi/opencode are out of
- * scope (pi chats through the in-daemon RPC façade; the wire mechanism is
- * target-generic, so extending later is additive).
+ * `core/domain/machine.ts`; keep the shapes in sync. pi is out of scope (it
+ * chats through the in-daemon RPC façade); opencode joined in #4 (open
+ * 2.5s → ~1.0s; OFF by default — its idle process weighs ~316 MB).
  */
 export const chatPrewarmSettingsSchema = z.object({
   'claude-code': z.boolean(),
   codex: z.boolean(),
   deepseek: z.boolean(),
+  opencode: z.boolean(),
 });
 
 /** Applied when the machine row predates the feature (NULL column) — mirrors core. */
@@ -28,6 +29,7 @@ export const DEFAULT_CHAT_PREWARM_SETTINGS = {
   'claude-code': false,
   codex: false,
   deepseek: true,
+  opencode: false,
 };
 
 export const updateMachineSchema = z

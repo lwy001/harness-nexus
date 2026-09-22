@@ -1855,7 +1855,8 @@ describe('adapter pre-warm (issue #3)', () => {
   const prewarmEvents: { target: string }[] = [];
 
   beforeAll(async () => {
-    // A deepseek agent (a PREWARM target — the hermes fixture agent is not).
+    // A deepseek agent (a PREWARM target — the hermes fixture agent is not)
+    // and an opencode one (#4 — the fourth pool target, default OFF).
     const now = new Date().toISOString();
     await app.uow.agentInstances.save({
       id: 'agent-dsh-1',
@@ -1867,6 +1868,19 @@ describe('adapter pre-warm (issue #3)', () => {
       name: 'dsh agent',
       directory: '/home/tester/.dsh',
       jobId: 'job-dsh-1',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await app.uow.agentInstances.save({
+      id: 'agent-oc-1',
+      machineId,
+      ownerId: (await app.uow.users.findByUsername('chatter'))!.id,
+      target: 'opencode',
+      profileId: 'profile-oc-1',
+      profileVersion: '1.0.0',
+      name: 'opencode agent',
+      directory: '/home/tester/.config/opencode',
+      jobId: 'job-oc-1',
       createdAt: now,
       updatedAt: now,
     });
@@ -1900,7 +1914,9 @@ describe('adapter pre-warm (issue #3)', () => {
       method: 'PATCH',
       url: `/api/machines/${machineId}`,
       headers: authed(second.json().token),
-      payload: { chatPrewarm: { 'claude-code': true, codex: true, deepseek: true } },
+      payload: {
+        chatPrewarm: { 'claude-code': true, codex: true, deepseek: true, opencode: true },
+      },
     });
     expect(foreign.statusCode).toBe(404);
 
@@ -1908,13 +1924,16 @@ describe('adapter pre-warm (issue #3)', () => {
       method: 'PATCH',
       url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: false } },
+      payload: {
+        chatPrewarm: { 'claude-code': false, codex: false, deepseek: false, opencode: false },
+      },
     });
     expect(patch.statusCode).toBe(200);
     expect(patch.json().machine.chatPrewarm).toEqual({
       'claude-code': false,
       codex: false,
       deepseek: false,
+      opencode: false,
     });
 
     // An unrelated machine PATCH must not drop the map.
@@ -1926,6 +1945,15 @@ describe('adapter pre-warm (issue #3)', () => {
     });
     expect(rename.statusCode).toBe(200);
     expect(rename.json().machine.chatPrewarm.deepseek).toBe(false);
+    // A legacy 3-key payload is a replace against a strict schema → rejected,
+    // not silently defaulted (the web normalizes with defaults before sending).
+    const legacy = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: true } },
+    });
+    expect(legacy.statusCode).toBe(400);
   });
 
   it('prewarm socket: off → PREWARM_DISABLED; on → /ctl nudge; start stamped', async () => {
@@ -1958,7 +1986,9 @@ describe('adapter pre-warm (issue #3)', () => {
       method: 'PATCH',
       url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: true } },
+      payload: {
+        chatPrewarm: { 'claude-code': false, codex: false, deepseek: true, opencode: false },
+      },
     });
     expect(patch.statusCode).toBe(200);
     const on = (await emitAck(browser, 'chat:adapter.prewarm', {
@@ -1967,6 +1997,28 @@ describe('adapter pre-warm (issue #3)', () => {
     expect(on.accepted).toBe(true);
     await waitFor(() => (prewarmEvents.length > 0 ? true : undefined));
     expect(prewarmEvents[0]).toEqual({ target: 'deepseek' });
+
+    // #4 — opencode rides the same gate; its own switch is independent.
+    const ocOff = (await emitAck(browser, 'chat:adapter.prewarm', {
+      agentInstanceId: 'agent-oc-1',
+    })) as { accepted: boolean; error?: string };
+    expect(ocOff.accepted).toBe(false);
+    expect(ocOff.error).toBe('PREWARM_DISABLED');
+    const ocPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
+      headers: authed(jwt),
+      payload: {
+        chatPrewarm: { 'claude-code': false, codex: false, deepseek: true, opencode: true },
+      },
+    });
+    expect(ocPatch.statusCode).toBe(200);
+    const ocOn = (await emitAck(browser, 'chat:adapter.prewarm', {
+      agentInstanceId: 'agent-oc-1',
+    })) as { accepted: boolean };
+    expect(ocOn.accepted).toBe(true);
+    await waitFor(() => (prewarmEvents.length > 1 ? true : undefined));
+    expect(prewarmEvents[1]).toEqual({ target: 'opencode' });
 
     // An open on a prewarm-ON target stamps `prewarm: true` on the start.
     const starts: { target: string; prewarm?: boolean }[] = [];
@@ -1986,7 +2038,9 @@ describe('adapter pre-warm (issue #3)', () => {
       method: 'PATCH',
       url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: true } },
+      payload: {
+        chatPrewarm: { 'claude-code': false, codex: false, deepseek: true, opencode: false },
+      },
     });
     expect(patch.statusCode).toBe(200);
   });

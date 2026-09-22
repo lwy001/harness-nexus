@@ -19,6 +19,7 @@ import {
   RUNTIME_API_SUPPORT,
   DEFAULT_CHAT_PREWARM_SETTINGS,
   providerApiToSpecApi,
+  type ChatPrewarmSettings,
   type CredentialView,
   type LlmModelInfo,
   type LlmProviderView,
@@ -181,11 +182,13 @@ function PrewarmToggle({
   const [busy, setBusy] = useState(false);
   if (!(PREWARM_ADAPTER_TARGETS as readonly string[]).includes(target)) return null;
   const prewarm = machine?.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS;
-  const checked = prewarm[target as 'claude-code' | 'codex' | 'deepseek'] === true;
+  const checked = prewarm[target as keyof ChatPrewarmSettings] === true;
 
   async function toggle(next: boolean): Promise<void> {
     if (machine === null || busy) return;
-    const previous = machine.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS;
+    // Normalize against the defaults: a row stored before #4 carries only
+    // three keys, and the PATCH schema is strict replace-semantics.
+    const previous = { ...DEFAULT_CHAT_PREWARM_SETTINGS, ...machine.chatPrewarm };
     setBusy(true);
     try {
       await withAuthGuard(
@@ -193,7 +196,7 @@ function PrewarmToggle({
           api.updateMachine(machineId, {
             chatPrewarm: {
               ...previous,
-              [target as 'claude-code' | 'codex' | 'deepseek']: next,
+              [target as keyof ChatPrewarmSettings]: next,
             },
           }),
         logout,

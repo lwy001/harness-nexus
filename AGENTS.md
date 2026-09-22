@@ -1625,27 +1625,33 @@ Summary for daily work:
   W3's settings `model` key is what triggers the wrapper's re-assert path —
   keep it (default-model feature); the patch, not config, is the fix.
 
-## Adapter pre-warm pool (Issue #3)
+## Adapter pre-warm pool (Issues #3–#4)
 
-Investigation + rig numbers live in issue #3 (dsh open decomposition, CPU
+Investigation + rig numbers live in issues #3 (dsh open decomposition, CPU
 profile of the 1.3s `dsh --profile acp` boot — module-resolution I/O storm,
-inherent to dsh; `NODE_COMPILE_CACHE` measured and rejected). Summary for
-daily work:
+inherent to dsh; `NODE_COMPILE_CACHE` measured and rejected) and #4 (opencode:
+open 2.5s = ~1.6s binary boot + ~0.93s per-process lazy first `session/new`;
+idle RSS ~316MB — the heaviest of the set). Summary for daily work:
 
 - **The problem this solves:** opening a chat channel paid the adapter
   process boot on every click (dsh ~1.3s of its 1.5s open; codex ~2.1s of
   2.3s; claude's wrapper ~0.4s of 1.2s — its CLI child boots at
-  `session/load` regardless). The fix is the reference portal's resident
-  model: boot the adapter BEFORE the click.
+  `session/load` regardless; opencode ~2.5s of its 2.5s — the slowest open
+  of all). The fix is the reference portal's resident model: boot the
+  adapter BEFORE the click.
 - **Per-target switch, MACHINE-scoped** (redesigned same-day from the first
   instance-global cut): `machines.chat_prewarm` JSON column (migration 16),
   written through the ordinary `PATCH /api/machines/:id` (`chatPrewarm` arm,
   owner-or-admin + 404-hiding — the same gates as rename/remote-chat). Absent
-  = defaults: **deepseek ON, claude-code/codex OFF** (small win vs an idle
-  process each). The toggle lives in the machine page's 代理 tab — one Switch
-  per Agent runtime card (`PrewarmToggle` in `agents-tab.tsx`; pi/opencode
-  cards render none). `PREWARM_ADAPTER_TARGETS` (shared, re-exported by the
+  = defaults: **deepseek ON, claude-code/codex/opencode OFF** (opencode #4:
+  biggest absolute saving after codex, but a ~316MB idle process argues for
+  opt-in). The toggle lives in the machine page's 代理 tab — one Switch
+  per Agent runtime card (`PrewarmToggle` in `agents-tab.tsx`; only the pi
+  card renders none). `PREWARM_ADAPTER_TARGETS` (shared, re-exported by the
   SDK alongside `DEFAULT_CHAT_PREWARM_SETTINGS`) enumerates the pool targets.
+  The PATCH map is STRICT replace-semantics (all four keys, 400 otherwise) —
+  the web normalizes `{...DEFAULT, ...machine.chatPrewarm}` before sending,
+  which also heals legacy 3-key rows from before #4.
 - **Trigger chain:** AgentSession mount → `chat:adapter.prewarm
 {agentInstanceId}` (browser→server, owner-gated like open, ack
   `{accepted}` — false when off/unsupported/offline) → `chat:adapter.prewarm
@@ -1666,7 +1672,8 @@ daily work:
   tap-grade streaming; a failed handshake closes the listener and the
   channel degrades to the transcript tail exactly like a tap-less spawn.
   Rig-verified: a resume through a consumed prewarm streamed 31 per-token
-  deltas.
+  deltas. The tap is dsh-ONLY (`armTap` no-ops elsewhere) — an opencode
+  adoption is a plain native-ACP connection.
 - **Ledger bookkeeping:** prewarms ledger under `prewarm-<target>` pseudo
   ids (the WIRE_ID regex allows no colons — hence the hyphen); adoption
   DELETES the pseudo file and re-ledgers under the channel's id with the
@@ -1674,13 +1681,19 @@ daily work:
   W11 A). `deleteAdapterLedgerEntry` exists for exactly this rename.
 - **Rig numbers (click → history+ready):** dsh 1.5s → **59–206ms** (fully
   warm pool vs settled-boot); codex 2.3s → **199ms**; claude 1.2s →
-  **666ms**; switches off → baseline unchanged (1.48s dsh). Daemon
-  `0.23.0-i3`; the machine-scope redesign re-verified end-to-end on the rig
-  (default machine → dsh prewarm accepted; PATCH flips acks live).
+  **666ms**; opencode 2.5s → **846–887ms** (#4 — the remaining ~0.9s is
+  its per-process lazy first `session/new`, deliberately NOT warmed: a
+  throwaway warm-up session would persist a junk row in opencode's session
+  store); switches off → baseline unchanged (1.48s dsh). Daemon
+  `0.24.0-i4`; the machine-scope redesign re-verified end-to-end on the rig
+  (default machine → dsh prewarm accepted; PATCH flips acks live; #4
+  re-verified opencode adoption + re-arm + TTL sweep + zero leaks).
 - **Test-side:** `ChatHandlersHandle.prewarmReady(target)` exposes pool
   readiness (deterministic waits); `test/prewarm.test.ts` covers pool
   semantics (dedupe, consume-once, pending-miss, TTL, dead-replace,
-  late-resolve kill, teardownAll).
+  late-resolve kill, teardownAll); the server suite covers the strict-map
+  PATCH semantics incl. the legacy 3-key 400 and opencode's independent
+  switch.
 
 ## Authentication & authorization (permission interceptors)
 

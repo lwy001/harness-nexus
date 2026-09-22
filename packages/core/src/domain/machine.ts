@@ -16,13 +16,19 @@ export interface ChatPrewarmSettings {
   'claude-code': boolean;
   codex: boolean;
   deepseek: boolean;
+  opencode: boolean;
 }
 
-/** deepseek gains the most (~1.3s of its 1.5s open); the others get OFF by default. */
+/**
+ * deepseek gains the most (~1.3s of its 1.5s open); the others get OFF by
+ * default — opencode (#4) included: its open drops 2.5s → ~1.0s, but the
+ * idle process weighs ~316 MB, the heaviest of the set.
+ */
 export const DEFAULT_CHAT_PREWARM_SETTINGS: ChatPrewarmSettings = {
   'claude-code': false,
   codex: false,
   deepseek: true,
+  opencode: false,
 };
 
 export interface Machine {
