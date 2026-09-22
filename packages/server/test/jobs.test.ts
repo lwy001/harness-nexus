@@ -76,7 +76,10 @@ let deployProfileId: string;
  * `dispatchPending` emits `job:dispatch` during connection, so a listener
  * attached after `connect` can miss it.
  */
-async function connectDaemon(beforeConnect?: (sock: Socket) => void): Promise<Socket> {
+async function connectDaemon(
+  beforeConnect?: (sock: Socket) => void,
+  capabilities: string[] = ['inventory', 'deploy'],
+): Promise<Socket> {
   const sock = io(`${baseUrl}/ctl`, {
     auth: { token: machineToken, machineId },
     transports: ['websocket'],
@@ -85,7 +88,7 @@ async function connectDaemon(beforeConnect?: (sock: Socket) => void): Promise<So
   await once(sock, 'connect');
   await emitAck(sock, 'machine:hello', {
     daemonVersion: '0.3.0-test',
-    capabilities: ['inventory', 'deploy'],
+    capabilities,
   });
   return sock;
 }
@@ -323,7 +326,7 @@ describe('recovery', () => {
 });
 
 describe('gates', () => {
-  it('deploy to a claude-code profile → 409 TARGET_NOT_DEPLOYABLE', async () => {
+  it('deploy to a claude-code profile: online daemon without marketplace-deploy → 409', async () => {
     const profile = await app.inject({
       method: 'POST',
       url: '/api/profiles',
@@ -337,7 +340,7 @@ describe('gates', () => {
       payload: { profileId: profile.json().profile.id },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('TARGET_NOT_DEPLOYABLE');
+    expect(res.json().error).toBe('DAEMON_NO_MARKETPLACE_DEPLOY');
   });
 
   it('harness job: payload union, pin-needs-version, and bad targets are 400', async () => {
@@ -525,5 +528,136 @@ describe('gates', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json().profile.id).toBe(deployProfileId);
     expect(Array.isArray(ok.json().artifacts)).toBe(true);
+  });
+});
+
+describe('claude-code marketplace deploy (#6)', () => {
+  it('dispatch carries the marketplace arm and never registers an agent instance', async () => {
+    const profile = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: authed(jwt),
+      payload: { name: 'cc-kit', target: 'claude-code', scope: 'personal', entries: [] },
+    });
+    const ccProfileId = profile.json().profile.id;
+
+    // Daemon advertising the marketplace-deploy capability (#6).
+    daemon.close();
+    await waitFor(() => !app.realtime.presence.isOnline(machineId));
+    daemon = await connectDaemon(undefined, ['inventory', 'deploy', 'marketplace-deploy']);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: ccProfileId },
+    });
+    expect(created.statusCode).toBe(201);
+    const job = created.json().job as JobView;
+    const arm = (job.payload as { marketplace?: Record<string, string> }).marketplace;
+    expect(arm).toBeDefined();
+    expect(arm!.baseUrl).toBe(app.publicBaseUrl);
+    expect(arm!.marketplaceName).toBe('harness-nexus-root');
+    expect(arm!.pluginName).toBe('cc-kit');
+
+    const dispatch = (await once(daemon, 'job:dispatch')) as { job: JobView };
+    expect((dispatch.job.payload as { marketplace?: unknown }).marketplace).toBeDefined();
+    daemon.emit('job:result', {
+      jobId: job.id,
+      ok: true,
+      data: {
+        name: 'cc-kit',
+        directory: '/root/.claude/plugins',
+        target: 'claude-code',
+        profileId: ccProfileId,
+        method: 'marketplace',
+        installedVersion: '1.0.0',
+      },
+    });
+    await waitJobStatus(job.id, 'succeeded');
+    // claude-code deploys create NO AgentInstance — chat keys off the runtime
+    // detector's instance (9 W1), a plugin install is not a runtime install.
+    // (Earlier suites registered hermes instances on this machine — assert no
+    // instance exists for THIS profile, not an empty table.)
+    const agents = await app.inject({
+      method: 'GET',
+      url: `/api/machines/${machineId}/agents`,
+      headers: authed(jwt),
+    });
+    expect(
+      agents.json().agents.some((a: { profileId: string }) => a.profileId === ccProfileId),
+    ).toBe(false);
+  });
+
+  it("the emitter accepts the daemon's machine PAT (machine-ctl scope) for the catalog", async () => {
+    const catalog = await app.inject({
+      method: 'GET',
+      url: `/api/marketplace/${machineToken}/marketplace.json`,
+    });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().name).toBe('harness-nexus-root');
+    // The archive URLs carry the SAME machine token (auth rides in the URL).
+    const sources = JSON.stringify(catalog.json());
+    expect(sources).toContain(`/api/marketplace/${machineToken}/archives/`);
+
+    // An unknown token stays a 404 (no existence leak).
+    const unknown = await app.inject({
+      method: 'GET',
+      url: '/api/marketplace/hnpat_doesnotexist0000000000000000000/marketplace.json',
+    });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it("a foreign personal claude-code profile is not in the owner's marketplace → 409", async () => {
+    // alice's personal profile; root (admin) can SEE it, but the machine's
+    // marketplace belongs to the machine owner (root) — alice's profile is
+    // not in that catalog, so the deploy must refuse up front.
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'alice', password: 'wonderlandwonderland' },
+    });
+    const aliceJwt = reg.json().token;
+    const profile = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: authed(aliceJwt),
+      payload: { name: 'alice-cc', target: 'claude-code', scope: 'personal', entries: [] },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/machines/${machineId}/jobs`,
+      headers: authed(jwt),
+      payload: { profileId: profile.json().profile.id },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('PROFILE_NOT_IN_OWNER_MARKETPLACE');
+  });
+
+  it('PATCH /api/profiles/:id accepts a version bump (the publish switch)', async () => {
+    const profile = await app.inject({
+      method: 'POST',
+      url: '/api/profiles',
+      headers: authed(jwt),
+      payload: { name: 'cc-bump', target: 'claude-code', scope: 'personal', entries: [] },
+    });
+    const id = profile.json().profile.id;
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/profiles/${id}`,
+      headers: authed(jwt),
+      payload: { version: '1.2.0' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().profile.version).toBe('1.2.0');
+    // target stays immutable.
+    const bad = await app.inject({
+      method: 'PATCH',
+      url: `/api/profiles/${id}`,
+      headers: authed(jwt),
+      payload: { target: 'codex' },
+    });
+    expect(bad.statusCode).toBe(409);
+    expect(bad.json().error).toBe('TARGET_IMMUTABLE');
   });
 });

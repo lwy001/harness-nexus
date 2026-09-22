@@ -732,7 +732,13 @@ export class HarnessNexusClient {
 
   async updateProfile(
     id: string,
-    input: { name?: string; description?: string; entries?: ProfileEntryInput[] },
+    input: {
+      name?: string;
+      description?: string;
+      /** #6: bumping publishes an update for marketplace installs. */
+      version?: string;
+      entries?: ProfileEntryInput[];
+    },
   ): Promise<{ profile: Profile }> {
     return this.request('PATCH', `/api/profiles/${id}`, input);
   }
