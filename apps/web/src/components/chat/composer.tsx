@@ -210,9 +210,10 @@ function ConfigSelect({
  * 9 W15 — the `/`-prefix slash-command palette (portal-reference shape).
  * Opens while the draft starts with `/` and the agent advertised commands;
  * the FIRST word filters (name OR description). Keyboard: ↑/↓ cycle, Esc
- * dismisses, bare Enter SELECTS (fills `/name ` — the user reviews, then a
- * second Enter sends), Enter with args falls through to the normal send.
- * NO fallback table: an agent that never pushed commands shows no palette.
+ * dismisses, bare Enter and Tab SELECT (fill `/name `, dismiss the palette —
+ * the user reviews the filled text, then a second Enter sends), Enter with
+ * args falls through to the normal send. NO fallback table: an agent that
+ * never pushed commands shows no palette.
  */
 function CommandPalette({
   commands,
@@ -310,6 +311,10 @@ export function Composer({
   // it for this draft. The first word after '/' filters (portal-reference).
   const [paletteDismissed, setPaletteDismissed] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  // #9 — the keyword a commit just filled. The keyword effect reopens the
+  // palette on every NEW keyword; a commit must not be undone by the very
+  // keyword it produced, so it marks the filled keyword here.
+  const pickedKeywordRef = useRef<string | null>(null);
   const slashDraft = value.startsWith('/') && !controlsDisabled && commands.length > 0;
   const keyword = useMemo(() => value.slice(1).split(/\s/)[0]?.toLowerCase() ?? '', [value]);
   const filteredCommands = useMemo(() => {
@@ -323,6 +328,10 @@ export function Composer({
   const paletteOpen = slashDraft && !paletteDismissed;
   const hasArg = /\s/.test(value.slice(1));
   useEffect(() => {
+    if (pickedKeywordRef.current === keyword) {
+      pickedKeywordRef.current = null;
+      return;
+    }
     setPaletteDismissed(false);
   }, [keyword]);
   useEffect(() => {
@@ -330,6 +339,10 @@ export function Composer({
   }, [filteredCommands.length, activeIdx]);
   const pickCommand = (c: CommandView): void => {
     onChange(`/${c.name} `);
+    pickedKeywordRef.current = c.name.toLowerCase();
+    // #9 — every commit (Tab/Enter/click) dismisses; the filled text in the
+    // Sender is the review affordance, the lingering list is noise.
+    setPaletteDismissed(true);
     textRef.current?.focus();
   };
 
@@ -487,6 +500,14 @@ export function Composer({
               e.preventDefault();
               e.stopPropagation();
               setPaletteDismissed(true);
+              return;
+            }
+            // #9 — Tab commits the active command into the Sender (fills
+            // `/name `, focus stays) and dismisses the palette.
+            if (e.key === 'Tab' && !e.shiftKey) {
+              e.preventDefault();
+              const cmd = filteredCommands[activeIdx];
+              if (cmd !== undefined) pickCommand(cmd);
               return;
             }
             if (e.key === 'Enter' && !e.shiftKey && !hasArg) {
