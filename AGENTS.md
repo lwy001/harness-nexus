@@ -1625,6 +1625,58 @@ Summary for daily work:
   W3's settings `model` key is what triggers the wrapper's re-assert path —
   keep it (default-model feature); the patch, not config, is the fix.
 
+## Adapter pre-warm pool (Issue #3)
+
+Investigation + rig numbers live in issue #3 (dsh open decomposition, CPU
+profile of the 1.3s `dsh --profile acp` boot — module-resolution I/O storm,
+inherent to dsh; `NODE_COMPILE_CACHE` measured and rejected). Summary for
+daily work:
+
+- **The problem this solves:** opening a chat channel paid the adapter
+  process boot on every click (dsh ~1.3s of its 1.5s open; codex ~2.1s of
+  2.3s; claude's wrapper ~0.4s of 1.2s — its CLI child boots at
+  `session/load` regardless). The fix is the reference portal's resident
+  model: boot the adapter BEFORE the click.
+- **Per-target portal switch, admin-managed instance setting**:
+  `GET/PUT /api/settings/chat-prewarm` (`{ 'claude-code', codex, deepseek }`,
+  stored as a JSON column on `system_settings`, migration 16; GET needs auth,
+  PUT is admin). Defaults: **deepseek ON, claude-code/codex OFF** (small win
+  vs an idle process each). The Settings page renders one Switch row per
+  target; pi/opencode are out of scope (`PREWARM_ADAPTER_TARGETS` in shared).
+- **Trigger chain:** AgentSession mount → `chat:adapter.prewarm
+{agentInstanceId}` (browser→server, owner-gated like open, ack
+  `{accepted}` — false when off/unsupported/offline) → `chat:adapter.prewarm
+{target}` over /ctl → the daemon pool. `chat:session.open` also stamps the
+  current switch onto `chat:session.start` as an optional `prewarm: true` so
+  the daemon re-arms AFTER a channel took one.
+- **The pool** (`daemon/prewarm.ts`, generic keyed cache): at most ONE
+  prewarmed adapter per target, spawned to a completed `initialize` (the
+  payload carries the FULL `AcpAgentConnection.start` result — caps and agent
+  identity were already paid). `consume()` on `chat:session.start` skips
+  spawn+initialize and goes straight to session establishment; pending
+  (mid-boot) entries are NOT consumed — the channel spawns fresh, the
+  prewarm stays for the next click. Idle TTL `HN_PREWARM_TTL_MS` (default
+  120s; `0` disables prewarm) kills ready entries; teardown on /ctl loss
+  (`teardownAll`) and the W11 boot sweep/audit own the rest.
+- **dsh tap inheritance:** the prewarm arms the W7.1 event tap AT PREWARM
+  TIME (own listener + `--patch` + env), so a consumed prewarm keeps
+  tap-grade streaming; a failed handshake closes the listener and the
+  channel degrades to the transcript tail exactly like a tap-less spawn.
+  Rig-verified: a resume through a consumed prewarm streamed 31 per-token
+  deltas.
+- **Ledger bookkeeping:** prewarms ledger under `prewarm-<target>` pseudo
+  ids (the WIRE_ID regex allows no colons — hence the hyphen); adoption
+  DELETES the pseudo file and re-ledgers under the channel's id with the
+  same pgid; TTL/teardown kills deliberately never unlink (audit-only, per
+  W11 A). `deleteAdapterLedgerEntry` exists for exactly this rename.
+- **Rig numbers (click → history+ready):** dsh 1.5s → **59ms**; codex
+  2.3s → **199ms**; claude 1.2s → **666ms**; switches off → baseline
+  unchanged (1.48s dsh). Daemon `0.23.0-i3`.
+- **Test-side:** `ChatHandlersHandle.prewarmReady(target)` exposes pool
+  readiness (deterministic waits); `test/prewarm.test.ts` covers pool
+  semantics (dedupe, consume-once, pending-miss, TTL, dead-replace,
+  late-resolve kill, teardownAll).
+
 ## Authentication & authorization (permission interceptors)
 
 Full design in `design-phase-1-auth.md` — read it before touching auth. Summary for daily work:
