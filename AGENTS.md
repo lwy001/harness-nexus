@@ -1637,12 +1637,15 @@ daily work:
   2.3s; claude's wrapper ~0.4s of 1.2s — its CLI child boots at
   `session/load` regardless). The fix is the reference portal's resident
   model: boot the adapter BEFORE the click.
-- **Per-target portal switch, admin-managed instance setting**:
-  `GET/PUT /api/settings/chat-prewarm` (`{ 'claude-code', codex, deepseek }`,
-  stored as a JSON column on `system_settings`, migration 16; GET needs auth,
-  PUT is admin). Defaults: **deepseek ON, claude-code/codex OFF** (small win
-  vs an idle process each). The Settings page renders one Switch row per
-  target; pi/opencode are out of scope (`PREWARM_ADAPTER_TARGETS` in shared).
+- **Per-target switch, MACHINE-scoped** (redesigned same-day from the first
+  instance-global cut): `machines.chat_prewarm` JSON column (migration 16),
+  written through the ordinary `PATCH /api/machines/:id` (`chatPrewarm` arm,
+  owner-or-admin + 404-hiding — the same gates as rename/remote-chat). Absent
+  = defaults: **deepseek ON, claude-code/codex OFF** (small win vs an idle
+  process each). The toggle lives in the machine page's 代理 tab — one Switch
+  per Agent runtime card (`PrewarmToggle` in `agents-tab.tsx`; pi/opencode
+  cards render none). `PREWARM_ADAPTER_TARGETS` (shared, re-exported by the
+  SDK alongside `DEFAULT_CHAT_PREWARM_SETTINGS`) enumerates the pool targets.
 - **Trigger chain:** AgentSession mount → `chat:adapter.prewarm
 {agentInstanceId}` (browser→server, owner-gated like open, ack
   `{accepted}` — false when off/unsupported/offline) → `chat:adapter.prewarm
@@ -1669,9 +1672,11 @@ daily work:
   DELETES the pseudo file and re-ledgers under the channel's id with the
   same pgid; TTL/teardown kills deliberately never unlink (audit-only, per
   W11 A). `deleteAdapterLedgerEntry` exists for exactly this rename.
-- **Rig numbers (click → history+ready):** dsh 1.5s → **59ms**; codex
-  2.3s → **199ms**; claude 1.2s → **666ms**; switches off → baseline
-  unchanged (1.48s dsh). Daemon `0.23.0-i3`.
+- **Rig numbers (click → history+ready):** dsh 1.5s → **59–206ms** (fully
+  warm pool vs settled-boot); codex 2.3s → **199ms**; claude 1.2s →
+  **666ms**; switches off → baseline unchanged (1.48s dsh). Daemon
+  `0.23.0-i3`; the machine-scope redesign re-verified end-to-end on the rig
+  (default machine → dsh prewarm accepted; PATCH flips acks live).
 - **Test-side:** `ChatHandlersHandle.prewarmReady(target)` exposes pool
   readiness (deterministic waits); `test/prewarm.test.ts` covers pool
   semantics (dedupe, consume-once, pending-miss, TTL, dead-replace,

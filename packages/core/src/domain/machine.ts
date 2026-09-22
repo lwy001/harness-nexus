@@ -4,6 +4,27 @@
  * realtime channel (`/ctl`) with a dedicated machine PAT bound to the
  * `Machine` row. See wiki design-phase-8-client.md.
  */
+
+/**
+ * Issue #3 — which Agent targets of THIS machine get a pre-warmed ACP adapter
+ * (booted to a completed `initialize`, no session) while the owner sits on a
+ * chat session page. Machine-scoped on purpose: the idle processes live on
+ * this machine, so its owner decides. Absent = `DEFAULT_CHAT_PREWARM_SETTINGS`.
+ * Mirrors the zod schema in `@harness-nexus/shared` (`schemas/machine.ts`).
+ */
+export interface ChatPrewarmSettings {
+  'claude-code': boolean;
+  codex: boolean;
+  deepseek: boolean;
+}
+
+/** deepseek gains the most (~1.3s of its 1.5s open); the others get OFF by default. */
+export const DEFAULT_CHAT_PREWARM_SETTINGS: ChatPrewarmSettings = {
+  'claude-code': false,
+  codex: false,
+  deepseek: true,
+};
+
 export interface Machine {
   id: string;
   ownerId: string;
@@ -28,6 +49,8 @@ export interface Machine {
    * chat UI prompts the owner to set it before creating a session.
    */
   baseWorkspace: string | null;
+  /** Issue #3 — per-target adapter pre-warm switches for this machine. */
+  chatPrewarm?: ChatPrewarmSettings;
   /**
    * The machine PAT issued once at enrollment. Deleting the machine (or this
    * PAT) revokes realtime access immediately.

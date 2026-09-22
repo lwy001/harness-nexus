@@ -32,6 +32,9 @@ const en = {
   itemsReported: '{count} items · reported {time}',
   runtimeNotInstalled: 'Agent not installed',
   runtimeNotProbed: 'runtime unknown',
+  prewarm: 'Adapter pre-warm',
+  prewarmDesc:
+    'Keep one warmed-up adapter for this Agent while a chat session page is open — clicking a session skips the adapter boot.',
   installButton: 'Install',
   upgradeButton: 'Upgrade',
   versionPlaceholder: 'version (optional)',
@@ -204,6 +207,8 @@ const zh: typeof en = {
   itemsReported: '{count} 项 · 上报于 {time}',
   runtimeNotInstalled: '代理未安装',
   runtimeNotProbed: '运行时状态未知',
+  prewarm: '适配器预连接',
+  prewarmDesc: '会话页面打开期间为该代理常备一个预热适配器，点击会话时跳过适配器启动。',
   installButton: '安装',
   upgradeButton: '升级',
   versionPlaceholder: '版本（可选）',

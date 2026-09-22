@@ -1879,57 +1879,53 @@ describe('adapter pre-warm (issue #3)', () => {
     prewarmDaemon?.close();
   });
 
-  it('settings REST: defaults on read, admin write, authed read, replace semantics', async () => {
+  it('machine PATCH: owner writes the map, foreign user 404s, other fields keep it', async () => {
+    // Absent on untouched machines — readers apply the defaults.
     const read = await app.inject({
       method: 'GET',
-      url: '/api/settings/chat-prewarm',
+      url: `/api/machines/${machineId}`,
       headers: authed(jwt),
     });
     expect(read.statusCode).toBe(200);
-    expect(read.json().chatPrewarm).toEqual({
-      'claude-code': false,
-      codex: false,
-      deepseek: true,
-    });
+    expect(read.json().machine.chatPrewarm).toBeUndefined();
 
-    // PUT by a non-admin is rejected; the second registered user is role user.
+    // A foreign (non-owner, non-admin) user cannot even see the machine.
     const second = await app.inject({
       method: 'POST',
       url: '/api/auth/register',
       payload: { username: 'prewarm-peasant', password: 'hunter2hunter2' },
     });
     expect(second.statusCode).toBe(201);
-    const forbidden = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/chat-prewarm',
+    const foreign = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
       headers: authed(second.json().token),
-      payload: { 'claude-code': true, codex: true, deepseek: true },
+      payload: { chatPrewarm: { 'claude-code': true, codex: true, deepseek: true } },
     });
-    expect(forbidden.statusCode).toBe(403);
+    expect(foreign.statusCode).toBe(404);
 
-    const put = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/chat-prewarm',
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { 'claude-code': false, codex: false, deepseek: false },
+      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: false } },
     });
-    expect(put.statusCode).toBe(200);
-    expect(put.json().chatPrewarm.deepseek).toBe(false);
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().machine.chatPrewarm).toEqual({
+      'claude-code': false,
+      codex: false,
+      deepseek: false,
+    });
 
-    // The registration PUT round-trip must NOT drop the pre-warm map.
-    const regPut = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/registration',
+    // An unrelated machine PATCH must not drop the map.
+    const rename = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { allowRegistration: true },
+      payload: { name: 'chat-box-2' },
     });
-    expect(regPut.statusCode).toBe(200);
-    const reread = await app.inject({
-      method: 'GET',
-      url: '/api/settings/chat-prewarm',
-      headers: authed(jwt),
-    });
-    expect(reread.json().chatPrewarm.deepseek).toBe(false);
+    expect(rename.statusCode).toBe(200);
+    expect(rename.json().machine.chatPrewarm.deepseek).toBe(false);
   });
 
   it('prewarm socket: off → PREWARM_DISABLED; on → /ctl nudge; start stamped', async () => {
@@ -1950,19 +1946,21 @@ describe('adapter pre-warm (issue #3)', () => {
 
     // Foreign agent → hidden as not-found.
     expect(
-      ((await emitAck(browser, 'chat:adapter.prewarm', {
-        agentInstanceId: 'agent-of-nobody',
-      })) as { accepted: boolean }).accepted,
+      (
+        (await emitAck(browser, 'chat:adapter.prewarm', {
+          agentInstanceId: 'agent-of-nobody',
+        })) as { accepted: boolean }
+      ).accepted,
     ).toBe(false);
 
     // Switch ON → accepted and the daemon got the nudge.
-    const put = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/chat-prewarm',
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { 'claude-code': false, codex: false, deepseek: true },
+      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: true } },
     });
-    expect(put.statusCode).toBe(200);
+    expect(patch.statusCode).toBe(200);
     const on = (await emitAck(browser, 'chat:adapter.prewarm', {
       agentInstanceId: 'agent-dsh-1',
     })) as { accepted: boolean };
@@ -1984,12 +1982,12 @@ describe('adapter pre-warm (issue #3)', () => {
   });
 
   it('restore the defaults for other suites', async () => {
-    const put = await app.inject({
-      method: 'PUT',
-      url: '/api/settings/chat-prewarm',
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/machines/${machineId}`,
       headers: authed(jwt),
-      payload: { 'claude-code': false, codex: false, deepseek: true },
+      payload: { chatPrewarm: { 'claude-code': false, codex: false, deepseek: true } },
     });
-    expect(put.statusCode).toBe(200);
+    expect(patch.statusCode).toBe(200);
   });
 });

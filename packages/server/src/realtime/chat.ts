@@ -283,21 +283,14 @@ export class ChatService {
       }
     }
 
-    // Issue #3 — stamp the target's pre-warm switch so the daemon re-arms one
-    // fresh prewarmed adapter after this channel took (or missed) one.
-    // Best-effort, like modelOptions: a read failure never blocks the open.
-    let prewarm = false;
-    if ((PREWARM_ADAPTER_TARGETS as readonly string[]).includes(agent.target)) {
-      try {
-        const settings = await this.deps.uow.settings.get();
-        prewarm =
-          (settings.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
-            agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
-          ] === true;
-      } catch {
-        prewarm = false;
-      }
-    }
+    // Issue #3 — stamp the target's pre-warm switch (MACHINE-scoped) so the
+    // daemon re-arms one fresh prewarmed adapter after this channel took (or
+    // missed) one. The machine row was already read above; absent map = defaults.
+    const prewarm =
+      (PREWARM_ADAPTER_TARGETS as readonly string[]).includes(agent.target) &&
+      (machine.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
+        agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
+      ] === true;
 
     this.deps.io.toCtl(machine.id, 'chat:session.start', {
       sessionId,
@@ -329,16 +322,11 @@ export class ChatService {
     if (!machine.remoteChatEnabled) return { ok: false, code: 'REMOTE_CHAT_DISABLED' };
     if (!this.deps.isOnline(machine.id)) return { ok: false, code: 'MACHINE_OFFLINE' };
     if (!machine.capabilities.includes('chat')) return { ok: false, code: 'DAEMON_NO_CHAT' };
-    try {
-      const settings = await this.deps.uow.settings.get();
-      const on =
-        (settings.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
-          agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
-        ] === true;
-      if (!on) return { ok: false, code: 'PREWARM_DISABLED' };
-    } catch {
-      return { ok: false, code: 'PREWARM_DISABLED' };
-    }
+    const on =
+      (machine.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS)[
+        agent.target as (typeof PREWARM_ADAPTER_TARGETS)[number]
+      ] === true;
+    if (!on) return { ok: false, code: 'PREWARM_DISABLED' };
     this.deps.io.toCtl(machine.id, 'chat:adapter.prewarm', { target: agent.target });
     return { ok: true };
   }

@@ -234,7 +234,12 @@ export function MachineDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            <AgentsTab inventory={inventory} machineId={id!} />
+            <AgentsTab
+              inventory={inventory}
+              machineId={id!}
+              machine={machine}
+              onChanged={() => void refresh()}
+            />
           )}
         </TabsContent>
         <TabsContent value="inventory" forceMount className="data-[state=inactive]:hidden">

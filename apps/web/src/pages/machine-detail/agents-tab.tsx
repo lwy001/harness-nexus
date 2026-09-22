@@ -14,12 +14,15 @@ import { useI18n, dateLocale } from '@/i18n';
 import { cn } from '@/lib/utils';
 import {
   HarnessNexusError,
+  PREWARM_ADAPTER_TARGETS,
   PROVIDER_API_SUPPORT,
   RUNTIME_API_SUPPORT,
+  DEFAULT_CHAT_PREWARM_SETTINGS,
   providerApiToSpecApi,
   type CredentialView,
   type LlmModelInfo,
   type LlmProviderView,
+  type MachineView,
   type RuntimeConfigSpec,
   type RuntimeTarget,
 } from '@harness-nexus/sdk';
@@ -28,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,9 +65,13 @@ import type { InventoryEntry, RuntimeInfoView } from './types.js';
 export function AgentsTab({
   inventory,
   machineId,
+  machine,
+  onChanged,
 }: {
   inventory: InventoryEntry[] | null;
   machineId: string;
+  machine: MachineView | null;
+  onChanged: () => void;
 }) {
   const { t } = useI18n();
   if (inventory === null) {
@@ -85,14 +93,30 @@ export function AgentsTab({
   return (
     <div className="flex flex-col gap-6">
       {inventory.map((entry) => (
-        <AgentRuntimeCard key={entry.target} entry={entry} machineId={machineId} />
+        <AgentRuntimeCard
+          key={entry.target}
+          entry={entry}
+          machineId={machineId}
+          machine={machine}
+          onChanged={onChanged}
+        />
       ))}
     </div>
   );
 }
 
 /** One runtime-managed Agent: status line + manage controls + provider form. */
-function AgentRuntimeCard({ entry, machineId }: { entry: InventoryEntry; machineId: string }) {
+function AgentRuntimeCard({
+  entry,
+  machineId,
+  machine,
+  onChanged,
+}: {
+  entry: InventoryEntry;
+  machineId: string;
+  machine: MachineView | null;
+  onChanged: () => void;
+}) {
   const { t, lang } = useI18n();
   const agent = entry.agents[0];
   const items = entry.agents.flatMap((a) => a.items);
@@ -123,9 +147,80 @@ function AgentRuntimeCard({ entry, machineId }: { entry: InventoryEntry; machine
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0">
+        <PrewarmToggle
+          machineId={machineId}
+          target={entry.target}
+          machine={machine}
+          onChanged={onChanged}
+        />
         <ProviderConfigForm machineId={machineId} target={entry.target} runtime={entry.runtime} />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Issue #3 — this Agent's pre-warm switch (machine-scoped: one idle adapter
+ * process per target lives on THIS machine while a chat session page is
+ * open). Rendered only for pool-served targets; pi/opencode cards stay plain.
+ */
+function PrewarmToggle({
+  machineId,
+  target,
+  machine,
+  onChanged,
+}: {
+  machineId: string;
+  /** Inventory target label — only the PREWARM targets render this row. */
+  target: string;
+  machine: MachineView | null;
+  onChanged: () => void;
+}) {
+  const { logout } = useAuth();
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  if (!(PREWARM_ADAPTER_TARGETS as readonly string[]).includes(target)) return null;
+  const prewarm = machine?.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS;
+  const checked = prewarm[target as 'claude-code' | 'codex' | 'deepseek'] === true;
+
+  async function toggle(next: boolean): Promise<void> {
+    if (machine === null || busy) return;
+    const previous = machine.chatPrewarm ?? DEFAULT_CHAT_PREWARM_SETTINGS;
+    setBusy(true);
+    try {
+      await withAuthGuard(
+        () =>
+          api.updateMachine(machineId, {
+            chatPrewarm: {
+              ...previous,
+              [target as 'claude-code' | 'codex' | 'deepseek']: next,
+            },
+          }),
+        logout,
+      );
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof HarnessNexusError ? e.message : t('common.updateFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-4 flex items-center justify-between rounded-lg border px-4 py-3">
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={`prewarm-${target}`} className="text-sm font-medium">
+          {t('machineDetail.prewarm')}
+        </Label>
+        <span className="text-muted-foreground text-xs">{t('machineDetail.prewarmDesc')}</span>
+      </div>
+      <Switch
+        id={`prewarm-${target}`}
+        checked={checked}
+        disabled={busy || machine === null}
+        onCheckedChange={(v) => void toggle(v)}
+      />
+    </div>
   );
 }
 

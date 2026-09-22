@@ -20,7 +20,6 @@ import type {
   AgentInstance,
   RuntimeConfig,
   LlmProvider,
-  SystemSettings,
   JobRepository,
   AgentInstanceRepository,
   RuntimeConfigRepository,
@@ -61,8 +60,6 @@ interface PatRow {
 interface SettingsRow {
   id: number;
   allow_registration: number;
-  /** Issue #3 — JSON ChatPrewarmSettings, NULL on pre-feature rows. */
-  chat_prewarm: string | null;
   updated_at: string;
 }
 interface CredentialRow {
@@ -325,48 +322,20 @@ export function sqliteSettingsRepository(db: Database): SystemSettingsRepository
     return db.prepare('SELECT * FROM system_settings WHERE id = 1').get() as SettingsRow;
   };
 
-  /** JSON column ↔ domain; invalid/legacy JSON null-normalizes (defaults apply). */
-  const parsePrewarm = (raw: string | null): SystemSettings['chatPrewarm'] | undefined => {
-    if (raw === null) return undefined;
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (
-        parsed !== null &&
-        typeof parsed === 'object' &&
-        typeof (parsed as Record<string, unknown>)['deepseek'] === 'boolean'
-      ) {
-        return parsed as SystemSettings['chatPrewarm'];
-      }
-    } catch {
-      // fall through
-    }
-    return undefined;
-  };
-
   return {
     async get() {
       const row = ensureRow();
-      const chatPrewarm = parsePrewarm(row.chat_prewarm);
       return {
         allowRegistration: row.allow_registration === 1,
-        ...(chatPrewarm !== undefined ? { chatPrewarm } : {}),
         updatedAt: row.updated_at,
       };
     },
     async save(settings) {
       const now = settings.updatedAt;
       db.prepare(
-        `UPDATE system_settings SET allow_registration = ?, chat_prewarm = ?, updated_at = ? WHERE id = 1`,
-      ).run(
-        settings.allowRegistration ? 1 : 0,
-        settings.chatPrewarm === undefined ? null : JSON.stringify(settings.chatPrewarm),
-        now,
-      );
-      return {
-        allowRegistration: settings.allowRegistration,
-        ...(settings.chatPrewarm !== undefined ? { chatPrewarm: settings.chatPrewarm } : {}),
-        updatedAt: now,
-      };
+        `UPDATE system_settings SET allow_registration = ?, updated_at = ? WHERE id = 1`,
+      ).run(settings.allowRegistration ? 1 : 0, now);
+      return { allowRegistration: settings.allowRegistration, updatedAt: now };
     },
   };
 }
@@ -659,12 +628,33 @@ interface MachineRow {
   capabilities: string;
   remote_chat_enabled: number;
   base_workspace: string | null;
+  /** Issue #3 — JSON per-target pre-warm map, NULL on pre-feature rows. */
+  chat_prewarm: string | null;
   enrollment_pat_id: string;
   enrolled_at: string;
   last_seen_at: string | null;
 }
 
+/** JSON column ↔ domain; invalid/legacy JSON null-normalizes (defaults apply). */
+function parseMachinePrewarm(raw: string | null): Machine['chatPrewarm'] | undefined {
+  if (raw === null) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof (parsed as Record<string, unknown>)['deepseek'] === 'boolean'
+    ) {
+      return parsed as Machine['chatPrewarm'];
+    }
+  } catch {
+    // fall through
+  }
+  return undefined;
+}
+
 function mapMachine(row: MachineRow): Machine {
+  const chatPrewarm = parseMachinePrewarm(row.chat_prewarm);
   return {
     id: row.id,
     ownerId: row.owner_id,
@@ -676,6 +666,7 @@ function mapMachine(row: MachineRow): Machine {
     capabilities: JSON.parse(row.capabilities) as string[],
     remoteChatEnabled: row.remote_chat_enabled === 1,
     baseWorkspace: row.base_workspace,
+    ...(chatPrewarm !== undefined ? { chatPrewarm } : {}),
     enrollmentPatId: row.enrollment_pat_id,
     enrolledAt: row.enrolled_at,
     lastSeenAt: row.last_seen_at,
@@ -711,9 +702,11 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
       db.prepare(
         `INSERT INTO machines
            (id, owner_id, name, hostname, os, arch, daemon_version, capabilities,
-            remote_chat_enabled, base_workspace, enrollment_pat_id, enrolled_at, last_seen_at)
+            remote_chat_enabled, base_workspace, chat_prewarm,
+            enrollment_pat_id, enrolled_at, last_seen_at)
          VALUES (@id, @owner_id, @name, @hostname, @os, @arch, @daemon_version, @capabilities,
-                 @remote_chat_enabled, @base_workspace, @enrollment_pat_id, @enrolled_at, @last_seen_at)
+                 @remote_chat_enabled, @base_workspace, @chat_prewarm,
+                 @enrollment_pat_id, @enrolled_at, @last_seen_at)
          ON CONFLICT(id) DO UPDATE SET
            name                = excluded.name,
            hostname            = excluded.hostname,
@@ -723,6 +716,7 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
            capabilities        = excluded.capabilities,
            remote_chat_enabled = excluded.remote_chat_enabled,
            base_workspace      = excluded.base_workspace,
+           chat_prewarm        = excluded.chat_prewarm,
            last_seen_at        = excluded.last_seen_at`,
       ).run({
         id: machine.id,
@@ -735,6 +729,8 @@ export function sqliteMachineRepository(db: Database): MachineRepository {
         capabilities: JSON.stringify(machine.capabilities),
         remote_chat_enabled: machine.remoteChatEnabled ? 1 : 0,
         base_workspace: machine.baseWorkspace,
+        chat_prewarm:
+          machine.chatPrewarm === undefined ? null : JSON.stringify(machine.chatPrewarm),
         enrollment_pat_id: machine.enrollmentPatId,
         enrolled_at: machine.enrolledAt,
         last_seen_at: machine.lastSeenAt,
