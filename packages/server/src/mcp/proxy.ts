@@ -7,7 +7,9 @@
  *   - SSE (legacy)     → GET /mcp/sse + POST /mcp/sse/messages
  *
  * Auth: a PAT (Bearer hnpat_…) is required, resolved into `req.user` by the
- * root auth hook. The `?profile=<id>` query param selects which profile's MCP
+ * root auth hook — EXCEPT machine-ctl PATs, which the root hook nulls but the
+ * gate below accepts for the `hnx mcp serve` shim (#7, mirroring the 3.5
+ * emitter). The `?profile=<id>` query param selects which profile's MCP
  * server entries are exposed (explicit profile routing — see wiki design-phase-2.2-registry.md).
  *
  * This file is the transport mount point only; aggregation lives in
@@ -21,6 +23,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '@harness-nexus/shared';
 import { McpRegistry } from './registry.js';
+import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
 
 /** Session entry: one SDK server + its transport, per Agent-tool connection. */
 interface Session {
@@ -48,6 +51,16 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
   // ---- auth + profile preHandler (shared by both mounts) ----
   const gate = async (req: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     if (!req.user) {
+      // #7: `hnx mcp serve` dials this outlet with its ENROLLED machine's PAT
+      // — the emitter's .mcp.json carries no user PAT by design (8 C2), and
+      // the root auth hook nulls machine-ctl tokens (REST blast radius).
+      // Accept them HERE, resolving the machine's OWNER; the profile check
+      // below still applies. A machine token already controls that machine
+      // over /ctl — consuming the owner's VISIBLE profiles is strictly weaker.
+      const owner = await resolveMachineTokenUser(req);
+      if (owner) req.user = owner;
+    }
+    if (!req.user) {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
     const profileId = (req.query as { profile?: string }).profile;
@@ -65,6 +78,27 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
       );
     }
   };
+
+  /**
+   * Resolve a Bearer machine-ctl PAT into the machine OWNER's `{id, role}` —
+   * the outlet-only exception mirroring the 3.5 emitter's token acceptance.
+   * Returns null for anything else (the caller falls through to 401).
+   */
+  async function resolveMachineTokenUser(
+    req: FastifyRequest,
+  ): Promise<{ id: string; role: 'admin' | 'user' } | null> {
+    const header = req.headers.authorization;
+    if (typeof header !== 'string' || !header.startsWith('Bearer ')) return null;
+    const raw = header.slice('Bearer '.length).trim();
+    if (!raw.startsWith(PAT_PREFIX)) return null;
+    const record = await app.uow.tokens.findByTokenHash(hashToken(raw));
+    if (!record || !record.scopes.includes('machine-ctl')) return null;
+    if (record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) return null;
+    const user = await app.uow.users.findById(record.userId);
+    if (!user || user.status !== 'active') return null;
+    void app.uow.tokens.touchLastUsed(record.id, new Date().toISOString());
+    return { id: user.id, role: user.role };
+  }
 
   // ===================== Streamable HTTP: /mcp =====================
   app.route({

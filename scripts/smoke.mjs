@@ -1788,6 +1788,34 @@ expect('machine PAT accepted by emitter', r.status, 200);
 expect('catalog is the owner marketplace', r.json.name, ccMp);
 expect('unknown token 404s', (await req('GET', '/api/marketplace/hnpat_nope0000000000000000/marketplace.json', { token: null })).status, 404);
 
+// [#7] The /mcp outlet also accepts the machine PAT (the hnx mcp serve shim's
+// passthrough path for server-dialed entries) — an initialize gets THROUGH
+// the gate (not 401); the REST API still rejects the same token. Raw fetch:
+// the streamable transport demands the dual Accept header.
+{
+  const raw = await fetch(`${B}/mcp?profile=${ccProfileId}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${c4CcToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'smoke', version: '0' },
+      },
+    }),
+  });
+  expect('machine PAT passes the outlet gate (#7)', raw.status, 200);
+}
+r = await req('GET', '/api/machines', { token: c4CcToken });
+expect('REST still rejects the machine PAT', r.status, 401);
+
 // One-click update: same job again — the daemon sees installed 1.0.0 and
 // routes to `plugin update`, reporting the shim's 2.0.0.
 r = await req('POST', `/api/machines/${c4CcMachineId}/jobs`, {
