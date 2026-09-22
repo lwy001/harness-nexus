@@ -20,6 +20,7 @@ import type {
   AgentInstance,
   RuntimeConfig,
   LlmProvider,
+  SystemSettings,
   JobRepository,
   AgentInstanceRepository,
   RuntimeConfigRepository,
@@ -60,6 +61,8 @@ interface PatRow {
 interface SettingsRow {
   id: number;
   allow_registration: number;
+  /** Issue #3 — JSON ChatPrewarmSettings, NULL on pre-feature rows. */
+  chat_prewarm: string | null;
   updated_at: string;
 }
 interface CredentialRow {
@@ -322,20 +325,48 @@ export function sqliteSettingsRepository(db: Database): SystemSettingsRepository
     return db.prepare('SELECT * FROM system_settings WHERE id = 1').get() as SettingsRow;
   };
 
+  /** JSON column ↔ domain; invalid/legacy JSON null-normalizes (defaults apply). */
+  const parsePrewarm = (raw: string | null): SystemSettings['chatPrewarm'] | undefined => {
+    if (raw === null) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        typeof (parsed as Record<string, unknown>)['deepseek'] === 'boolean'
+      ) {
+        return parsed as SystemSettings['chatPrewarm'];
+      }
+    } catch {
+      // fall through
+    }
+    return undefined;
+  };
+
   return {
     async get() {
       const row = ensureRow();
+      const chatPrewarm = parsePrewarm(row.chat_prewarm);
       return {
         allowRegistration: row.allow_registration === 1,
+        ...(chatPrewarm !== undefined ? { chatPrewarm } : {}),
         updatedAt: row.updated_at,
       };
     },
     async save(settings) {
       const now = settings.updatedAt;
       db.prepare(
-        `UPDATE system_settings SET allow_registration = ?, updated_at = ? WHERE id = 1`,
-      ).run(settings.allowRegistration ? 1 : 0, now);
-      return { allowRegistration: settings.allowRegistration, updatedAt: now };
+        `UPDATE system_settings SET allow_registration = ?, chat_prewarm = ?, updated_at = ? WHERE id = 1`,
+      ).run(
+        settings.allowRegistration ? 1 : 0,
+        settings.chatPrewarm === undefined ? null : JSON.stringify(settings.chatPrewarm),
+        now,
+      );
+      return {
+        allowRegistration: settings.allowRegistration,
+        ...(settings.chatPrewarm !== undefined ? { chatPrewarm: settings.chatPrewarm } : {}),
+        updatedAt: now,
+      };
     },
   };
 }

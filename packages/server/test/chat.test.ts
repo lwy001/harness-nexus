@@ -1849,3 +1849,147 @@ describe('idle pressure + open dedupe (9 W11 D6 + user-found fixes)', () => {
     }
   }, 20000);
 });
+
+describe('adapter pre-warm (issue #3)', () => {
+  let prewarmDaemon: Socket;
+  const prewarmEvents: { target: string }[] = [];
+
+  beforeAll(async () => {
+    // A deepseek agent (a PREWARM target — the hermes fixture agent is not).
+    const now = new Date().toISOString();
+    await app.uow.agentInstances.save({
+      id: 'agent-dsh-1',
+      machineId,
+      ownerId: (await app.uow.users.findByUsername('chatter'))!.id,
+      target: 'deepseek',
+      profileId: 'profile-dsh-1',
+      profileVersion: '1.0.0',
+      name: 'dsh agent',
+      directory: '/home/tester/.dsh',
+      jobId: 'job-dsh-1',
+      createdAt: now,
+      updatedAt: now,
+    });
+    prewarmDaemon = await connectDaemon(['chat']);
+    prewarmDaemon.on('chat:adapter.prewarm', (payload: unknown) => {
+      prewarmEvents.push(payload as { target: string });
+    });
+  });
+  afterAll(() => {
+    prewarmDaemon?.close();
+  });
+
+  it('settings REST: defaults on read, admin write, authed read, replace semantics', async () => {
+    const read = await app.inject({
+      method: 'GET',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(jwt),
+    });
+    expect(read.statusCode).toBe(200);
+    expect(read.json().chatPrewarm).toEqual({
+      'claude-code': false,
+      codex: false,
+      deepseek: true,
+    });
+
+    // PUT by a non-admin is rejected; the second registered user is role user.
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: { username: 'prewarm-peasant', password: 'hunter2hunter2' },
+    });
+    expect(second.statusCode).toBe(201);
+    const forbidden = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(second.json().token),
+      payload: { 'claude-code': true, codex: true, deepseek: true },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(jwt),
+      payload: { 'claude-code': false, codex: false, deepseek: false },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json().chatPrewarm.deepseek).toBe(false);
+
+    // The registration PUT round-trip must NOT drop the pre-warm map.
+    const regPut = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/registration',
+      headers: authed(jwt),
+      payload: { allowRegistration: true },
+    });
+    expect(regPut.statusCode).toBe(200);
+    const reread = await app.inject({
+      method: 'GET',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(jwt),
+    });
+    expect(reread.json().chatPrewarm.deepseek).toBe(false);
+  });
+
+  it('prewarm socket: off → PREWARM_DISABLED; on → /ctl nudge; start stamped', async () => {
+    // Switch is OFF from the previous test.
+    const off = (await emitAck(browser, 'chat:adapter.prewarm', {
+      agentInstanceId: 'agent-dsh-1',
+    })) as { accepted: boolean; error?: string };
+    expect(off.accepted).toBe(false);
+    expect(off.error).toBe('PREWARM_DISABLED');
+    expect(prewarmEvents.length).toBe(0);
+
+    // Unsupported target never reaches the daemon either.
+    const hermes = (await emitAck(browser, 'chat:adapter.prewarm', {
+      agentInstanceId: agentId,
+    })) as { accepted: boolean; error?: string };
+    expect(hermes.accepted).toBe(false);
+    expect(hermes.error).toBe('PREWARM_UNSUPPORTED_TARGET');
+
+    // Foreign agent → hidden as not-found.
+    expect(
+      ((await emitAck(browser, 'chat:adapter.prewarm', {
+        agentInstanceId: 'agent-of-nobody',
+      })) as { accepted: boolean }).accepted,
+    ).toBe(false);
+
+    // Switch ON → accepted and the daemon got the nudge.
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(jwt),
+      payload: { 'claude-code': false, codex: false, deepseek: true },
+    });
+    expect(put.statusCode).toBe(200);
+    const on = (await emitAck(browser, 'chat:adapter.prewarm', {
+      agentInstanceId: 'agent-dsh-1',
+    })) as { accepted: boolean };
+    expect(on.accepted).toBe(true);
+    await waitFor(() => (prewarmEvents.length > 0 ? true : undefined));
+    expect(prewarmEvents[0]).toEqual({ target: 'deepseek' });
+
+    // An open on a prewarm-ON target stamps `prewarm: true` on the start.
+    const starts: { target: string; prewarm?: boolean }[] = [];
+    prewarmDaemon.on('chat:session.start', (payload: unknown) => {
+      starts.push(payload as { target: string; prewarm?: boolean });
+    });
+    const open = await openSession(browser, 'agent-dsh-1');
+    expect(open.sessionId).toBeDefined();
+    await waitFor(() => (starts.length > 0 ? true : undefined));
+    expect(starts[0]!.target).toBe('deepseek');
+    expect(starts[0]!.prewarm).toBe(true);
+    await emitAck(browser, 'chat:session.close', { sessionId: open.sessionId });
+  });
+
+  it('restore the defaults for other suites', async () => {
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/chat-prewarm',
+      headers: authed(jwt),
+      payload: { 'claude-code': false, codex: false, deepseek: true },
+    });
+    expect(put.statusCode).toBe(200);
+  });
+});

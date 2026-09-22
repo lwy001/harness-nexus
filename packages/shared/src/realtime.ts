@@ -619,6 +619,31 @@ export const chatSessionStartEventSchema = z.object({
    * Optional + stripped by old daemons' non-strict parse, so purely additive.
    */
   modelOptions: z.array(z.string().min(1).max(128)).max(32).optional(),
+  /**
+   * Issue #3 — the target's pre-warm switch is ON at open time. The daemon
+   * re-arms one fresh prewarmed adapter AFTER this channel took one (or
+   * spawned fresh), so the next open is warm too. Absent = switch off (or a
+   * pre-#3 server) → no re-arm. Optional + stripped by old daemons' non-strict
+   * parse, so purely additive.
+   */
+  prewarm: z.boolean().optional(),
+});
+
+// ---- adapter pre-warm (Issue #3) ----
+
+/** Targets the pre-warm pool serves (pi = in-daemon façade, opencode = out of scope). */
+export const PREWARM_ADAPTER_TARGETS = ['claude-code', 'codex', 'deepseek'] as const;
+
+export type PrewarmAdapterTarget = (typeof PREWARM_ADAPTER_TARGETS)[number];
+
+/** browser → server: boot the agent's adapter ahead of a likely open (best-effort). */
+export const chatAdapterPrewarmRequestSchema = z.object({
+  agentInstanceId: z.string().min(1).max(64),
+});
+
+/** server → daemon: keep ONE prewarmed adapter for this target (dedupe inside the pool). */
+export const chatAdapterPrewarmEventSchema = z.object({
+  target: agentTargetSchema,
 });
 
 /**

@@ -3,6 +3,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -65,6 +66,21 @@ export function writeAdapterLedgerEntry(home: string, entry: AdapterLedgerEntry)
   writeFileSync(tmp, `${JSON.stringify(entry)}\n`, 'utf8');
   // Atomic swap — a crash mid-write can never half-replace an entry.
   renameSync(tmp, file);
+}
+
+/**
+ * Remove one entry file (Issue #3 — a prewarmed adapter adopted by a channel
+ * deletes its `prewarm-<target>` pseudo entry so the audit does not keep a
+ * file whose group is the live channel's). Runtime kill paths still never
+ * unlink — this is a bookkeeping rename, not a reap.
+ */
+export function deleteAdapterLedgerEntry(home: string, wireSessionId: string): void {
+  if (!WIRE_ID.test(wireSessionId)) return;
+  try {
+    rmSync(join(adapterLedgerDir(home), `${wireSessionId}.json`), { force: true });
+  } catch {
+    // best-effort — the audit sweeps leftovers
+  }
 }
 
 /** Parse one ledger file; null = malformed (not an entry we ever wrote). */
