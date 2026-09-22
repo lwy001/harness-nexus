@@ -884,6 +884,22 @@ export function attachChatHandlers(
       return;
     }
     ack?.({ accepted: true });
+    // Settle every pending permission / elicitation card NOW: the adapter may
+    // drop its outstanding requests when the turn aborts, and without this
+    // the cards linger until the 75s backstop — with the turn dead they read
+    // as "cannot stop the session" (#7 rig report).
+    for (const [requestId, pending] of session.permissions) {
+      clearTimeout(pending.timer);
+      session.permissions.delete(requestId);
+      session.conn.respondPermission(pending.jsonrpcId, { outcome: 'cancelled' });
+      emitEvent(session, { kind: 'permission_resolved', requestId, outcome: 'cancelled' });
+    }
+    for (const [requestId, pending] of session.elicitations) {
+      clearTimeout(pending.timer);
+      session.elicitations.delete(requestId);
+      session.conn.respondElicitation(pending.jsonrpcId, { action: 'cancel' });
+      emitEvent(session, { kind: 'elicitation_resolved', requestId, outcome: 'cancelled' });
+    }
     // The pending session/prompt resolves as 'cancelled' → turn_result fires.
     void session.conn.request('session/cancel', {}, 5000).catch(() => {});
   });
@@ -959,6 +975,19 @@ export function attachChatHandlers(
         ? { outcome: 'selected', optionId: parsed.data.optionId }
         : { outcome: 'cancelled' },
     );
+    // Record the resolution in the history ring (record-only — the server
+    // broadcasts the live event): without it, a resync (session switch back,
+    // rejoin, ready re-push) replays the original `permission_request` and
+    // the answered card REAPPEARS as unsettled (#7 rig report).
+    pushHistory(session, {
+      type: 'event',
+      event: {
+        kind: 'permission_resolved',
+        requestId: parsed.data.requestId,
+        outcome: parsed.data.optionId !== undefined ? 'selected' : 'cancelled',
+        ...(parsed.data.optionId !== undefined ? { optionId: parsed.data.optionId } : {}),
+      },
+    });
   });
 
   socket.on('chat:elicitation.respond', (payload: unknown, ack?: (res: unknown) => void) => {
@@ -991,6 +1020,15 @@ export function attachChatHandlers(
           ? { action: 'decline' }
           : { action: 'cancel' },
     );
+    // Ring record for the resync path, same rationale as permissions above.
+    pushHistory(session, {
+      type: 'event',
+      event: {
+        kind: 'elicitation_resolved',
+        requestId: parsed.data.requestId,
+        outcome: action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'cancelled',
+      },
+    });
   });
 
   socket.on('chat:session.close', (payload: unknown, ack?: (res: unknown) => void) => {

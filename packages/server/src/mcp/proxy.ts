@@ -16,8 +16,12 @@
  * `./registry.ts`. It is intentionally decoupled from the REST routes.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { McpServer as SdkMcpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { randomUUID } from 'node:crypto';
@@ -25,9 +29,9 @@ import { AppError } from '@harness-nexus/shared';
 import { McpRegistry } from './registry.js';
 import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
 
-/** Session entry: one SDK server + its transport, per Agent-tool connection. */
+/** Session entry: one low-level server + its transport, per Agent-tool connection. */
 interface Session {
-  server: SdkMcpServer;
+  server: Server;
   transport: StreamableHTTPServerTransport | SSEServerTransport;
 }
 
@@ -188,22 +192,33 @@ async function buildSession(
   transport: StreamableHTTPServerTransport | SSEServerTransport,
   serverIds: string[],
 ): Promise<Session> {
-  const server = new SdkMcpServer({ name: 'harness-nexus', version: '0.1.0' });
-  for (const tool of registry.listTools(serverIds.length ? serverIds : undefined)) {
-    const name = tool.name;
-    server.registerTool(
-      name,
-      {
-        ...(tool.description ? { description: tool.description } : {}),
-      },
-      async (args) => {
-        const result = await registry.callTool(name, args as Record<string, unknown> | undefined);
-        // The registry returns the upstream's raw CallToolResult; pass it through.
-        return result as CallToolResult;
-      },
+  // Low-level `Server` (not `McpServer`): `registerTool`'s config takes a
+  // ZOD shape, and mapping the upstream's raw JSON schema through zod drops
+  // it — tools went out with `properties: {}`, so callers passed no
+  // arguments and every call failed upstream validation (#7, rig-found).
+  // The request handlers pass the aggregated tools through verbatim, the
+  // same pattern the `hnx mcp serve` shim uses.
+  const server = new Server(
+    { name: 'harness-nexus', version: '0.1.0' },
+    { capabilities: { tools: {} } },
+  );
+  const filter = serverIds.length ? serverIds : undefined;
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: registry.listTools(filter).map((t) => ({
+      name: t.name,
+      ...(t.description !== undefined ? { description: t.description } : {}),
+      inputSchema: t.inputSchema,
+    })),
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const result = await registry.callTool(
+      req.params.name,
+      (req.params.arguments ?? undefined) as Record<string, unknown> | undefined,
     );
-  }
-  await server.connect(transport as Parameters<SdkMcpServer['connect']>[0]);
+    // The registry returns the upstream's raw CallToolResult; pass it through.
+    return result as CallToolResult;
+  });
+  await server.connect(transport as Parameters<Server['connect']>[0]);
   return { server, transport };
 }
 

@@ -195,13 +195,18 @@ export class UpstreamPool {
       // type is stricter than the concrete transports union under
       // exactOptionalPropertyTypes.
       await client.connect(transport as Parameters<Client['connect']>[0]);
-      conn.status = 'connected';
+      // Cache tools BEFORE flipping to 'connected': settle() waits for the
+      // last 'connecting' to clear, and consumers (the shim's serve loop)
+      // snapshot the tool list the moment settle returns — flipping early
+      // lets them race an in-flight tools refresh and serve 0 tools (#7).
       await this.refreshTools(conn);
+      if (conn.status === 'error') return; // refreshTools logged it
+      conn.status = 'connected';
       this.log.info({ name: def.name }, 'upstream MCP connected');
     } catch (err) {
       conn.status = 'error';
       conn.detail = err instanceof Error ? err.message : String(err);
-      this.log.warn({ name: def.name, err }, 'upstream MCP connection failed');
+      this.log.warn({ name: def.name }, 'upstream MCP connection failed');
     }
   }
 
