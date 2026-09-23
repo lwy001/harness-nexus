@@ -134,3 +134,37 @@ jobs:
           labels: ${{ steps.meta-web.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ---- Docker Hub overviews (#15) -----------------------------------------
+      # The repos' descriptions start EMPTY (Docker Hub has no default from the
+      # image itself). PATCH the Hub API with a short line + the markdown kept
+      # in docs/docker-hub/{server,web}.md, authed by the same repo-scoped
+      # Read & Write PAT that pushed the images. Runs AFTER both pushes, so a
+      # metadata failure never blocks the images; jq escapes the markdown into
+      # the JSON body.
+      - name: Sync Docker Hub descriptions
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sync_description() {
+            local repo="$1" short="$2" file="$3"
+            local body
+            body=$(jq -n --arg d "$short" --rawfile md "$file" \
+              '{description: $d, full_description: $md}')
+            local code
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
+              -u "$DOCKERHUB_USERNAME:$DOCKERHUB_TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d "$body" \
+              "https://hub.docker.com/v2/repositories/sinrimin/harness-nexus-$repo/")
+            echo "hub description ($repo): HTTP $code"
+            [ "$code" = 200 ]
+          }
+          sync_description server \
+            'Harness Nexus server — Fastify REST API + MCP proxy + SQLite storage.' \
+            docs/docker-hub/server.md
+          sync_description web \
+            'Harness Nexus web — nginx-served admin UI with a reverse proxy to the server.' \
+            docs/docker-hub/web.md
