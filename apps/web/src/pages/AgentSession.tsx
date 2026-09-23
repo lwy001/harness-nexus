@@ -736,6 +736,31 @@ export function AgentSessionPage() {
     rail.state === 'ready'
       ? (rail.sessions.find((s) => s.sessionId === nativeSessionId)?.cwd ?? undefined)
       : undefined;
+  // #14 — the ACTIVE channel's optimistic title: the fold's first user
+  // prompt, the same source every target titles its sessions from. Shown
+  // while the vendor title hasn't been pulled yet; CSS truncates, the row
+  // tooltip carries the full text.
+  const firstPromptText = useMemo(() => {
+    for (const r of conversation.rows) {
+      if (r.row !== 'user') continue;
+      const text = r.blocks.find((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text');
+      const trimmed = text?.text.trim() ?? '';
+      if (trimmed === '') continue;
+      return trimmed;
+    }
+    return undefined;
+  }, [conversation.rows]);
+  // #14 — turn end: re-pull the listing ONCE so the target's native title
+  // (written around the first turn) replaces the optimistic first-prompt
+  // title without waiting for the next unrelated refresh. Deliberately
+  // simple: no polling — a LATE async rewrite (claude's summary replacing
+  // the raw prompt) surfaces on the next turn end or a manual refresh.
+  const lastTurnActiveRef = useRef(false);
+  useEffect(() => {
+    const was = lastTurnActiveRef.current;
+    lastTurnActiveRef.current = conversation.turnActive;
+    if (was && !conversation.turnActive) void refreshSessions(true);
+  }, [conversation.turnActive, refreshSessions]);
 
   if (loadFailed) {
     return (
@@ -923,7 +948,11 @@ export function AgentSessionPage() {
                                     />
                                   </span>
                                   <span className="min-w-0 flex-1 truncate">
-                                    {s.title ?? t('chat.untitled')}
+                                    {s.title ??
+                                      (s.sessionId === nativeSessionId
+                                        ? firstPromptText
+                                        : undefined) ??
+                                      t('chat.untitled')}
                                   </span>
                                   <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
                                     {relativeTime(s.updatedAt, dateLocale(lang))}
