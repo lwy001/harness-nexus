@@ -73,6 +73,22 @@ export function applyInstall(
   plan: InstallPlan,
   meta: { profileId: string; profileName: string; profileVersion: string },
 ): void {
+  // #21: containment pre-flight — every operation must land inside the plan's
+  // target root, checked BEFORE anything is written. Resource names and
+  // bundle keys join paths in the adapters; this is the single choke point
+  // that keeps a crafted `..`/absolute component from escaping the install
+  // directory no matter which adapter built the plan.
+  const root = path.resolve(plan.targetRoot);
+  for (const op of plan.operations) {
+    const dest = path.resolve(op.destinationPath);
+    if (dest !== root && !dest.startsWith(root + path.sep)) {
+      throw new InstallError(
+        `Refusing to write outside the install root: ${op.destinationPath}`,
+        'UNSAFE_DESTINATION',
+      );
+    }
+  }
+
   const ledgerOps: LedgerOperation[] = [];
   try {
     for (const op of plan.operations) {

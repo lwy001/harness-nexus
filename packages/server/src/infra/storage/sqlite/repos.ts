@@ -305,7 +305,10 @@ export function sqlitePatRepository(db: Database): PersonalAccessTokenRepository
       return token;
     },
     async touchLastUsed(id, at) {
-      db.prepare('UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?').run(id, at);
+      // Bind order matters (#21 bug fix): last_used_at ← at, WHERE id ← id.
+      // The previous (id, at) order matched zero rows — lastUsedAt was never
+      // recorded, breaking the "stolen token was used at…" audit trail.
+      db.prepare('UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?').run(at, id);
     },
     async delete(id) {
       db.prepare('DELETE FROM personal_access_tokens WHERE id = ?').run(id);
@@ -352,9 +355,12 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
         CredentialRow | undefined;
       return row ? mapCredential(row) : null;
     },
-    async findByName(name) {
-      const row = db.prepare('SELECT * FROM credentials WHERE name = ?').get(name) as
-        CredentialRow | undefined;
+    async findByName(name, scope, ownerId) {
+      const row = db
+        .prepare(
+          'SELECT * FROM credentials WHERE name = ? AND scope = ? AND (scope = ? OR owner_id = ?)',
+        )
+        .get(name, scope, 'global', ownerId ?? '') as CredentialRow | undefined;
       return row ? mapCredential(row) : null;
     },
     async list(filter) {

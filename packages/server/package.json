@@ -19,6 +19,7 @@
   "dependencies": {
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.0",
+    "@fastify/rate-limit": "^11.2.0",
     "@fastify/sensible": "^6.0.4",
     "@harness-nexus/core": "workspace:*",
     "@harness-nexus/mcp-runtime": "workspace:^",

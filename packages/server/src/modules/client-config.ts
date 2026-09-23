@@ -5,9 +5,11 @@ import {
   resolveDialSite,
   resolvePlaceholders,
   runtimeTargetSchema,
+  transportPlaceholderNames,
   type ClientMcpConfig,
 } from '@harness-nexus/shared';
 import { decryptSecret, hashToken, PAT_PREFIX } from '../infra/crypto.js';
+import { findCredentialForOwner } from '../infra/credential-scope.js';
 
 /**
  * Client config fetch (Phase 8 C2) — `GET /api/client/mcp-config?profile=<id>`.
@@ -41,20 +43,35 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const key = app.credentialEncryptionKey;
-    const distributable = new Map<string, boolean>();
-    for (const cred of await app.uow.credentials.list()) {
-      if (!distributable.has(cred.name)) distributable.set(cred.name, cred.distributable);
-    }
-    const isDistributable = (name: string): boolean => distributable.get(name) === true;
 
-    const resolve = (input: string): Promise<string> =>
+    // #21: `${cred:NAME}` resolves within the SERVER ROW owner's namespace
+    // (their personal rows shadow same-named global rows) so dial-site
+    // derivation and decryption agree, and a same-named credential owned by
+    // another tenant never decrypts here.
+    const dialSiteFor = async (server: McpServer): Promise<'client' | 'server'> => {
+      const dist = new Map<string, boolean>();
+      for (const name of transportPlaceholderNames(server.transport)) {
+        const cred = await findCredentialForOwner(app.uow, name, server.ownerId);
+        dist.set(name, cred?.distributable === true);
+      }
+      return resolveDialSite(server, (name) => dist.get(name) === true);
+    };
+
+    const resolve = (input: string, ownerId: string | null): Promise<string> =>
       resolvePlaceholders(input, async (name) => {
-        const cred: Credential | null = await app.uow.credentials.findByName(name);
+        const cred: Credential | null = await findCredentialForOwner(app.uow, name, ownerId);
         if (!cred) {
           throw new AppError(
             `credential "${name}" not found (referenced by a profile entry)`,
             409,
             'CREDENTIAL_NOT_FOUND',
+          );
+        }
+        if (!cred.distributable) {
+          throw new AppError(
+            `credential "${name}" is no longer distributable (referenced by a profile entry)`,
+            409,
+            'CREDENTIAL_NOT_DISTRIBUTABLE',
           );
         }
         return decryptSecret(cred.secret, key);
@@ -75,7 +92,7 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
           'PROFILE_ENTRY_NOT_ACCESSIBLE',
         );
       }
-      const site = resolveDialSite(server, isDistributable);
+      const site = await dialSiteFor(server);
       if (site === 'server') {
         anyServerDialed = true;
         servers.push({ id: server.id, name: server.name, dialSite: 'server' });
@@ -85,7 +102,9 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
         id: server.id,
         name: server.name,
         dialSite: 'client',
-        transport: await resolveTransport(server.transport, resolve),
+        transport: await resolveTransport(server.transport, (input) =>
+          resolve(input, server.ownerId),
+        ),
       });
     }
 
@@ -180,7 +199,7 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
     if (!row) {
       throw new AppError('Runtime config not found', 404, 'RUNTIME_CONFIG_NOT_FOUND');
     }
-    const cred = await app.uow.credentials.findByName(row.spec.credentialName);
+    const cred = await findCredentialForOwner(app.uow, row.spec.credentialName, caller.userId);
     if (!cred || !cred.distributable) {
       // Deleted or locked since the PUT — the honest failure for the executor.
       throw new AppError(

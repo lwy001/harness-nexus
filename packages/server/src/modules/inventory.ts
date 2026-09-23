@@ -14,6 +14,7 @@ import {
   captureMachineInventorySchema,
   diffInventory,
   importMachineInventorySchema,
+  isUnsafeRelativePath,
   scanMachineInventorySchema,
   transportPlaceholderNames,
   SCANNABLE_TARGETS,
@@ -24,6 +25,7 @@ import {
   type InventoryPayloadEvent,
 } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
+import { findCredentialForOwner } from '../infra/credential-scope.js';
 
 /**
  * Machine inventory, diff & one-click import (Phase 8 C3), plus W1's
@@ -314,9 +316,12 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
     const warnings = new Set<string>();
     const entries: ProfileEntry[] = [];
 
-    const noteMissingCredentials = async (transport: McpTransport): Promise<void> => {
+    const noteMissingCredentials = async (
+      transport: McpTransport,
+      ownerId: string | null,
+    ): Promise<void> => {
       for (const name of transportPlaceholderNames(transport)) {
-        const cred = await app.uow.credentials.findByName(name);
+        const cred = await findCredentialForOwner(app.uow, name, ownerId);
         if (!cred) {
           warnings.add(
             `Credential '${name}' is referenced but not defined — create it before this server connects`,
@@ -367,7 +372,7 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
             created.push({ kind: 'mcp', name, id: server.id });
           }
           entries.push({ resourceId: server.id, kind: 'mcp' });
-          await noteMissingCredentials(transport);
+          await noteMissingCredentials(transport, machine.ownerId);
           continue;
         }
 
@@ -375,6 +380,17 @@ export async function inventoryRoutes(app: FastifyInstance): Promise<void> {
         let source: ResourceSource;
         let summary: string | undefined;
         if (artifact.kind === 'skill') {
+          // #21: daemon-reported bundle keys become filesystem paths and zip
+          // entries on deploy — the same relative-path rule the REST route
+          // enforces (resources.ts) applies to this ingestion point too.
+          const unsafe = Object.keys(artifact.files).find((k) => isUnsafeRelativePath(k));
+          if (unsafe !== undefined) {
+            throw new AppError(
+              `Imported skill '${part.name}' carries an unsafe file path: "${unsafe}"`,
+              400,
+              'UNSAFE_BUNDLE_PATH',
+            );
+          }
           source =
             Object.keys(artifact.files).length > 1 || !('SKILL.md' in artifact.files)
               ? { type: 'inline-bundle', files: artifact.files }

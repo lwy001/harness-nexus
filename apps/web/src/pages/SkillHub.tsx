@@ -515,7 +515,9 @@ function SavePluginDialog({
         </div>
 
         <DialogFooter>
-          {row.homepage ? (
+          {/* Third-party catalog data — scheme-check before it reaches an href
+              (React already blocks javascript:, this is defense in depth). */}
+          {row.homepage && /^https?:\/\//i.test(row.homepage) ? (
             <a
               href={row.homepage}
               target="_blank"

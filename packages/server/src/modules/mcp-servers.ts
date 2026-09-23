@@ -78,9 +78,17 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- GET /api/mcp-servers/status ----
   // Live connection states from the registry. Drives the Dashboard mesh dots
-  // and the per-row status/tool-count badges (Phase 2.4).
-  app.get('/api/mcp-servers/status', guard, async () => {
-    return { statuses: app.mcpRegistry?.getStatuses() ?? [] };
+  // and the per-row status/tool-count badges (Phase 2.4). The pool spans
+  // every tenant's server-dialed rows — filter to what the caller can see
+  // (#21: names + upstream error details are tenant data).
+  app.get('/api/mcp-servers/status', guard, async (req) => {
+    const statuses = app.mcpRegistry?.getStatuses() ?? [];
+    if (req.user!.role === 'admin') return { statuses };
+    const rows = await app.uow.mcpServers.list();
+    const visible = new Set(
+      rows.filter((s) => s.scope === 'global' || s.ownerId === req.user!.id).map((s) => s.id),
+    );
+    return { statuses: statuses.filter((s) => visible.has(s.id)) };
   });
 
   // ---- Phase 2.4: per-server connect/disconnect + tool inspection ----

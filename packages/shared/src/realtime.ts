@@ -132,8 +132,18 @@ export const harnessJobPayloadSchema = z
     type: z.literal('harness'),
     action: harnessActionSchema,
     target: runtimeTargetSchema,
-    /** npm version spec (bare semver or dist-tag); omit = channel default. */
-    version: z.string().min(1).max(64).optional(),
+    /**
+     * npm version spec (bare semver or dist-tag); omit = channel default.
+     * Charset-restricted (#21): npm-package-arg also accepts URL/git specs,
+     * which would make `npm install -g pkg@<url>` fetch an attacker-chosen
+     * tarball and run its install scripts — only bare specs are allowed.
+     */
+    version: z
+      .string()
+      .regex(/^[\w.+-]+$/, 'bare semver/dist-tag only (no URLs or git specs)')
+      .min(1)
+      .max(64)
+      .optional(),
   })
   .superRefine((v, ctx) => {
     if (v.action === 'pin' && v.version === undefined) {

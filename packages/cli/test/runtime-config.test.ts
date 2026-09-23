@@ -99,6 +99,20 @@ describe('mergeEnvLine', () => {
     const out = mergeEnvLine(doc, 'K', 'v2');
     expect(out).toBe('OTHER=1\n\nK=v2\n# comment\n');
   });
+
+  it('single-quotes values that could inject extra env lines (#21)', () => {
+    // A newline smuggled inside a secret must stay INSIDE a single-quoted
+    // block — dotenv-style readers treat the whole quoted block as ONE value.
+    const injected = mergeEnvLine('', 'K', 'x\nLD_PRELOAD=/home/u/evil.so');
+    expect(injected.startsWith("K='")).toBe(true);
+    expect(injected.endsWith("'\n")).toBe(true);
+    const value = injected.slice("K='".length, injected.length - 2);
+    expect(value).toBe('x\nLD_PRELOAD=/home/u/evil.so');
+
+    // Embedded single quotes use the '\'' escape; leading-$ values quoted too.
+    expect(mergeEnvLine('', 'K', "it's")).toBe("K='it'\\''s'\n");
+    expect(mergeEnvLine('', 'K', '$HOME')).toBe("K='$HOME'\n");
+  });
 });
 
 describe('applyRuntimeConfig — claude-code', () => {

@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { SkillBundle, SkillMeta, SkillSource } from '@harness-nexus/core';
 import type { PluginResourceSource } from '@harness-nexus/shared';
+import { assertPublicHttpUrl, readBodyCapped } from '../egress.js';
 import type { MarketplaceFetcher } from './types.js';
 
 /**
@@ -13,7 +14,14 @@ import type { MarketplaceFetcher } from './types.js';
  * No auth. Always `community` trust. The discovery protocol: GET
  * `https://<host>/.well-known/skills/index.json` →
  * `{ skills: [{ name, description, files }] }`.
+ *
+ * #21: the query is a user-supplied URL, so the host must pass the egress
+ * guard (public-only) and the index fetch is time-boxed and size-capped.
  */
+
+/** Timeout + size cap for the index fetch (#21). */
+const FETCH_TIMEOUT_MS = 5000;
+const MAX_INDEX_BYTES = 2 * 1024 * 1024;
 
 export interface WellKnownSourceOptions {
   fetcher?: MarketplaceFetcher;
@@ -43,16 +51,20 @@ export class WellKnownSource implements SkillSource {
     if (!/^https?:\/\//i.test(q)) return [];
     let base: URL;
     try {
-      base = new URL(q);
-    } catch {
+      base = await assertPublicHttpUrl(q);
+    } catch (err) {
+      this.log.warn({ query: q.slice(0, 100), err }, 'well-known source: host rejected');
       return [];
     }
     const indexUrl = `${base.origin}/.well-known/skills/index.json`;
     let index: WellKnownIndex | null = null;
     try {
-      const res = await this.fetcher(indexUrl, { headers: { Accept: 'application/json' } });
+      const res = await this.fetcher(indexUrl, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       if (!res.ok) return [];
-      index = (await res.json()) as WellKnownIndex;
+      index = JSON.parse(await readBodyCapped(res, MAX_INDEX_BYTES)) as WellKnownIndex;
     } catch (err) {
       this.log.warn({ indexUrl, err }, 'well-known index fetch failed');
       return [];

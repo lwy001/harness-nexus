@@ -11,6 +11,7 @@ import {
   type ProviderApiKind,
 } from '@harness-nexus/shared';
 import { generateId, decryptSecret } from '../infra/crypto.js';
+import { findCredentialForOwner } from '../infra/credential-scope.js';
 import { ProviderModelsError, fetchProviderModels } from '../infra/provider-models.js';
 
 /**
@@ -28,14 +29,34 @@ export async function llmProviderRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };
   const key = app.credentialEncryptionKey;
 
-  /** The credential must exist AND be visible (own personal or any global). */
+  /**
+   * The credential must exist AND be resolvable in the caller's namespace
+   * (#21). A GLOBAL credential additionally only travels to a
+   * caller-controlled URL when the admin allowed it: admins may always, and
+   * regular users only when the URL comes from a stored (admin-chosen)
+   * provider config or the secret is marked distributable — a locked global
+   * secret never leaves for an endpoint the caller picked.
+   */
   const visibleCredential = async (
     name: string,
     caller: { id: string; role: 'admin' | 'user' },
+    callerControlsUrl: boolean,
   ): Promise<Credential> => {
-    const cred = await app.uow.credentials.findByName(name);
-    if (!cred || (cred.scope === 'personal' && cred.ownerId !== caller.id)) {
+    const cred = await findCredentialForOwner(app.uow, name, caller.id);
+    if (!cred) {
       throw new AppError(`Credential "${name}" not found`, 404, 'CREDENTIAL_NOT_FOUND');
+    }
+    if (
+      cred.scope === 'global' &&
+      caller.role !== 'admin' &&
+      callerControlsUrl &&
+      !cred.distributable
+    ) {
+      throw new AppError(
+        `Credential "${name}" is a locked global secret — it cannot be used from a caller-chosen endpoint (ask an admin, or mark it distributable)`,
+        403,
+        'CREDENTIAL_NOT_DISTRIBUTABLE',
+      );
     }
     return cred;
   };
@@ -63,7 +84,9 @@ export async function llmProviderRoutes(app: FastifyInstance): Promise<void> {
     if (input.scope === 'global' && req.user!.role !== 'admin') {
       throw new AppError('Only admins can create global providers', 403, 'FORBIDDEN');
     }
-    await visibleCredential(input.credentialName, req.user!);
+    // A personal provider's baseUrl is caller-chosen; a global provider's is
+    // admin-chosen (admin-only create) — drives the credential gate above.
+    await visibleCredential(input.credentialName, req.user!, input.scope === 'personal');
     const ownerId = input.scope === 'global' ? null : req.user!.id;
     if (await nameTaken(input.name, input.scope, ownerId)) {
       throw new AppError(
@@ -107,7 +130,7 @@ export async function llmProviderRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (input.credentialName !== undefined && input.credentialName !== existing.credentialName) {
-      await visibleCredential(input.credentialName, req.user!);
+      await visibleCredential(input.credentialName, req.user!, existing.scope === 'personal');
     }
     if (input.name !== undefined && input.name !== existing.name) {
       if (await nameTaken(input.name, existing.scope, existing.ownerId, existing.id)) {
@@ -152,6 +175,8 @@ export async function llmProviderRoutes(app: FastifyInstance): Promise<void> {
     let api: ProviderApiKind;
     let baseUrl: string | undefined;
     let credentialName: string;
+    /** Who chose the endpoint: stored rows carry their owner's trust level. */
+    let callerControlsUrl: boolean;
     if (input.providerId !== undefined) {
       const provider = await app.uow.llmProviders.findById(input.providerId);
       if (!provider || !visibleTo(provider, req.user!.id)) {
@@ -160,13 +185,15 @@ export async function llmProviderRoutes(app: FastifyInstance): Promise<void> {
       api = provider.api;
       baseUrl = provider.baseUrl ?? undefined;
       credentialName = provider.credentialName;
+      callerControlsUrl = provider.scope === 'personal';
     } else {
       api = input.api!;
       baseUrl = input.baseUrl;
       credentialName = input.credentialName!;
+      callerControlsUrl = true;
     }
 
-    const cred = await visibleCredential(credentialName, req.user!);
+    const cred = await visibleCredential(credentialName, req.user!, callerControlsUrl);
     const secret = decryptSecret(cred.secret, key);
     try {
       const models = await fetchProviderModels(

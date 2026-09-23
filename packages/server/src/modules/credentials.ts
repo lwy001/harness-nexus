@@ -22,6 +22,22 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
   const guard = { preHandler: [app.requireAuth] };
   const key = app.credentialEncryptionKey;
 
+  /**
+   * Name uniqueness per (name, scope, owner) (#21) — read-then-write, the
+   * same convention as profiles/resources/llm-providers. Without it a
+   * same-named credential could shadow another tenant's in `${cred:NAME}`
+   * resolution.
+   */
+  const nameTaken = async (
+    name: string,
+    scope: 'global' | 'personal',
+    ownerId: string | null,
+    exceptId?: string,
+  ): Promise<boolean> => {
+    const existing = await app.uow.credentials.findByName(name, scope, ownerId ?? undefined);
+    return existing !== null && existing.id !== exceptId;
+  };
+
   // ---- POST /api/credentials ----
   app.post('/api/credentials', guard, async (req, reply) => {
     const input = createCredentialSchema.parse(req.body) as CreateCredentialInput;
@@ -31,13 +47,22 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('Only admins can create global credentials', 403, 'FORBIDDEN');
     }
 
+    const ownerId = input.scope === 'global' ? null : req.user!.id;
+    if (await nameTaken(input.name, input.scope, ownerId)) {
+      throw new AppError(
+        `Credential name "${input.name}" is already taken in this scope`,
+        409,
+        'CREDENTIAL_NAME_TAKEN',
+      );
+    }
+
     const now = new Date().toISOString();
     const credential: Credential = {
       id: generateId(),
       name: input.name,
       secret: encryptSecret(input.secret, key),
       scope: input.scope,
-      ownerId: input.scope === 'global' ? null : req.user!.id,
+      ownerId,
       // Phase 8 C2: personal secrets belong to the owner and may reach their
       // own machines; global secrets stay on the server unless an admin opts in.
       distributable: input.scope === 'personal' ? true : (input.distributable ?? false),
@@ -80,6 +105,17 @@ export async function credentialsRoutes(app: FastifyInstance): Promise<void> {
         : {}),
       updatedAt: new Date().toISOString(),
     };
+    if (
+      input.name !== undefined &&
+      input.name !== existing.name &&
+      (await nameTaken(input.name, existing.scope, existing.ownerId, existing.id))
+    ) {
+      throw new AppError(
+        `Credential name "${input.name}" is already taken in this scope`,
+        409,
+        'CREDENTIAL_NAME_TAKEN',
+      );
+    }
     await app.uow.credentials.save(next);
     const plaintext =
       input.secret !== undefined ? input.secret : decryptSecret(existing.secret, key);
