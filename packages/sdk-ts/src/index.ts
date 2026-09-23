@@ -54,6 +54,7 @@ export {
   HOOK_SUPPORT,
   resolveTrustTier,
   resolveDialSite,
+  transportPlaceholderNames,
   marketplacePluginToResourceSource,
   skillMetaToResourceSource,
   type HookEvent,
