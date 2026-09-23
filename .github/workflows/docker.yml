@@ -136,17 +136,20 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ---- Docker Hub overviews (#15) -----------------------------------------
-      # The repos' descriptions start EMPTY (Docker Hub has no default from the
-      # image itself). PATCH the Hub API with a short line + the markdown kept
-      # in docs/docker-hub/{server,web}.md. Auth is the PAT-native exchange
-      # (POST /v2/auth/token — what peter-evans/dockerhub-description does).
+      # The repos' descriptions start EMPTY (Docker Hub derives nothing from
+      # the image). Intended flow: PATCH the Hub API with a short line + the
+      # markdown kept in docs/docker-hub/{server,web}.md, authed via the
+      # PAT-native exchange POST /v2/auth/token (the peter-evans flow).
       #
-      # DIAGNOSTIC MODE (2026-09-23): account-level R/W PAT + correct token
-      # exchange still PATCHes 403 — per peter-evans issue #331 the 403 is
-      # CONTENT/SIZE-triggered (a Hub-side WAF), not auth. This step probes:
-      # minimal body vs the full markdown vs prefix bisection, printing each
-      # response BODY (errinfo/detail/message) so the offending content can
-      # be identified. Non-blocking throughout.
+      # CURRENTLY COSMIC (#15, probed 2026-09-23): Docker Hub's repo-metadata
+      # API does NOT grant PATs the needed scope — an account-level Read &
+      # Write PAT gets 401 (basic auth), 403 via /v2/users/login/, and 403
+      # "access denied: insufficient scope" via /v2/auth/token, even for a
+      # minimal body (content/size ruled out by prefix bisection). PATs are
+      # REGISTRY credentials; this endpoint wants a PASSWORD-session JWT,
+      # which we deliberately do not store. The step stays non-blocking and
+      # self-heals if Docker ever grants PATs the scope; until then fill the
+      # overviews from docs/docker-hub/{server,web}.md by hand.
       - name: Sync Docker Hub descriptions
         continue-on-error: true
         env:
@@ -159,26 +162,22 @@ jobs:
             -d "$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" \
               '{identifier: $u, secret: $p}')" \
             | jq -r .access_token)
-          probe() {
-            local repo="$1" label="$2" body="$3"
-            local code
+          sync_description() {
+            local repo="$1" short="$2" file="$3"
+            local body code
+            body=$(jq -n --arg d "$short" --rawfile md "$file" \
+              '{description: $d, full_description: $md}')
             code=$(curl -s -o /tmp/hub-resp.json -w '%{http_code}' -X PATCH \
               -H "Authorization: Bearer $jwt" \
               -H 'Content-Type: application/json' \
               -d "$body" \
               "https://hub.docker.com/v2/repositories/sinrimin/harness-nexus-$repo/")
-            echo "probe ($repo, $label): HTTP $code"
-            if [ "$code" != 200 ]; then
-              echo "  body: $(head -c 500 /tmp/hub-resp.json)"
-            fi
+            echo "hub description ($repo): HTTP $code $(head -c 200 /tmp/hub-resp.json)"
+            [ "$code" = 200 ]
           }
-          mk() { jq -n --arg d "$1" --arg md "$2" '{description: $d, full_description: $md}'; }
-          full=$(cat docs/docker-hub/server.md)
-          probe server 'minimal' "$(mk 'Harness Nexus server.' 'Harness Nexus server image.')"
-          probe server 'short-only' "$(jq -n '{description: "Harness Nexus server image."}')"
-          for n in 200 500 1000; do
-            probe server "prefix-$n" "$(mk 'Harness Nexus server.' "${full:0:$n}")"
-          done
-          probe server 'full' "$(mk 'Harness Nexus server.' "$full")"
-          webfull=$(cat docs/docker-hub/web.md)
-          probe web 'full' "$(mk 'Harness Nexus web.' "$webfull")"
+          sync_description server \
+            'Harness Nexus server — Fastify REST API + MCP proxy + SQLite storage.' \
+            docs/docker-hub/server.md
+          sync_description web \
+            'Harness Nexus web — nginx-served admin UI with a reverse proxy to the server.' \
+            docs/docker-hub/web.md
