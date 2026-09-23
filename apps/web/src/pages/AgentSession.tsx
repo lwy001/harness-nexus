@@ -836,6 +836,10 @@ export function AgentSessionPage() {
                           const attached = channelByNative.get(s.sessionId);
                           const openChannelId = attached?.sessionId ?? s.openChannelId;
                           const open = attached !== undefined || openChannelId !== undefined;
+                          // #12 — RUNNING is the attached channel's live busy flag
+                          // (ZCode-style): a green dot, never gated on the row
+                          // merely being viewed.
+                          const running = attached?.busy === true;
                           return (
                             <button
                               key={s.sessionId}
@@ -878,16 +882,16 @@ export function AgentSessionPage() {
                                 </span>
                               </span>
                               <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
-                                {active ? (
+                                {running ? (
                                   <>
-                                    <span className="bg-signal inline-block size-1.5 rounded-full" />
+                                    <span className="bg-ok inline-block size-1.5 shrink-0 rounded-full" />
                                     {t('chat.working')}
                                   </>
                                 ) : stale ? (
                                   t('chat.staleModel', { model: s.model ?? '?' })
                                 ) : open ? (
                                   <>
-                                    <span className="bg-muted-foreground/70 inline-block size-1.5 rounded-full" />
+                                    <span className="bg-signal inline-block size-1.5 shrink-0 rounded-full" />
                                     {t('chat.channelOpen')}
                                   </>
                                 ) : (
