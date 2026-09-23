@@ -66,7 +66,11 @@ open http://127.0.0.1:15922
 
 The web port binds to 127.0.0.1 by default. Before exposing it beyond
 localhost, put TLS in front of it (Caddy, nginx, …): the API transmits
-tokens in headers, so serve it over HTTPS. To build from source instead, run
+tokens in headers, so serve it over HTTPS. If you plan to deploy profiles to
+Claude Code through its plugin marketplace, also set `PUBLIC_BASE_URL` in
+`.env` to your public https origin — the marketplace URL is built from it,
+and the default (`http://localhost:8080`) only works while everything runs
+on one machine. To build from source instead, run
 `docker compose up --build -d`; the images build from CN package mirrors
 (apt via TUNA, npm via npmmirror), so no proxy is needed — drop the mirror
 lines in the Dockerfiles to use the official registries.
