@@ -138,16 +138,23 @@ jobs:
       # ---- Docker Hub overviews (#15) -----------------------------------------
       # The repos' descriptions start EMPTY (Docker Hub has no default from the
       # image itself). PATCH the Hub API with a short line + the markdown kept
-      # in docs/docker-hub/{server,web}.md, authed by the same repo-scoped
-      # Read & Write PAT that pushed the images. Runs AFTER both pushes, so a
-      # metadata failure never blocks the images; jq escapes the markdown into
-      # the JSON body.
+      # in docs/docker-hub/{server,web}.md. AUTH LESSON from the first run: a
+      # repo-scoped PAT authenticates the REGISTRY via basic auth, but the Hub
+      # v2 API rejects it (401) — exchange it for a session JWT at
+      # /v2/users/login/ first (the dockerhub-description flow), then PATCH
+      # with a Bearer header. Runs AFTER both pushes, so a metadata failure
+      # never blocks the images.
       - name: Sync Docker Hub descriptions
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
+          jwt=$(curl -s -f -X POST https://hub.docker.com/v2/users/login/ \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" \
+              '{username: $u, password: $p}')" \
+            | jq -r .token)
           sync_description() {
             local repo="$1" short="$2" file="$3"
             local body
@@ -155,7 +162,7 @@ jobs:
               '{description: $d, full_description: $md}')
             local code
             code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
-              -u "$DOCKERHUB_USERNAME:$DOCKERHUB_TOKEN" \
+              -H "Authorization: Bearer $jwt" \
               -H 'Content-Type: application/json' \
               -d "$body" \
               "https://hub.docker.com/v2/repositories/sinrimin/harness-nexus-$repo/")
