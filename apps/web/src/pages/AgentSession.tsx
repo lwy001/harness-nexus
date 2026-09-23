@@ -4,7 +4,9 @@ import { toast } from 'sonner';
 import {
   ArrowLeftIcon,
   BotIcon,
+  ClockIcon,
   FolderIcon,
+  PencilIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -36,7 +38,7 @@ import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/chat/chat-stream.js';
 import { ChannelTabs } from '@/components/chat/channel-tabs.js';
 import { useChatChannels } from '@/components/chat/use-chat-channels.js';
-import { Composer, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
+import { Composer, queuedPreview, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
 import { TodoPanel } from '@/components/chat/todo-panel.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
 import { FilePicker } from '@/components/chat/file-picker.js';
@@ -125,11 +127,61 @@ function relativeTime(iso: string | null | undefined, locale: string): string {
   const minutes = Math.round(diff / 60000);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   if (Math.abs(minutes) < 60) return rtf.format(-minutes, 'minute');
-  const hours = Math.round(minutes / 60);
+  const hours = Math.round(diff / 60);
   if (Math.abs(hours) < 24) return rtf.format(-hours, 'hour');
   const days = Math.round(hours / 24);
   if (Math.abs(days) < 30) return rtf.format(-days, 'day');
   return new Date(iso).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
+
+/**
+ * #10 — the parked queue slot, floating ABOVE the Sender card (right-aligned:
+ * it is the user's next outgoing message). Kept OUT of the composer — inside
+ * it the chip read as an attachment preview — and OUT of the row stream: it
+ * is a sender affordance, not a transcript row. Pending semantics stay
+ * honest: dashed border + clock, never the solid look of a sent message.
+ */
+function QueuedMessage({
+  blocks,
+  onEdit,
+  onCancel,
+}: {
+  blocks: PromptBlock[];
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-1 mb-2 flex justify-end duration-200">
+      <span
+        className="bg-background inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-dashed px-2.5 py-1.5 text-xs shadow-sm"
+        title={t('chat.queuedLabel')}
+      >
+        <ClockIcon className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="text-muted-foreground shrink-0">{t('chat.queuedLabel')}</span>
+        <span className="truncate font-mono">{queuedPreview(blocks)}</span>
+        <span className="bg-border mx-0.5 h-3.5 w-px shrink-0" />
+        <button
+          type="button"
+          onClick={onEdit}
+          className="text-muted-foreground hover:text-foreground shrink-0"
+          aria-label={t('chat.queuedEditAria')}
+          title={t('chat.queuedEditAria')}
+        >
+          <PencilIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-muted-foreground hover:text-foreground shrink-0"
+          aria-label={t('chat.queuedCancelAria')}
+          title={t('chat.queuedCancelAria')}
+        >
+          <XIcon className="size-3.5" />
+        </button>
+      </span>
+    </div>
+  );
 }
 
 export function AgentSessionPage() {
@@ -916,6 +968,13 @@ export function AgentSessionPage() {
                 {/* 9 W14 — the agent's todo/plan snapshot (full-replace ACP
                     state; hidden when the agent never announced one). */}
                 <TodoPanel entries={conversation.plan ?? []} />
+                {conversation.queued !== null ? (
+                  <QueuedMessage
+                    blocks={conversation.queued}
+                    onEdit={queueEdit}
+                    onCancel={() => void queueCancel()}
+                  />
+                ) : null}
                 <Composer
                   value={draft}
                   onChange={changeDraft}
@@ -923,9 +982,6 @@ export function AgentSessionPage() {
                   turnActive={conversation.turnActive}
                   usage={conversation.usage}
                   onSend={() => void send()}
-                  queued={conversation.queued}
-                  onQueueEdit={queueEdit}
-                  onQueueCancel={() => void queueCancel()}
                   onCancel={() => void cancelTurn()}
                   attachments={attachments}
                   fileRefs={fileRefs}
