@@ -1,7 +1,12 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { SkillBundle, SkillMeta, SkillSource } from '@harness-nexus/core';
 import type { PluginResourceSource } from '@harness-nexus/shared';
+import { assertPublicHttpUrl, readBodyCapped } from '../egress.js';
 import type { MarketplaceFetcher } from './types.js';
+
+/** Timeout + size cap for the SKILL.md fetch (#21). */
+const FETCH_TIMEOUT_MS = 5000;
+const MAX_SKILL_BYTES = 2 * 1024 * 1024;
 
 /**
  * UrlSource (Phase 7.4) — a single-file `SKILL.md` at a direct HTTP(S) URL.
@@ -41,9 +46,13 @@ export class UrlSource implements SkillSource {
     if (!/^https?:\/\//i.test(identifier) || !/\.md$/i.test(identifier)) return null;
     let body: string;
     try {
-      const res = await this.fetcher(identifier, {});
+      // #21: user-supplied URL — egress guard + timeout + size cap.
+      await assertPublicHttpUrl(identifier);
+      const res = await this.fetcher(identifier, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       if (!res.ok) return null;
-      body = await res.text();
+      body = await readBodyCapped(res, MAX_SKILL_BYTES);
     } catch (err) {
       this.log.warn({ url: identifier, err }, 'url source fetch failed');
       return null;

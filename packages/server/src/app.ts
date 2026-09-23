@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import { isAppError } from '@harness-nexus/shared';
 
@@ -88,6 +89,10 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
   await app.register(helmet);
   await app.register(cors, { origin: true });
   await app.register(sensible);
+  // #21: rate limiting is opt-in per route (auth login/register carry a
+  // `config.rateLimit`) — business/API routes stay unlimited so MCP polling
+  // and the realtime channel are never throttled.
+  await app.register(rateLimit, { global: false, max: 20, timeWindow: '1 minute' });
 
   // Decorations must exist before the auth plugin reads them.
   const uow = await createStorage(config);
@@ -209,6 +214,20 @@ export async function buildApp(config: ServerConfig): Promise<FastifyInstance> {
         details: (err as { issues?: unknown }).issues,
       });
       return;
+    }
+    // Errors that carry their own HTTP status (e.g. @fastify/rate-limit's 429
+    // "Rate limit exceeded", Fastify's 413 body-too-large) pass through with
+    // their own code instead of collapsing to 500 (#21).
+    if (err instanceof Error && typeof (err as { statusCode?: unknown }).statusCode === 'number') {
+      const httpErr = err as unknown as { statusCode: number; code?: string };
+      if (httpErr.statusCode >= 400 && httpErr.statusCode < 600) {
+        req.log.warn({ err }, 'handled error with explicit status');
+        reply.code(httpErr.statusCode).send({
+          error: httpErr.code ?? 'HTTP_ERROR',
+          message: err.message,
+        });
+        return;
+      }
     }
     req.log.error({ err }, 'unhandled error');
     reply.code(500).send({ error: 'INTERNAL', message: 'Internal server error' });

@@ -28,7 +28,9 @@ export async function skillsRoutes(app: FastifyInstance): Promise<void> {
       if (!q) {
         throw new AppError('A search query (?q=) is required', 400, 'VALIDATION_ERROR');
       }
-      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      // Clamp 1..200 — the value fans out to every source (#21).
+      const raw = req.query.limit ? Number(req.query.limit) : 50;
+      const limit = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), 200) : 50;
       const result = await app.skillSearch.search(q, limit);
       return result;
     },
