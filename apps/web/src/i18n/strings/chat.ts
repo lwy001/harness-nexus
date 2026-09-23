@@ -21,7 +21,7 @@ const en = {
   sessionsUnsupportedPartial: 'This agent keeps no resumable session list — open channels only.',
   sessionsOffline: 'Machine offline — the session list needs the daemon.',
   sessionsDaemonOld: 'Upgrade hnx on the machine to list its native sessions.',
-  resumeSession: 'Resume',
+  newSessionHere: 'New session in {dir}',
   staleModel: 'pinned {model} no longer configured — not resumable',
   untitled: 'Untitled session',
   unknownWorkspace: '(no workspace)',
@@ -95,7 +95,6 @@ const en = {
   queuedToast: 'Queued — sends when this turn ends',
   queueFull: 'One queued message at a time',
   appliesNextTurn: 'Applies from the next turn',
-  channelOpen: 'open — click to rejoin',
   channelOpenHint: 'This session has a live channel — click to rejoin it.',
   evicted: 'This channel was closed to make room for a newer one — reopen the session to continue.',
   // ---- 9 W11 B: live-channel tabs ----
@@ -163,7 +162,7 @@ const zh: typeof en = {
   sessionsUnsupportedPartial: '该代理不支持原生会话列表——仅显示打开的通道。',
   sessionsOffline: '机器离线——会话列表需要守护进程在线。',
   sessionsDaemonOld: '请升级机器上的 hnx 以列出原生会话。',
-  resumeSession: '恢复',
+  newSessionHere: '在此目录新建会话（{dir}）',
   staleModel: '固定模型 {model} 已不在当前配置——无法恢复',
   untitled: '未命名会话',
   unknownWorkspace: '（无工作区）',
@@ -232,7 +231,6 @@ const zh: typeof en = {
   queuedToast: '已排队——本轮结束后自动发送',
   queueFull: '同时只能排队一条消息',
   appliesNextTurn: '下一轮生效',
-  channelOpen: '已打开 — 点击重连',
   channelOpenHint: '此会话已有连线中的通道——点击可回到该对话。',
   evicted: '此通道已为更新的会话让位而被关闭——重新打开该会话即可继续。',
   // ---- 9 W11 B: live-channel tabs ----
