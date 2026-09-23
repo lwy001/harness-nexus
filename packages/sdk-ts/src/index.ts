@@ -743,8 +743,10 @@ export class HarnessNexusClient {
     input: {
       name?: string;
       description?: string;
-      /** #6: bumping publishes an update for marketplace installs. */
-      version?: string;
+      /**
+       * #18: versions are server-assigned (auto-numbered; bumped when the
+       * entries change). Sending a version is ignored/stripped.
+       */
       entries?: ProfileEntryInput[];
     },
   ): Promise<{ profile: Profile }> {

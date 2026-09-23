@@ -106,16 +106,13 @@ export const createProfileSchema = z.object({
 // zod objects strip unknown keys by default, so a PATCH body carrying `target`
 // won't appear in the parsed result — the route handler inspects the RAW
 // `req.body` with hasOwnProperty to detect it and reject with 409 TARGET_IMMUTABLE.
+// `version` is deliberately OMITTED: versions are server-assigned
+// (auto-numbered, decimal with carry at 16, bumped only on entry changes —
+// see src/profile-version.ts). zod strips an unknown `version` key silently,
+// matching the `target` treatment below.
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(64).optional(),
   description: z.string().max(512).optional(),
-  /**
-   * Editable post-create (#6): bumping the version is what publishes an
-   * update — the marketplace emitter writes it into plugin.json and Claude
-   * Code's `plugin update` compares versions, so content-only changes with a
-   * frozen version are invisible to installed machines.
-   */
-  version: z.string().min(1).max(64).optional(),
   entries: z.array(profileEntryInputSchema).optional(),
 });
 

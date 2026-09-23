@@ -634,7 +634,7 @@ describe('claude-code marketplace deploy (#6)', () => {
     expect(res.json().error).toBe('PROFILE_NOT_IN_OWNER_MARKETPLACE');
   });
 
-  it('PATCH /api/profiles/:id accepts a version bump (the publish switch)', async () => {
+  it('PATCH /api/profiles/:id ignores client versions; entry changes are the publish switch (#18)', async () => {
     const profile = await app.inject({
       method: 'POST',
       url: '/api/profiles',
@@ -642,14 +642,18 @@ describe('claude-code marketplace deploy (#6)', () => {
       payload: { name: 'cc-bump', target: 'claude-code', scope: 'personal', entries: [] },
     });
     const id = profile.json().profile.id;
+    expect(profile.json().profile.version).toBe('0.1');
     const res = await app.inject({
       method: 'PATCH',
       url: `/api/profiles/${id}`,
       headers: authed(jwt),
-      payload: { version: '1.2.0' },
+      payload: { version: '9.9.9', name: 'cc-bump-2' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().profile.version).toBe('1.2.0');
+    // auto-numbered: the client-sent version is stripped, and a name-only
+    // edit does not bump (profile-version.test.ts covers the bump path).
+    expect(res.json().profile.version).toBe('0.1');
+    expect(res.json().profile.name).toBe('cc-bump-2');
     // target stays immutable.
     const bad = await app.inject({
       method: 'PATCH',
