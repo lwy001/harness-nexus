@@ -122,6 +122,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         'Generate one with, e.g.: openssl rand -base64 48',
     );
   }
+  // #21: falling back to JWT_SECRET makes one secret both forge tokens and
+  // decrypt the credential store — allowed for dev convenience, but never
+  // silently in production.
+  if (!env.CREDENTIAL_ENCRYPTION_KEY && env.NODE_ENV === 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[config] CREDENTIAL_ENCRYPTION_KEY is not set — reusing JWT_SECRET as the ' +
+        'credential AES key. Set a distinct key; rotating JWT_SECRET would render ' +
+        'every stored credential undecryptable.',
+    );
+  }
 
   return {
     port: Number(env.PORT ?? '8080'),

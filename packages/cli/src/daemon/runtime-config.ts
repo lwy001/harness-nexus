@@ -194,7 +194,14 @@ function applyCodexConfig(spec: RuntimeConfigSpec, secret: string, homeDir: stri
 /** Replace (or append) one `KEY=VALUE` line in a dotenv document, preserving the rest. */
 export function mergeEnvLine(existing: string, key: string, value: string): string {
   const re = new RegExp(`^${key}=.*$`, 'm');
-  const line = `${key}=${value}`;
+  // #21: single-quote values with anything beyond a conservative charset — a
+  // secret containing newlines/`$`/spaces/quotes must not inject extra
+  // KEY=VALUE lines into a file read on every launch. dotenv keeps
+  // single-quoted values literal; embedded quotes use the `'\''` escape.
+  // Plain values stay unquoted (byte-identical to previous deploys).
+  const safe = /^[A-Za-z0-9_./@+=-]*$/.test(value);
+  const rendered = safe ? value : `'${value.replaceAll("'", "'\\''")}'`;
+  const line = `${key}=${rendered}`;
   const base = re.test(existing)
     ? existing.replace(re, line)
     : existing.replace(/\s+$/, '') + (existing.trim().length > 0 ? '\n' : '') + line;

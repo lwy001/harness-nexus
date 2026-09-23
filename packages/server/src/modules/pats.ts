@@ -11,13 +11,12 @@ export async function patsRoutes(app: FastifyInstance): Promise<void> {
     const input = createPatSchema.parse(req.body) as CreatePatInput;
     const rawToken = generatePat();
     const now = new Date().toISOString();
-    // A marketplace (emit) token carries the 'marketplace' scope tag — the
-    // marketplace routes require it and the REST API rejects it, so its blast
-    // radius is exactly the emitter URL.
-    const scopes =
-      input.kind === 'marketplace'
-        ? Array.from(new Set([...(input.scopes ?? []), 'marketplace']))
-        : (input.scopes ?? []);
+    // Scopes are SERVER-assigned (#21): an api token carries none, a
+    // marketplace (emit) token exactly ['marketplace']. Client-supplied
+    // scope lists are ignored — capability tags must never be self-issued
+    // (today every acceptance path re-derives the user, but the tag should
+    // not be forgeable in the first place).
+    const scopes: string[] = input.kind === 'marketplace' ? ['marketplace'] : [];
 
     const pat = await app.uow.tokens.save({
       id: generateId(),

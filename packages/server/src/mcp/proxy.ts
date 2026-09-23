@@ -15,7 +15,7 @@
  * This file is the transport mount point only; aggregation lives in
  * `./registry.ts`. It is intentionally decoupled from the REST routes.
  */
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   ListToolsRequestSchema,
@@ -33,6 +33,46 @@ import { hashToken, PAT_PREFIX } from '../infra/crypto.js';
 interface Session {
   server: Server;
   transport: StreamableHTTPServerTransport | SSEServerTransport;
+  /** Creator identity (#21): a session only serves the user who opened it. */
+  userId: string;
+  /** Idle-eviction deadline, extended on every touch (#21). */
+  lastUsedAt: number;
+}
+
+/**
+ * #21 — the session maps are process-lifetime state; without bounds an
+ * authenticated caller mints unlimited sessions (memory/CPU). Cap concurrent
+ * sessions per user and evict idle ones on every request.
+ */
+const MAX_SESSIONS_PER_USER = 16;
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+
+function sweepExpired(map: Map<string, Session>, log: FastifyBaseLogger): void {
+  const now = Date.now();
+  for (const [id, s] of map) {
+    if (now - s.lastUsedAt > SESSION_IDLE_TTL_MS) {
+      map.delete(id);
+      void s.server.close().catch(() => {});
+      log.debug({ sessionId: id }, 'mcp outlet: evicted idle session');
+    }
+  }
+}
+
+/** Enforce the per-user cap by closing the caller's oldest session. */
+function capSessionsForUser(
+  map: Map<string, Session>,
+  userId: string,
+  log: FastifyBaseLogger,
+): void {
+  const owned = [...map.entries()].filter(([, s]) => s.userId === userId);
+  if (owned.length < MAX_SESSIONS_PER_USER) return;
+  owned.sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
+  const evict = owned.slice(0, owned.length - MAX_SESSIONS_PER_USER + 1);
+  for (const [id, s] of evict) {
+    map.delete(id);
+    void s.server.close().catch(() => {});
+    log.info({ sessionId: id, userId }, 'mcp outlet: capped user session count');
+  }
 }
 
 /** Request-scoped: the resolved upstream server ids for the chosen profile. */
@@ -110,9 +150,18 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
     url: '/mcp',
     preHandler: [gate],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      sweepExpired(streamableSessions, app.log);
       const sessionId = (req.headers['mcp-session-id'] as string | undefined) ?? randomUUID();
       let session = streamableSessions.get(sessionId);
-      if (!session) {
+      if (session) {
+        // #21: a session serves only the user who opened it — a leaked or
+        // guessed session id is worthless to anyone else.
+        if (session.userId !== req.user!.id) {
+          throw new AppError('Unknown or expired session', 404, 'SESSION_NOT_FOUND');
+        }
+        session.lastUsedAt = Date.now();
+      } else {
+        capSessionsForUser(streamableSessions, req.user!.id, app.log);
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => sessionId,
         });
@@ -120,6 +169,7 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
           registry,
           transport,
           (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds,
+          req.user!.id,
         );
         streamableSessions.set(sessionId, session);
         transport.onclose = () => {
@@ -142,6 +192,8 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
     url: '/mcp/sse',
     preHandler: [gate],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      sweepExpired(sseSessions, app.log);
+      capSessionsForUser(sseSessions, req.user!.id, app.log);
       const sessionId = randomUUID();
       reply.hijack();
       const transport = new SSEServerTransport('/mcp/sse/messages', reply.raw);
@@ -149,6 +201,7 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
         registry,
         transport,
         (req as FastifyRequest & ResolvedProfileRequest).resolvedServerIds,
+        req.user!.id,
       );
       sseSessions.set(sessionId, session);
       await transport.start();
@@ -165,6 +218,11 @@ export async function mountMcpProxy(app: FastifyInstance): Promise<void> {
       if (!session || !(session.transport instanceof SSEServerTransport)) {
         throw new AppError('Unknown or expired SSE session', 400, 'SESSION_NOT_FOUND');
       }
+      // #21: session ids only work for their creator.
+      if (session.userId !== req.user!.id) {
+        throw new AppError('Unknown or expired SSE session', 400, 'SESSION_NOT_FOUND');
+      }
+      session.lastUsedAt = Date.now();
       reply.hijack();
       await session.transport.handlePostMessage(req.raw, reply.raw, req.body);
     },
@@ -191,6 +249,7 @@ async function buildSession(
   registry: McpRegistry,
   transport: StreamableHTTPServerTransport | SSEServerTransport,
   serverIds: string[],
+  userId: string,
 ): Promise<Session> {
   // Low-level `Server` (not `McpServer`): `registerTool`'s config takes a
   // ZOD shape, and mapping the upstream's raw JSON schema through zod drops
@@ -219,7 +278,7 @@ async function buildSession(
     return result as CallToolResult;
   });
   await server.connect(transport as Parameters<Server['connect']>[0]);
-  return { server, transport };
+  return { server, transport, userId, lastUsedAt: Date.now() };
 }
 
 // ---- Fastify type augmentation for the decorated registry ----
