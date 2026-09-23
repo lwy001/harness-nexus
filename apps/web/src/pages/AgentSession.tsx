@@ -38,7 +38,12 @@ import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/chat/chat-stream.js';
 import { ChannelTabs } from '@/components/chat/channel-tabs.js';
 import { useChatChannels } from '@/components/chat/use-chat-channels.js';
-import { Composer, queuedPreview, type ComposerConfig, type DraftFileRef } from '@/components/chat/composer.js';
+import {
+  Composer,
+  queuedPreview,
+  type ComposerConfig,
+  type DraftFileRef,
+} from '@/components/chat/composer.js';
 import { TodoPanel } from '@/components/chat/todo-panel.js';
 import { DirPicker } from '@/components/chat/dir-picker.js';
 import { FilePicker } from '@/components/chat/file-picker.js';
@@ -626,15 +631,20 @@ export function AgentSessionPage() {
       .join('\n');
     if (text !== '') setDraft(text);
     setFileRefs(
-      parked.flatMap((b) =>
-        b.type === 'resource_link' ? [{ name: b.name, uri: b.uri }] : [],
-      ),
+      parked.flatMap((b) => (b.type === 'resource_link' ? [{ name: b.name, uri: b.uri }] : [])),
     );
     setAttachments((prev) => [
       ...prev,
       ...parked.flatMap((b, i) =>
         b.type === 'image'
-          ? [{ id: `queued-${String(i)}`, name: `image-${String(i + 1)}`, data: b.data, mimeType: b.mimeType }]
+          ? [
+              {
+                id: `queued-${String(i)}`,
+                name: `image-${String(i + 1)}`,
+                data: b.data,
+                mimeType: b.mimeType,
+              },
+            ]
           : [],
       ),
     ]);
@@ -743,7 +753,9 @@ export function AgentSessionPage() {
   const firstPromptText = useMemo(() => {
     for (const r of conversation.rows) {
       if (r.row !== 'user') continue;
-      const text = r.blocks.find((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text');
+      const text = r.blocks.find(
+        (b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text',
+      );
       const trimmed = text?.text.trim() ?? '';
       if (trimmed === '') continue;
       return trimmed;
@@ -857,111 +869,125 @@ export function AgentSessionPage() {
                       // default open.
                       const collapsed = collapsedCwds.has(group.cwd);
                       return (
-                      <div key={group.cwd} className="mb-1">
-                        {/* Folder header: click toggles; hover reveals the
+                        <div key={group.cwd} className="mb-1">
+                          {/* Folder header: click toggles; hover reveals the
                             new-session button which starts a channel with
                             THIS cwd — no picker round-trip. */}
-                        <div className="group/folder text-muted-foreground flex items-center gap-1 px-1.5 py-1 text-[11px] font-medium">
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-foreground"
-                            title={group.cwd}
-                            onClick={() => toggleCwd(group.cwd)}
-                          >
-                            <ChevronRightIcon
-                              className={cn(
-                                'size-3 shrink-0 transition-transform',
-                                !collapsed && 'rotate-90',
-                              )}
-                            />
-                            <FolderIcon className="size-3 shrink-0" />
-                            <span className="truncate">{cwdBasename(group.cwd)}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="hover:text-foreground shrink-0 opacity-0 group-hover/folder:opacity-100"
-                            title={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
-                            aria-label={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
-                            onClick={() => void openChannel(undefined, group.cwd)}
-                          >
-                            <PlusIcon className="size-3.5" />
-                          </button>
-                        </div>
-                        {!collapsed
-                          ? group.sessions.map((s) => {
-                              const active = s.sessionId === nativeSessionId;
-                              const stale = s.staleReason !== undefined;
-                              // Live truth ONLY (#13 fix): the listing's
-                              // `openChannelId` stamp is a moment-in-time
-                              // snapshot that goes stale the moment a channel
-                              // closes elsewhere (the user-wide `chat:channels`
-                              // push is already realtime for every window), so
-                              // consulting it left a dead blue dot on the row.
-                              // The channel map IS the open state.
-                              const attached = channelByNative.get(s.sessionId);
-                              // #12 — RUNNING is the attached channel's live busy
-                              // flag: a green dot, never gated on the row merely
-                              // being viewed.
-                              const running = attached?.busy === true;
-                              return (
-                                <button
-                                  key={s.sessionId}
-                                  type="button"
-                                  disabled={stale && !active}
-                                  onClick={() =>
-                                    active || stale || attached === undefined
-                                      ? undefined
-                                      : void openChannel(attached.sessionId, undefined, {
+                          <div className="group/folder text-muted-foreground flex items-center gap-1 px-1.5 py-1 text-[11px] font-medium">
+                            <button
+                              type="button"
+                              className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-foreground"
+                              title={group.cwd}
+                              onClick={() => toggleCwd(group.cwd)}
+                            >
+                              <ChevronRightIcon
+                                className={cn(
+                                  'size-3 shrink-0 transition-transform',
+                                  !collapsed && 'rotate-90',
+                                )}
+                              />
+                              <FolderIcon className="size-3 shrink-0" />
+                              <span className="truncate">{cwdBasename(group.cwd)}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="hover:text-foreground shrink-0 opacity-0 group-hover/folder:opacity-100"
+                              title={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
+                              aria-label={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
+                              onClick={() => void openChannel(undefined, group.cwd)}
+                            >
+                              <PlusIcon className="size-3.5" />
+                            </button>
+                          </div>
+                          {!collapsed
+                            ? group.sessions.map((s) => {
+                                const active = s.sessionId === nativeSessionId;
+                                const stale = s.staleReason !== undefined;
+                                // Live truth ONLY (#13 fix): the listing's
+                                // `openChannelId` stamp is a moment-in-time
+                                // snapshot that goes stale the moment a channel
+                                // closes elsewhere (the user-wide `chat:channels`
+                                // push is already realtime for every window), so
+                                // consulting it left a dead blue dot on the row.
+                                // The channel map IS the open state.
+                                const attached = channelByNative.get(s.sessionId);
+                                // #12 — RUNNING is the attached channel's live busy
+                                // flag: a green dot, never gated on the row merely
+                                // being viewed.
+                                const running = attached?.busy === true;
+                                return (
+                                  <button
+                                    key={s.sessionId}
+                                    type="button"
+                                    disabled={stale && !active}
+                                    onClick={() => {
+                                      if (active || stale) return;
+                                      // With a live channel this is a REJOIN;
+                                      // without one (fresh page, or after a
+                                      // server restart — channels are
+                                      // server-memory only) it is a fresh RESUME
+                                      // of the same native session. Both keep the
+                                      // row's promise: open this conversation
+                                      // (#22 — the no-channel case used to be a
+                                      // silent no-op).
+                                      if (attached !== undefined) {
+                                        void openChannel(attached.sessionId, undefined, {
                                           sessionId: s.sessionId,
                                           cwd: s.cwd,
-                                        })
-                                  }
-                                  className={cn(
-                                    'flex w-full items-center gap-1 rounded-md py-1 pl-4 pr-1.5 text-left text-xs',
-                                    active
-                                      ? 'bg-accent'
-                                      : stale
-                                        ? 'cursor-default'
-                                        : 'hover:bg-accent/60',
-                                    stale && !active && 'opacity-50',
-                                  )}
-                                  title={
-                                    stale
-                                      ? t('chat.staleModel', { model: s.model ?? '?' })
-                                      : attached !== undefined && !active
-                                        ? t('chat.channelOpenHint')
-                                        : (s.title ?? s.cwd)
-                                  }
-                                >
-                                  {/* The status gutter: green running, blue
+                                        });
+                                      } else {
+                                        void openChannel(undefined, undefined, {
+                                          sessionId: s.sessionId,
+                                          cwd: s.cwd,
+                                        });
+                                      }
+                                    }}
+                                    className={cn(
+                                      'flex w-full items-center gap-1 rounded-md py-1 pl-4 pr-1.5 text-left text-xs',
+                                      active
+                                        ? 'bg-accent'
+                                        : stale
+                                          ? 'cursor-default'
+                                          : 'hover:bg-accent/60',
+                                      stale && !active && 'opacity-50',
+                                    )}
+                                    title={
+                                      stale
+                                        ? t('chat.staleModel', { model: s.model ?? '?' })
+                                        : attached !== undefined && !active
+                                          ? t('chat.channelOpenHint')
+                                          : (s.title ?? s.cwd)
+                                    }
+                                  >
+                                    {/* The status gutter: green running, blue
                                       opened, empty otherwise (#12/#13). */}
-                                  <span className="flex w-2 shrink-0 justify-center">
-                                    <span
-                                      className={cn(
-                                        'inline-block size-1.5 shrink-0 rounded-full',
-                                        running
-                                          ? 'bg-ok'
-                                          : attached !== undefined
-                                            ? 'bg-signal'
-                                            : 'bg-transparent',
-                                      )}
-                                    />
-                                  </span>
-                                  <span className="min-w-0 flex-1 truncate">
-                                    {s.title ??
-                                      (s.sessionId === nativeSessionId
-                                        ? firstPromptText
-                                        : undefined) ??
-                                      t('chat.untitled')}
-                                  </span>
-                                  <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                                    {relativeTime(s.updatedAt, dateLocale(lang))}
-                                  </span>
-                                </button>
-                              );
-                            })
-                          : null}
-                      </div>
+                                    <span className="flex w-2 shrink-0 justify-center">
+                                      <span
+                                        className={cn(
+                                          'inline-block size-1.5 shrink-0 rounded-full',
+                                          running
+                                            ? 'bg-ok'
+                                            : attached !== undefined
+                                              ? 'bg-signal'
+                                              : 'bg-transparent',
+                                        )}
+                                      />
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {s.title ??
+                                        (s.sessionId === nativeSessionId
+                                          ? firstPromptText
+                                          : undefined) ??
+                                        t('chat.untitled')}
+                                    </span>
+                                    <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
+                                      {relativeTime(s.updatedAt, dateLocale(lang))}
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            : null}
+                        </div>
                       );
                     })
                   )}
