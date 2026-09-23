@@ -138,13 +138,16 @@ jobs:
       # ---- Docker Hub overviews (#15) -----------------------------------------
       # The repos' descriptions start EMPTY (Docker Hub has no default from the
       # image itself). PATCH the Hub API with a short line + the markdown kept
-      # in docs/docker-hub/{server,web}.md. AUTH LESSON from the first run: a
-      # repo-scoped PAT authenticates the REGISTRY via basic auth, but the Hub
-      # v2 API rejects it (401) — exchange it for a session JWT at
-      # /v2/users/login/ first (the dockerhub-description flow), then PATCH
-      # with a Bearer header. Runs AFTER both pushes, so a metadata failure
-      # never blocks the images.
+      # in docs/docker-hub/{server,web}.md. AUTH (two-run lesson): a
+      # repo-scoped PAT authenticates the REGISTRY via basic auth but the Hub
+      # v2 API rejects it (401); exchanging it for a session JWT at
+      # /v2/users/login/ gets past auth but repo-scoped tokens still CANNOT
+      # edit repo metadata (403) — that needs an ACCOUNT-level Read & Write
+      # PAT in DOCKERHUB_TOKEN. Until then this step is deliberately
+      # NON-BLOCKING (continue-on-error): images are already pushed, a
+      # metadata shortfall must not fail the release.
       - name: Sync Docker Hub descriptions
+        continue-on-error: true
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
