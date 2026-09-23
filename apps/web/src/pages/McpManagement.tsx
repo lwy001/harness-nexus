@@ -904,7 +904,11 @@ function McpServerDialog({
           </Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="grid gap-2">
+          {/* content-start on every cell: the scope cell grows an edit-mode
+              hint <p>, and without it align-content:stretch distributes that
+              extra height into the OTHER cells' rows — pushing their inputs
+              around (the same alignment bug the Profiles edit dialog fixed). */}
+          <div className="grid content-start gap-2">
             <Label htmlFor="mcp-name">{t('common.name')}</Label>
             <Input
               id="mcp-name"
@@ -916,7 +920,7 @@ function McpServerDialog({
               required
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid content-start gap-2">
             <Label htmlFor="mcp-dial-site">{t('mcp.dialSite')}</Label>
             <Select value={dialSite} onValueChange={(v) => setDialSite(v as DialSite)}>
               <SelectTrigger id="mcp-dial-site">
@@ -931,7 +935,7 @@ function McpServerDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
+          <div className="grid content-start gap-2">
             <Label htmlFor="mcp-type">{t('mcp.transport')}</Label>
             <Select value={type} onValueChange={(v) => onTypeChange(v as TransportType)}>
               <SelectTrigger id="mcp-type">
@@ -946,7 +950,7 @@ function McpServerDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
+          <div className="grid content-start gap-2">
             <Label htmlFor="mcp-scope">{t('common.scope')}</Label>
             <Select
               value={scope}
