@@ -112,10 +112,10 @@ export function ChannelTabs({
                   {tabLabel(ch)}
                 </span>
                 {ch.busy ? (
-                  <span
-                    className="size-1.5 shrink-0 animate-pulse rounded-full bg-current opacity-40"
-                    aria-hidden
-                  />
+                  // #12 — running = a static green dot (ZCode-style); the
+                  // accent-colored pulse stays on the page header, the tab
+                  // keeps it quiet.
+                  <span className="bg-ok inline-block size-1.5 shrink-0 rounded-full" aria-hidden />
                 ) : null}
                 {ch.deferred ? (
                   <span className="text-muted-foreground shrink-0 text-[10px]">
