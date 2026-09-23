@@ -4,10 +4,10 @@ import { toast } from 'sonner';
 import {
   ArrowLeftIcon,
   BotIcon,
+  ChevronRightIcon,
   ClockIcon,
   FolderIcon,
   PencilIcon,
-  PlayIcon,
   PlusIcon,
   RefreshCwIcon,
   XIcon,
@@ -200,6 +200,16 @@ export function AgentSessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  // #13 — collapsed cwd groups on the session rail (ZCode-style folders).
+  const [collapsedCwds, setCollapsedCwds] = useState<Set<string>>(new Set());
+  const toggleCwd = (cwd: string): void => {
+    setCollapsedCwds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cwd)) next.delete(cwd);
+      else next.add(cwd);
+      return next;
+    });
+  };
   // 9 W9 — composer controls state.
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [fileRefs, setFileRefs] = useState<DraftFileRef[]>([]);
@@ -817,95 +827,114 @@ export function AgentSessionPage() {
                       {t('chat.noSessions')}
                     </p>
                   ) : (
-                    groups.map((group) => (
-                      <div key={group.cwd} className="mb-3">
-                        <div
-                          className="text-muted-foreground flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium"
-                          title={group.cwd}
-                        >
-                          <FolderIcon className="size-3 shrink-0" />
-                          <span className="truncate">{cwdBasename(group.cwd)}</span>
-                        </div>
-                        {group.sessions.map((s) => {
-                          const active = s.sessionId === nativeSessionId;
-                          const stale = s.staleReason !== undefined;
-                          // A live channel is attached (W11: the PUSH overlay wins,
-                          // the listing stamps are just the initial paint): clicking
-                          // REJOINS it — a fresh resume would spawn a second channel
-                          // for the same agent session (dsh refuses that outright).
-                          const attached = channelByNative.get(s.sessionId);
-                          const openChannelId = attached?.sessionId ?? s.openChannelId;
-                          const open = attached !== undefined || openChannelId !== undefined;
-                          // #12 — RUNNING is the attached channel's live busy flag
-                          // (ZCode-style): a green dot, never gated on the row
-                          // merely being viewed.
-                          const running = attached?.busy === true;
-                          return (
-                            <button
-                              key={s.sessionId}
-                              type="button"
-                              disabled={stale && !active}
-                              onClick={() =>
-                                active || stale
-                                  ? undefined
-                                  : open
-                                    ? void openChannel(openChannelId, undefined, {
-                                        sessionId: s.sessionId,
-                                        cwd: s.cwd,
-                                      })
-                                    : void openChannel(undefined, undefined, {
-                                        sessionId: s.sessionId,
-                                        cwd: s.cwd,
-                                      })
-                              }
+                    groups.map((group) => {
+                      // #13 — folders COLLAPSE (ZCode-style); per-cwd state,
+                      // default open.
+                      const collapsed = collapsedCwds.has(group.cwd);
+                      return (
+                      <div key={group.cwd} className="mb-1">
+                        {/* Folder header: click toggles; hover reveals the
+                            new-session button which starts a channel with
+                            THIS cwd — no picker round-trip. */}
+                        <div className="group/folder text-muted-foreground flex items-center gap-1 px-1.5 py-1 text-[11px] font-medium">
+                          <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-foreground"
+                            title={group.cwd}
+                            onClick={() => toggleCwd(group.cwd)}
+                          >
+                            <ChevronRightIcon
                               className={cn(
-                                'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs',
-                                active
-                                  ? 'bg-accent'
-                                  : stale
-                                    ? 'cursor-default'
-                                    : 'hover:bg-accent/60',
-                                stale && !active && 'opacity-50',
+                                'size-3 shrink-0 transition-transform',
+                                !collapsed && 'rotate-90',
                               )}
-                              title={
-                                stale
-                                  ? t('chat.staleModel', { model: s.model ?? '?' })
-                                  : open && !active
-                                    ? t('chat.channelOpenHint')
-                                    : (s.title ?? s.cwd)
-                              }
-                            >
-                              <span className="flex w-full items-center justify-between gap-2">
-                                <span className="truncate">{s.title ?? t('chat.untitled')}</span>
-                                <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                                  {relativeTime(s.updatedAt, dateLocale(lang))}
-                                </span>
-                              </span>
-                              <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
-                                {running ? (
-                                  <>
-                                    <span className="bg-ok inline-block size-1.5 shrink-0 rounded-full" />
-                                    {t('chat.working')}
-                                  </>
-                                ) : stale ? (
-                                  t('chat.staleModel', { model: s.model ?? '?' })
-                                ) : open ? (
-                                  <>
-                                    <span className="bg-signal inline-block size-1.5 shrink-0 rounded-full" />
-                                    {t('chat.channelOpen')}
-                                  </>
-                                ) : (
-                                  <>
-                                    <PlayIcon className="size-2.5" />
-                                    {t('chat.resumeSession')}
-                                  </>
-                                )}
-                              </span>
-                            </button>
-                          );
-                        })}
+                            />
+                            <FolderIcon className="size-3 shrink-0" />
+                            <span className="truncate">{cwdBasename(group.cwd)}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="hover:text-foreground shrink-0 opacity-0 group-hover/folder:opacity-100"
+                            title={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
+                            aria-label={t('chat.newSessionHere', { dir: cwdBasename(group.cwd) })}
+                            onClick={() => void openChannel(undefined, group.cwd)}
+                          >
+                            <PlusIcon className="size-3.5" />
+                          </button>
+                        </div>
+                        {!collapsed
+                          ? group.sessions.map((s) => {
+                              const active = s.sessionId === nativeSessionId;
+                              const stale = s.staleReason !== undefined;
+                              // Live truth ONLY (#13 fix): the listing's
+                              // `openChannelId` stamp is a moment-in-time
+                              // snapshot that goes stale the moment a channel
+                              // closes elsewhere (the user-wide `chat:channels`
+                              // push is already realtime for every window), so
+                              // consulting it left a dead blue dot on the row.
+                              // The channel map IS the open state.
+                              const attached = channelByNative.get(s.sessionId);
+                              // #12 — RUNNING is the attached channel's live busy
+                              // flag: a green dot, never gated on the row merely
+                              // being viewed.
+                              const running = attached?.busy === true;
+                              return (
+                                <button
+                                  key={s.sessionId}
+                                  type="button"
+                                  disabled={stale && !active}
+                                  onClick={() =>
+                                    active || stale || attached === undefined
+                                      ? undefined
+                                      : void openChannel(attached.sessionId, undefined, {
+                                          sessionId: s.sessionId,
+                                          cwd: s.cwd,
+                                        })
+                                  }
+                                  className={cn(
+                                    'flex w-full items-center gap-1 rounded-md py-1 pl-4 pr-1.5 text-left text-xs',
+                                    active
+                                      ? 'bg-accent'
+                                      : stale
+                                        ? 'cursor-default'
+                                        : 'hover:bg-accent/60',
+                                    stale && !active && 'opacity-50',
+                                  )}
+                                  title={
+                                    stale
+                                      ? t('chat.staleModel', { model: s.model ?? '?' })
+                                      : attached !== undefined && !active
+                                        ? t('chat.channelOpenHint')
+                                        : (s.title ?? s.cwd)
+                                  }
+                                >
+                                  {/* The status gutter: green running, blue
+                                      opened, empty otherwise (#12/#13). */}
+                                  <span className="flex w-2 shrink-0 justify-center">
+                                    <span
+                                      className={cn(
+                                        'inline-block size-1.5 shrink-0 rounded-full',
+                                        running
+                                          ? 'bg-ok'
+                                          : attached !== undefined
+                                            ? 'bg-signal'
+                                            : 'bg-transparent',
+                                      )}
+                                    />
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {s.title ?? t('chat.untitled')}
+                                  </span>
+                                  <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
+                                    {relativeTime(s.updatedAt, dateLocale(lang))}
+                                  </span>
+                                </button>
+                              );
+                            })
+                          : null}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </>
               )}
