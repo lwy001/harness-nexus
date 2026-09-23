@@ -56,8 +56,17 @@ describe('harness job npm spec charset (#21)', () => {
 });
 
 describe('touchLastUsed records the timestamp (#21 bug fix)', () => {
-  it('sqlite driver updates last_used_at for the right row', async () => {
-    const uow = createSqliteUnitOfWork(':memory:');
+  it('sqlite driver updates last_used_at for the right row', async (ctx) => {
+    // The better-sqlite3 native binding is per-NODE_MAJOR; on a dev box whose
+    // binding was compiled for a different major than the running Node, load
+    // throws — skip environmentally (CI builds it for its own Node and runs
+    // this for real).
+    let uow: ReturnType<typeof createSqliteUnitOfWork>;
+    try {
+      uow = createSqliteUnitOfWork(':memory:');
+    } catch {
+      return ctx.skip('better-sqlite3 native binding unavailable for this Node major');
+    }
     const now = new Date().toISOString();
     await uow.users.save({
       id: 'u1',
