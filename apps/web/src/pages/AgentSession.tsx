@@ -571,11 +571,11 @@ export function AgentSessionPage() {
     setDraft('');
     setAttachments([]);
     setFileRefs([]);
-    // #10 — mid-turn the message QUEUES (server-owned slot): no optimistic
-    // user row; the chip is the queue_state projection, and the row appears
-    // when the flush actually starts the turn (fold converts on
-    // queue_state {prompt: null, flushed: true}).
-    if (!conversation.turnActive) dispatch({ type: 'user_message', blocks });
+    // #11 — NO optimistic user row anymore: the server broadcasts a
+    // user_message echo to the room on both send paths, and every viewer
+    // (sender included) paints the row from that — one source of truth.
+    // Mid-turn the message QUEUES instead (#10): the chip is the
+    // queue_state projection until the flush echo starts the turn.
     const ack = await emitWithAck<{ accepted?: boolean; queued?: boolean; error?: string }>(
       'chat:message.send',
       {

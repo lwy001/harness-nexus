@@ -594,6 +594,16 @@ export const chatStreamEventSchema = z.discriminatedUnion('kind', [
     prompt: z.array(promptBlockSchema).min(1).max(16).nullable(),
     flushed: z.boolean(),
   }),
+  // #11 — the prompt echo. The daemon's live stream never carries the user's
+  // own message (ACP session/update is agent-side only), so without this the
+  // user row existed ONLY on the sending tab's optimistic dispatch. The
+  // SERVER emits it to the room on both send paths (direct + queue flush) —
+  // the single source of truth; no adapter can double-render it because no
+  // live user-item kind exists.
+  z.object({
+    kind: z.literal('user_message'),
+    blocks: z.array(promptBlockSchema).min(1).max(16),
+  }),
   // 9 W9 A — the session's mode/config snapshot (patch semantics above).
   z.object({ kind: z.literal('session_config') }).merge(sessionConfigPatchSchema),
   // 9 W14 — the agent's todo/task plan (full-replace snapshot; empty = cleared).

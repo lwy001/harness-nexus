@@ -96,6 +96,12 @@ export type ChatStreamEvent =
       prompt: PromptBlock[] | null;
       flushed: boolean;
     }
+  | {
+      /** #11 — the prompt echo (SERVER-emitted on both send paths): every
+       * viewer paints the user row from this, never local optimism. */
+      kind: 'user_message';
+      blocks: PromptBlock[];
+    }
   | ({ kind: 'session_config' } & SessionConfigPatch)
   | ({ kind: 'plan' } & PlanPatch)
   | ({ kind: 'commands' } & CommandsPatch)

@@ -602,6 +602,7 @@ export class ChatService {
       const queued = session.queuedPrompt;
       session.queuedPrompt = null;
       this.emitQueueState(session, null, true);
+      this.emitUserMessage(session, queued);
       this.deps.io.toCtl(session.machineId, 'chat:message.send', {
         sessionId,
         prompt: queued,
@@ -615,6 +616,18 @@ export class ChatService {
     const session = this.live.get(payload.sessionId);
     if (!session || session.machineId !== machineId) return { ok: false };
     this.deps.io.toChannel(payload.sessionId, 'chat:history', payload);
+    // #11 — the fold's history ingestion REBUILDS from scratch and ends by
+    // force-closing anything still running, so a viewer (re)joining mid-turn
+    // lands with turnActive=false — Send button where Stop belongs. The
+    // server knows better (LiveSession.busy): follow the batch with a
+    // synthetic active status. Same socket, emitted after the history event,
+    // so the rebuild-then-set order is guaranteed.
+    if (session.busy) {
+      this.deps.io.toChannel(payload.sessionId, 'chat:event', {
+        sessionId: payload.sessionId,
+        event: { kind: 'session_status', state: 'active' },
+      });
+    }
     return { ok: true };
   }
 
@@ -650,6 +663,7 @@ export class ChatService {
     if (activeOnMachine >= this.opts.maxActiveSessionsPerMachine) {
       return { ok: false, code: 'MACHINE_BUSY' };
     }
+    this.emitUserMessage(session, prompt);
     this.deps.io.toCtl(session.machineId, 'chat:message.send', { sessionId, prompt });
     return { ok: true, queued: false };
   }
@@ -678,6 +692,21 @@ export class ChatService {
     this.deps.io.toChannel(session.sessionId, 'chat:event', {
       sessionId: session.sessionId,
       event: { kind: 'queue_state', prompt, flushed },
+    });
+  }
+
+  /**
+   * #11 — broadcast the accepted prompt to the room so EVERY viewer paints
+   * the user row. The daemon never echoes prompts on the live stream (ACP
+   * session/update is agent-side), so before this the row existed only on
+   * the sending tab's local optimism. Emitted on both send paths: direct
+   * sends and queue flushes (after the queue_state clear, before the daemon
+   * turn starts).
+   */
+  private emitUserMessage(session: LiveSession, blocks: PromptBlock[]): void {
+    this.deps.io.toChannel(session.sessionId, 'chat:event', {
+      sessionId: session.sessionId,
+      event: { kind: 'user_message', blocks },
     });
   }
 

@@ -115,7 +115,7 @@ describe('fold history ingestion (#8: user item = turn boundary)', () => {
     expect(state.rows.length).toBe(rowsBefore);
   });
 
-  it('#10: a flush folds the parked blocks into the user row of the next turn', () => {
+  it('#10/#11: a flush clears the chip; the user_message echo paints the row', () => {
     let state = fold(createFoldState(), {
       type: 'event',
       event: { kind: 'queue_state', prompt: [{ type: 'text', text: 'next question' }], flushed: false },
@@ -125,9 +125,27 @@ describe('fold history ingestion (#8: user item = turn boundary)', () => {
       event: { kind: 'queue_state', prompt: null, flushed: true },
     });
     expect(state.queued).toBeNull();
-    const last = state.rows[state.rows.length - 1];
+    // The flush clear alone adds NO row — the echo does.
+    expect(state.rows.filter((r) => r.row === 'user')).toHaveLength(0);
+    state = fold(state, {
+      type: 'event',
+      event: { kind: 'user_message', blocks: [{ type: 'text', text: 'next question' }] },
+    });
+    const last = state.rows[state.rows.length - 2];
     if (last === undefined || last.row !== 'user') throw new Error('expected a user row');
     expect(last.blocks).toEqual([{ type: 'text', text: 'next question' }]);
+    expect(state.turnActive).toBe(true);
+  });
+
+  it('#11: a user_message echo starts the turn for a viewer that did not send', () => {
+    const state = fold(createFoldState(), {
+      type: 'event',
+      event: { kind: 'user_message', blocks: [{ type: 'text', text: 'from the other tab' }] },
+    });
+    expect(state.rows.map((r) => r.row)).toEqual(['user', 'assistant']);
+    expect(state.rows[0]?.row === 'user' && state.rows[0].blocks[0]?.type === 'text').toBe(true);
+    expect(state.turnActive).toBe(true);
+    expect(state.rows[1]?.row === 'assistant' && state.rows[1].step.status).toBe('running');
   });
 
   it('re-ingesting the same batch converges (resync idempotence)', () => {
