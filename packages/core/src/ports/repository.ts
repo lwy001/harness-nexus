@@ -36,12 +36,19 @@ export interface ResourceListFilter {
   scope?: 'global' | 'personal';
   ownerId?: string;
   target?: Resource['targets'][number];
+  /** Soft-deleted rows are excluded unless set (two-stage delete). */
+  includeDeleted?: boolean;
 }
 
 export interface ProfileRepository {
   findById(id: string): Promise<Profile | null>;
   findByName(name: string, scope: 'global' | 'personal', ownerId?: string): Promise<Profile | null>;
   list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<Profile[]>;
+  /**
+   * Every profile regardless of scope/owner — used by the two-stage delete to
+   * decide whether an asset is still referenced. Not exposed over HTTP.
+   */
+  listAll(): Promise<Profile[]>;
   save(profile: Profile): Promise<Profile>;
   delete(id: string): Promise<void>;
 }
@@ -75,10 +82,16 @@ export interface SystemSettingsRepository {
 
 export interface McpServerRepository {
   findById(id: string): Promise<McpServer | null>;
+  /**
+   * Soft-deleted rows (deletedAt set) are excluded unless `includeDeleted`.
+   * `findById` still returns them so reference checks and profile editors can
+   * see what a dangling entry points at.
+   */
   list(filter?: {
     scope?: 'global' | 'personal';
     ownerId?: string;
     dialSite?: McpServer['dialSite'];
+    includeDeleted?: boolean;
   }): Promise<McpServer[]>;
   save(server: McpServer): Promise<McpServer>;
   delete(id: string): Promise<void>;

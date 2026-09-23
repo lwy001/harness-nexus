@@ -139,12 +139,13 @@ export class MarketplaceEmitter {
     const resources: Resource[] = [];
     const mcpServers: McpServer[] = [];
     for (const entry of profile.entries) {
+      // Soft-deleted rows are skipped (two-stage delete).
       if (entry.kind === 'mcp') {
         const server = await this.uow.mcpServers.findById(entry.resourceId);
-        if (server) mcpServers.push(server);
+        if (server && server.deletedAt === undefined) mcpServers.push(server);
       } else {
         const resource = await this.uow.resources.findById(entry.resourceId);
-        if (resource) resources.push(resource);
+        if (resource && resource.deletedAt === undefined) resources.push(resource);
       }
     }
 

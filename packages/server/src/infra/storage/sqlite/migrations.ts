@@ -345,6 +345,18 @@ CREATE TABLE IF NOT EXISTS llm_providers (
 ALTER TABLE machines ADD COLUMN chat_prewarm TEXT;
     `,
   },
+  {
+    version: 17,
+    description: 'two-stage delete — soft-delete stamps for mcp_servers and resources',
+    sql: `
+-- deleted_at set = soft-deleted: hidden from management lists, greyed in
+-- profile editors (saving strips the entry), skipped by every deploy path.
+-- NULL on all pre-existing rows (= live). A second DELETE physically removes
+-- the row once no profile references it.
+ALTER TABLE mcp_servers ADD COLUMN deleted_at TEXT;
+ALTER TABLE resources ADD COLUMN deleted_at TEXT;
+    `,
+  },
 ] as const;
 
 /**

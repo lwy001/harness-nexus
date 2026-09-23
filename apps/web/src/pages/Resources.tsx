@@ -148,8 +148,8 @@ export function ResourcesPage() {
   async function remove(r: Resource) {
     if (!confirm(t('resources.confirmDelete', { name: r.name, kind: r.kind }))) return;
     try {
-      await withAuthGuard(() => api.deleteResource(r.id), logout);
-      toast.success(t('resources.deleted'));
+      const res = await withAuthGuard(() => api.deleteResource(r.id), logout);
+      toast.success(res.mode === 'soft' ? t('resources.deletedSoft') : t('resources.deletedHard'));
       await refresh();
     } catch (e) {
       toast.error(e instanceof HarnessNexusError ? e.message : t('common.deleteFailed'));

@@ -1,5 +1,7 @@
 /** Profiles page. */
 const en = {
+  // Two-stage delete: badge shown next to a soft-deleted entry target.
+  deletedEntry: 'deleted',
   title: 'Profiles',
   subtitle: 'Bundles of MCP servers and resources that agent tools install or connect through.',
   // Install-in-Claude-Code card.
@@ -51,6 +53,7 @@ const en = {
 };
 
 const zh: typeof en = {
+  deletedEntry: '已删除',
   title: '配置集',
   subtitle: '供 Agent 工具安装或连接的 MCP 服务器与资源集合。',
   installTitle: '在 Claude Code 中安装',

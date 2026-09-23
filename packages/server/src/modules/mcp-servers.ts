@@ -65,10 +65,13 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- GET /api/mcp-servers ----
+  // `?includeDeleted=1` also returns soft-deleted rows (the profile editor
+  // greys them out; management pages use the default view).
   app.get('/api/mcp-servers', guard, async (req) => {
+    const includeDeleted = (req.query as { includeDeleted?: string }).includeDeleted === '1';
     const [personal, global] = await Promise.all([
-      app.uow.mcpServers.list({ scope: 'personal', ownerId: req.user!.id }),
-      app.uow.mcpServers.list({ scope: 'global' }),
+      app.uow.mcpServers.list({ scope: 'personal', ownerId: req.user!.id, includeDeleted }),
+      app.uow.mcpServers.list({ scope: 'global', includeDeleted }),
     ]);
     return { mcpServers: [...personal, ...global] };
   });
@@ -155,15 +158,34 @@ export async function mcpServersRoutes(app: FastifyInstance): Promise<void> {
     return { mcpServer: next };
   });
 
-  // ---- DELETE /api/mcp-servers/:id ----
+  // ---- DELETE /api/mcp-servers/:id — two-stage ----
+  // First call soft-deletes: the row leaves lists and the pool, profile
+  // editors grey it and strip it on save, deploy paths skip it. A second call
+  // physically removes it — but only once no profile references it anymore.
   app.delete<{ Params: { id: string } }>('/api/mcp-servers/:id', guard, async (req) => {
     const existing = await app.uow.mcpServers.findById(req.params.id);
     if (!existing || !ownsOrAdmin(existing, req.user!.id, req.user!.role)) {
       throw new AppError('MCP server not found', 404, 'MCP_SERVER_NOT_FOUND');
     }
+    if (existing.deletedAt === undefined) {
+      const now = new Date().toISOString();
+      await app.uow.mcpServers.save({ ...existing, deletedAt: now, updatedAt: now });
+      void app.mcpRegistry?.reload();
+      return { ok: true, mode: 'soft' as const };
+    }
+    const refs = (await app.uow.profiles.listAll()).filter((p) =>
+      p.entries.some((e) => e.resourceId === existing.id),
+    );
+    if (refs.length > 0) {
+      throw new AppError(
+        `Still referenced by profile(s): ${refs.map((r) => r.name).join(', ')} — save those profiles (soft-deleted entries are stripped automatically) and delete again`,
+        409,
+        'ASSET_STILL_REFERENCED',
+      );
+    }
     await app.uow.mcpServers.delete(existing.id);
     void app.mcpRegistry?.reload();
-    return { ok: true };
+    return { ok: true, mode: 'hard' as const };
   });
 }
 

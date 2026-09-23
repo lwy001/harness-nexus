@@ -124,7 +124,7 @@ async function resolveEntries(
   for (const e of entries) {
     if ('mcpServerId' in e) {
       const server = await app.uow.mcpServers.findById(e.mcpServerId);
-      if (!server || !serverVisible(server, userId, role)) {
+      if (!server || server.deletedAt !== undefined || !serverVisible(server, userId, role)) {
         throw new AppError(
           `MCP server ${e.mcpServerId} not found or not accessible`,
           409,
@@ -141,6 +141,7 @@ async function resolveEntries(
     const resource = await app.uow.resources.findById(e.resourceId);
     if (
       !resource ||
+      resource.deletedAt !== undefined ||
       resource.kind !== e.kind ||
       !(resource.scope === 'global' || resource.ownerId === userId || role === 'admin')
     ) {

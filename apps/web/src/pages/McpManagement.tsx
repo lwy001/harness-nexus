@@ -149,8 +149,8 @@ export function McpManagementPage() {
   async function remove(s: McpServer) {
     if (!confirm(t('mcp.confirmDelete', { name: s.name }))) return;
     try {
-      await withAuthGuard(() => api.deleteMcpServer(s.id), logout);
-      toast.success(t('mcp.deletedToast'));
+      const res = await withAuthGuard(() => api.deleteMcpServer(s.id), logout);
+      toast.success(res.mode === 'soft' ? t('mcp.deletedSoftToast') : t('mcp.deletedHardToast'));
       await refresh();
       await refreshStatuses();
     } catch (e) {
