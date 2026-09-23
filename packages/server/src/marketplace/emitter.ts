@@ -24,7 +24,7 @@ import JSZip from 'jszip';
 import type { FastifyBaseLogger } from 'fastify';
 import type { McpServer, Profile, Resource } from '@harness-nexus/core';
 import type { UnitOfWork } from '@harness-nexus/core';
-import { HOOK_SUPPORT, type HookEvent } from '@harness-nexus/shared';
+import { HOOK_SUPPORT, isUnsafeRelativePath, type HookEvent } from '@harness-nexus/shared';
 
 export interface MarketplaceEmitterOptions {
   uow: UnitOfWork;
@@ -213,6 +213,14 @@ export class MarketplaceEmitter {
           skillDir.file('SKILL.md', src.content);
         } else if (src.type === 'inline-bundle') {
           for (const [relPath, content] of Object.entries(src.files)) {
+            // #21: entries become paths in the consumer's extractor — never
+            // zip a key that could walk out of the plugin directory.
+            if (isUnsafeRelativePath(relPath)) {
+              warnings.push(
+                `skill:${resource.key} has an unsafe bundle path "${relPath}" — entry skipped`,
+              );
+              continue;
+            }
             skillDir.file(relPath, content);
           }
         } else {

@@ -6,6 +6,7 @@ import {
   updateResourceSchema,
   HOOK_EVENTS,
   HOOK_SUPPORT,
+  isUnsafeRelativePath,
   resolveTrustTier,
   type CreateResourceInput,
   type UpdateResourceInput,
@@ -369,7 +370,7 @@ function validatePluginSource(source: Extract<Resource['source'], { type: 'plugi
  * rejected too.
  */
 function assertSafeRelativePath(p: string, ctx: 'skill bundle' | 'plugin source'): void {
-  if (p === '' || p.startsWith('/') || p.includes('..') || p.includes('\\')) {
+  if (isUnsafeRelativePath(p)) {
     throw new AppError(
       `Unsafe file path in ${ctx}: "${p}" (must be a relative path with no '..')`,
       400,

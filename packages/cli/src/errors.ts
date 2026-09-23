@@ -7,7 +7,8 @@ export type InstallErrorCode =
   | 'TARGET_MISMATCH' // --target differs from a target-bound profile's own target
   | 'RESOLVE_FAILED' // SDK fetch of profile or a referenced resource failed
   | 'VALIDATION_FAILED' // adapter.validate() returned blocking issues
-  | 'APPLY_FAILED'; // a filesystem operation failed during apply
+  | 'APPLY_FAILED' // a filesystem operation failed during apply
+  | 'UNSAFE_DESTINATION'; // an operation tried to write outside the install root (#21)
 
 export class InstallError extends Error {
   constructor(
