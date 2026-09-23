@@ -464,10 +464,11 @@ claude plugin install <profile-name>@harness-nexus-${user.username.toLowerCase()
 }
 
 /**
- * Edit dialog (#6): name / description / version + the entry checkboxes —
- * `target` is immutable post-create. The version field is the publish switch
- * for marketplace installs: Claude Code compares versions, so bumping is what
- * makes `plugin update` pull the new build.
+ * Edit dialog: name / description + the entry checkboxes — `target` is
+ * immutable post-create, and the version is server-assigned (#18): it bumps
+ * automatically (decimal, carry at 16) when — and only when — the entries
+ * change, because for marketplace installs the bump IS the publish switch
+ * Claude Code's `plugin update` reacts to.
  */
 function EditProfile({
   profile,
@@ -482,7 +483,6 @@ function EditProfile({
   const { t } = useI18n();
   const [name, setName] = useState(profile.name);
   const [description, setDescription] = useState(profile.description ?? '');
-  const [version, setVersion] = useState(profile.version);
   const [busy, setBusy] = useState(false);
   const { servers, resources } = useEntryLists();
   // Preselect from the stored entries: mcp rows reference McpServer.ids,
@@ -503,7 +503,6 @@ function EditProfile({
           api.updateProfile(profile.id, {
             name,
             ...(description ? { description } : {}),
-            version,
             entries: buildEntries(
               profile.entries,
               servers ?? [],
@@ -559,16 +558,10 @@ function EditProfile({
             />
           </div>
           <div className="grid content-start gap-2">
-            <Label htmlFor="prof-edit-version">{t('profiles.versionLabel')}</Label>
-            <Input
-              id="prof-edit-version"
-              value={version}
-              onChange={(e) => setVersion(e.target.value)}
-              className="font-mono"
-              autoComplete="off"
-              spellCheck={false}
-              required
-            />
+            <Label>{t('profiles.versionLabel')}</Label>
+            <p className="bg-muted font-mono flex h-9 items-center rounded-md px-3 text-sm">
+              {profile.version}
+            </p>
             <p className="text-muted-foreground text-xs">{t('profiles.versionHint')}</p>
           </div>
         </div>

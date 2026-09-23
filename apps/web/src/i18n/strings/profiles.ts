@@ -40,7 +40,8 @@ const en = {
   editDesc:
     'Rename, re-describe, or re-pick the profile entries — or bump its version: Claude Code compares versions, so a bump is what publishes an update to marketplace installs.',
   versionLabel: 'Version',
-  versionHint: 'Bump to publish a marketplace update.',
+  versionHint:
+    'Auto-numbered; bumps when the entries change (that bump publishes marketplace updates).',
   updated: 'Profile saved',
   // Entry-kind fieldset legends (lookup: KIND_LEGEND in Profiles.tsx).
   kindSkills: 'skills',
@@ -85,7 +86,7 @@ const zh: typeof en = {
   editDesc:
     '重命名、修改描述或增删条目，也可升级版本号——Claude Code 按版本号比较，升级版本号即向市场安装发布更新。',
   versionLabel: '版本',
-  versionHint: '升级版本号即发布市场更新。',
+  versionHint: '自动编号；条目变化时自动发番（发番即发布市场更新）。',
   updated: '配置集已保存',
   kindSkills: '技能',
   kindRules: '规则',

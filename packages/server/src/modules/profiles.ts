@@ -4,6 +4,8 @@ import {
   AppError,
   createProfileSchema,
   updateProfileSchema,
+  bumpProfileVersion,
+  INITIAL_PROFILE_VERSION,
   type CreateProfileInput,
   type UpdateProfileInput,
   type ProfileEntryInput,
@@ -35,7 +37,10 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
       id: generateId(),
       name: input.name,
       ...(input.description ? { description: input.description } : {}),
-      version: '1.0.0',
+      // Auto-numbered (#18): new profiles start at 0.1; the version bumps
+      // only when entries change (decimal, carry at 16 — see shared
+      // profile-version.ts). Client-sent versions are ignored.
+      version: INITIAL_PROFILE_VERSION,
       target: input.target,
       scope: input.scope,
       ownerId: input.scope === 'global' ? null : req.user!.id,
@@ -84,11 +89,17 @@ export async function profilesRoutes(app: FastifyInstance): Promise<void> {
         ? await resolveEntries(app, input.entries, req.user!.id, req.user!.role)
         : existing.entries;
 
+    // Auto-version (#18): bump ONLY when the entries actually changed — the
+    // bump is the Claude Code marketplace publish switch, and name/description
+    // edits shouldn't trigger pointless reinstall rounds on machines.
+    const entriesChanged =
+      JSON.stringify(entries) !== JSON.stringify(existing.entries as ProfileEntry[]);
+
     const next: Profile = {
       ...existing,
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.version !== undefined ? { version: input.version } : {}),
+      ...(entriesChanged ? { version: bumpProfileVersion(existing.version) } : {}),
       entries,
       updatedAt: new Date().toISOString(),
     };
