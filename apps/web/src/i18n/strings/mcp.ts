@@ -56,6 +56,12 @@ const en = {
   addServer: 'Add server',
   adding: 'Adding…',
   addedToast: 'MCP server added',
+  editServer: 'Edit server',
+  updatedToast: 'MCP server updated',
+  scopeImmutable: 'Scope is fixed after creation.',
+  stdioNeedsClient: 'stdio transports can only be dialed client-side — pick auto or client.',
+  credNotDistributable:
+    'Credential "{name}" is not distributable, so this server cannot be dialed by the client shim.',
   importJson: 'Import JSON',
   descServer:
     'Server-dialed: the platform dials this upstream and serves it via /mcp (the only home for non-distributable credentials).',
@@ -150,6 +156,11 @@ const zh: typeof en = {
   addServer: '添加服务器',
   adding: '添加中…',
   addedToast: 'MCP 服务器已添加',
+  editServer: '编辑服务器',
+  updatedToast: 'MCP 服务器已更新',
+  scopeImmutable: '作用域在创建后不可修改。',
+  stdioNeedsClient: 'stdio 传输只能由客户端拨号——请选择自动或客户端。',
+  credNotDistributable: '凭据“{name}”不可分发，此服务器无法由客户端 shim 拨号。',
   importJson: '导入 JSON',
   descServer: '服务端拨号：由平台拨号该上游并通过 /mcp 提供服务（不可分发凭据的唯一归宿）。',
   descClient:

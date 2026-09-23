@@ -13,6 +13,7 @@ import {
   PlugIcon,
   PlugZapIcon,
   LoaderIcon,
+  PencilIcon,
 } from 'lucide-react';
 import { api } from '@/api';
 import { useAuth, withAuthGuard } from '@/auth';
@@ -58,6 +59,7 @@ import { FormDialog } from '@/components/ui/form-dialog';
 import {
   HarnessNexusError,
   resolveDialSite,
+  transportPlaceholderNames,
   type McpServer,
   type DialSite,
   type McpServerStatus,
@@ -102,6 +104,7 @@ export function McpManagementPage() {
   // only; the server derives authoritatively).
   const [distributable, setDistributable] = useState<Map<string, boolean>>(new Map());
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<McpServer | null>(null);
   const isAdmin = user?.role === 'admin';
 
   const refresh = useCallback(async () => {
@@ -220,6 +223,7 @@ export function McpManagementPage() {
                     status={statuses.get(s.id)}
                     isAdmin={isAdmin}
                     onRemoved={remove}
+                    onEdited={setEditing}
                     onStatusChange={refreshStatuses}
                     logout={logout}
                   />
@@ -231,10 +235,20 @@ export function McpManagementPage() {
       </Card>
 
       {creating ? (
-        <CreateMcpServer
+        <McpServerDialog
           onClose={() => setCreating(false)}
-          onCreated={() => {
+          onSaved={() => {
             setCreating(false);
+            void refresh();
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <McpServerDialog
+          server={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
             void refresh();
           }}
         />
@@ -257,6 +271,7 @@ function ServerRow({
   status,
   isAdmin,
   onRemoved,
+  onEdited,
   onStatusChange,
   logout,
 }: {
@@ -266,6 +281,7 @@ function ServerRow({
   status: McpServerStatus | undefined;
   isAdmin: boolean;
   onRemoved: (s: McpServer) => void;
+  onEdited: (s: McpServer) => void;
   onStatusChange: () => Promise<void>;
   logout: () => void;
 }) {
@@ -460,6 +476,12 @@ function ServerRow({
                       <PlugZapIcon /> {t('mcp.disconnect')}
                     </DropdownMenuItem>
                   ) : null}
+                  <DropdownMenuItem
+                    disabled={server.scope === 'global' && !isAdmin}
+                    onClick={() => onEdited(server)}
+                  >
+                    <PencilIcon /> {t('common.edit')}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     variant="destructive"
                     disabled={server.scope === 'global' && !isAdmin}
@@ -702,21 +724,49 @@ function parseStringRecord(raw: string): Record<string, string> | undefined {
   }
 }
 
-function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function McpServerDialog({
+  server,
+  onClose,
+  onSaved,
+}: {
+  /** Present → edit mode (PATCH name/transport/dialSite; scope immutable). */
+  server?: McpServer;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const { logout, user } = useAuth();
   const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
-  const [name, setName] = useState('');
-  const [dialSite, setDialSite] = useState<DialSite>('auto');
-  const [type, setType] = useState<TransportType>('streamable-http');
-  const [url, setUrl] = useState('');
+  const editing = server !== undefined;
+  const [name, setName] = useState(server?.name ?? '');
+  const [dialSite, setDialSite] = useState<DialSite>(server?.dialSite ?? 'auto');
+  const [type, setType] = useState<TransportType>(
+    (server?.transport.type as TransportType | undefined) ?? 'streamable-http',
+  );
+  const [url, setUrl] = useState(
+    server && server.transport.type !== 'stdio' ? server.transport.url : '',
+  );
   // stdio fields
-  const [command, setCommand] = useState('');
-  const [args, setArgs] = useState(''); // space-joined for the input; split on submit
-  const [envJson, setEnvJson] = useState(DEFAULT_ENV_JSON);
+  const [command, setCommand] = useState(
+    server?.transport.type === 'stdio' ? server.transport.command : '',
+  );
+  const [args, setArgs] = useState(
+    server?.transport.type === 'stdio' && server.transport.args
+      ? server.transport.args.join(' ')
+      : '',
+  ); // space-joined for the input; split on submit
+  const [envJson, setEnvJson] = useState(
+    server?.transport.type === 'stdio' && server.transport.env
+      ? JSON.stringify(server.transport.env, null, 2)
+      : DEFAULT_ENV_JSON,
+  );
   // http fields
-  const [headersJson, setHeadersJson] = useState(DEFAULT_HEADERS_JSON);
-  const [scope, setScope] = useState<Scope>('personal');
+  const [headersJson, setHeadersJson] = useState(
+    server && server.transport.type !== 'stdio' && server.transport.headers
+      ? JSON.stringify(server.transport.headers, null, 2)
+      : DEFAULT_HEADERS_JSON,
+  );
+  const [scope, setScope] = useState<Scope>(server?.scope ?? 'personal');
   const [busy, setBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
@@ -732,6 +782,28 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
 
   function onTypeChange(next: TransportType) {
     setType(next);
+    // Interlock: stdio can never be server-dialed. Falling back to `auto`
+    // keeps the two selects out of combinations the API would 409.
+    if (next === 'stdio' && dialSite === 'server') setDialSite('auto');
+  }
+
+  /**
+   * Client-side mirror of the server's assertDialSite, run before submit so
+   * the dialog can never send a transport × dial-site pair the API rejects.
+   */
+  function dialSiteProblem(): string | undefined {
+    const transport = isStdio ? { type: 'stdio' as const, command } : { type, url };
+    const isDistributable = (n: string): boolean =>
+      creds.find((c) => c.name === n)?.distributable === true;
+    const resolved = resolveDialSite({ dialSite, transport }, isDistributable);
+    if (isStdio && resolved === 'server') return t('mcp.stdioNeedsClient');
+    if (dialSite === 'client') {
+      const offender = transportPlaceholderNames(transport).find(
+        (n) => creds.some((c) => c.name === n) && !isDistributable(n),
+      );
+      if (offender) return t('mcp.credNotDistributable', { name: offender });
+    }
+    return undefined;
   }
 
   function applyImport(entry: Record<string, unknown>, entryName: string) {
@@ -761,43 +833,50 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const problem = dialSiteProblem();
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setBusy(true);
     try {
-      if (isStdio) {
-        const splitArgs = args.trim() ? args.trim().split(/\s+/) : undefined;
-        const env = parseStringRecord(envJson);
+      const transport = isStdio
+        ? (() => {
+            const splitArgs = args.trim() ? args.trim().split(/\s+/) : undefined;
+            const env = parseStringRecord(envJson);
+            return {
+              type: 'stdio' as const,
+              command,
+              ...(splitArgs ? { args: splitArgs } : {}),
+              ...(env ? { env } : {}),
+            };
+          })()
+        : (() => {
+            const headers = parseStringRecord(headersJson);
+            return { type, url, ...(headers ? { headers } : {}) };
+          })();
+      if (editing && server) {
         await withAuthGuard(
-          () =>
-            api.createMcpServer({
-              name,
-              dialSite,
-              scope,
-              transport: {
-                type: 'stdio',
-                command,
-                ...(splitArgs ? { args: splitArgs } : {}),
-                ...(env ? { env } : {}),
-              },
-            }),
+          () => api.updateMcpServer(server.id, { name, dialSite, transport }),
           logout,
         );
+        toast.success(t('mcp.updatedToast'));
       } else {
-        const headers = parseStringRecord(headersJson);
         await withAuthGuard(
-          () =>
-            api.createMcpServer({
-              name,
-              dialSite,
-              scope,
-              transport: { type, url, ...(headers ? { headers } : {}) },
-            }),
+          () => api.createMcpServer({ name, dialSite, scope, transport }),
           logout,
         );
+        toast.success(t('mcp.addedToast'));
       }
-      toast.success(t('mcp.addedToast'));
-      onCreated();
+      onSaved();
     } catch (e) {
-      toast.error(e instanceof HarnessNexusError ? e.message : t('common.createFailed'));
+      toast.error(
+        e instanceof HarnessNexusError
+          ? e.message
+          : editing
+            ? t('common.saveFailed')
+            : t('common.createFailed'),
+      );
     } finally {
       setBusy(false);
     }
@@ -807,7 +886,7 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
     <FormDialog
       open
       onClose={onClose}
-      title={t('mcp.addServer')}
+      title={editing ? t('mcp.editServer') : t('mcp.addServer')}
       description={
         dialSite === 'server'
           ? t('mcp.descServer')
@@ -846,7 +925,9 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
               <SelectContent>
                 <SelectItem value="auto">{t('mcp.dialSiteAuto')}</SelectItem>
                 <SelectItem value="client">{t('mcp.dialSiteClient')}</SelectItem>
-                <SelectItem value="server">{t('mcp.dialSiteServer')}</SelectItem>
+                <SelectItem value="server" disabled={isStdio}>
+                  {t('mcp.dialSiteServer')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -859,13 +940,19 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
               <SelectContent>
                 <SelectItem value="streamable-http">streamable-http</SelectItem>
                 <SelectItem value="sse">sse</SelectItem>
-                <SelectItem value="stdio">{t('mcp.transportStdio')}</SelectItem>
+                <SelectItem value="stdio" disabled={dialSite === 'server'}>
+                  {t('mcp.transportStdio')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="mcp-scope">{t('common.scope')}</Label>
-            <Select value={scope} onValueChange={(v) => setScope(v as Scope)} disabled={!isAdmin}>
+            <Select
+              value={scope}
+              onValueChange={(v) => setScope(v as Scope)}
+              disabled={!isAdmin || editing}
+            >
               <SelectTrigger id="mcp-scope">
                 <SelectValue />
               </SelectTrigger>
@@ -877,6 +964,9 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
                 </SelectItem>
               </SelectContent>
             </Select>
+            {editing ? (
+              <p className="text-muted-foreground text-xs">{t('mcp.scopeImmutable')}</p>
+            ) : null}
           </div>
         </div>
 
@@ -956,7 +1046,13 @@ function CreateMcpServer({ onClose, onCreated }: { onClose: () => void; onCreate
             {t('common.cancel')}
           </Button>
           <Button type="submit" disabled={busy}>
-            {busy ? t('mcp.adding') : t('mcp.addServer')}
+            {busy
+              ? editing
+                ? t('common.saving')
+                : t('mcp.adding')
+              : editing
+                ? t('common.save')
+                : t('mcp.addServer')}
           </Button>
         </div>
       </form>
