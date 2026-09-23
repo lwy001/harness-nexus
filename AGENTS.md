@@ -86,7 +86,8 @@ docs/          architecture.md + adr/ — code-coupled contract docs ONLY
   issue (`#N`), lands on a short-lived branch named after it
   (`feat/123-…`, `fix/124-…`, `docs/…`, `chore/…`), and is merged back with an
   explicit merge commit (`git merge --no-ff <branch>`) whose message references
-  the issue (`(#123)`) so the issue auto-closes — mirroring the standard
+  the issue — use `closes #123` (GitHub only auto-closes on the closing
+  keywords; a bare `(#123)` is just a link) — mirroring the standard
   open-source PR flow (issue → branch → reviewable commits → merge). Never
   build on top of an unmerged branch unless intended.
 - **Milestones are release buckets.** A `vX.Y.Z` milestone is opened per
