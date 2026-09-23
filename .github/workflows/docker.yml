@@ -138,14 +138,13 @@ jobs:
       # ---- Docker Hub overviews (#15) -----------------------------------------
       # The repos' descriptions start EMPTY (Docker Hub has no default from the
       # image itself). PATCH the Hub API with a short line + the markdown kept
-      # in docs/docker-hub/{server,web}.md. AUTH (two-run lesson): a
-      # repo-scoped PAT authenticates the REGISTRY via basic auth but the Hub
-      # v2 API rejects it (401); exchanging it for a session JWT at
-      # /v2/users/login/ gets past auth but repo-scoped tokens still CANNOT
-      # edit repo metadata (403) — that needs an ACCOUNT-level Read & Write
-      # PAT in DOCKERHUB_TOKEN. Until then this step is deliberately
-      # NON-BLOCKING (continue-on-error): images are already pushed, a
-      # metadata shortfall must not fail the release.
+      # in docs/docker-hub/{server,web}.md. AUTH (three-run lesson): a PAT
+      # basic-auths the REGISTRY only (Hub API 401); /v2/users/login/ yields a
+      # WEB-SESSION JWT that a PAT cannot elevate to repo-metadata writes
+      # (403). The PAT-native exchange is POST /v2/auth/token {identifier,
+      # secret} → access_token (exactly what peter-evans/dockerhub-description
+      # does) — THAT token PATCHes fine with an account-level Read & Write
+      # PAT. Runs after both pushes and stays non-blocking regardless.
       - name: Sync Docker Hub descriptions
         continue-on-error: true
         env:
@@ -153,11 +152,11 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
-          jwt=$(curl -s -f -X POST https://hub.docker.com/v2/users/login/ \
+          jwt=$(curl -s -f -X POST https://hub.docker.com/v2/auth/token \
             -H 'Content-Type: application/json' \
             -d "$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" \
-              '{username: $u, password: $p}')" \
-            | jq -r .token)
+              '{identifier: $u, secret: $p}')" \
+            | jq -r .access_token)
           sync_description() {
             local repo="$1" short="$2" file="$3"
             local body
