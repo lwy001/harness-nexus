@@ -140,11 +140,9 @@ export interface FoldState {
   } | null;
   /**
    * #10 — the server-owned send queue (depth 1) as a fold slice: the parked
-   * prompt renders as a chip above the composer, never a transcript row.
-   * A `queue_state {prompt: null, flushed: true}` while a chip exists folds
-   * the parked blocks into a USER row first (every viewer saw the chip, so
-   * every viewer can make the row — the daemon ring only carries it from
-   * the moment the flushed prompt actually runs).
+   * prompt renders as a chip floating above the composer, never a transcript
+   * row. Pure slot projection — the flushed row comes from the user_message
+   * echo (#11), not from folding the parked blocks here.
    */
   queued: PromptBlock[] | null;
   permissions: PermissionCardState[];
@@ -154,7 +152,6 @@ export interface FoldState {
 
 export type FoldAction =
   | { type: 'reset' }
-  | { type: 'user_message'; blocks: UserBlock[] }
   | {
       type: 'event';
       event: ChatStreamEvent;
@@ -307,8 +304,34 @@ function sweepRows(state: FoldState, interrupted: boolean): ConversationRow[] {
   });
 }
 
-function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
-  switch (event.kind) {
+/**
+ * A user message starts a turn: sweep leftovers, append the user row, open a
+ * running step (renders the "thinking…" placeholder until the first chunk).
+ */
+function startUserTurn(state: FoldState, blocks: UserBlock[]): FoldState {
+  const swept = sweepRows(state, false);
+  const step: AssistantStep = {
+    stepId: nextKey(state, 'step'),
+    status: 'running',
+    blocks: [],
+    startedAt: Date.now(),
+  };
+  const rows: ConversationRow[] = [
+    ...swept,
+    { row: 'user', key: nextKey(state, 'u'), blocks },
+    { row: 'assistant', key: `a-${step.stepId}`, step },
+  ];
+  return {
+    ...state,
+    rows,
+    currentStepIdx: rows.length - 1,
+    stepClosed: false,
+    turnStartedAt: Date.now(),
+    turnActive: true,
+  };
+}
+
+function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {  switch (event.kind) {
     case 'message_delta':
     case 'thought_delta': {
       const block: ContentBlock =
@@ -406,22 +429,16 @@ function applyEvent(state: FoldState, event: ChatStreamEvent): FoldState {
     }
     case 'session_status':
       return { ...state, turnActive: event.state === 'active' };
-    case 'queue_state': {
-      // #10 — flush conversion: the parked blocks become the user row of
-      // the turn that is about to start; a cancel/take clear drops them.
-      if (event.prompt === null && event.flushed && state.queued !== null) {
-        const blocks = promptBlocksToUserBlocks(state.queued);
-        const next: FoldState =
-          blocks.length > 0
-            ? {
-                ...state,
-                rows: [...state.rows, { row: 'user', key: nextKey(state, 'u'), blocks }],
-              }
-            : state;
-        return { ...next, queued: null };
-      }
+    case 'user_message':
+      // #11 — the server's prompt echo: EVERY viewer (sender included)
+      // paints the user row and opens the running step from this event; the
+      // old optimistic dispatch is gone (single source of truth).
+      return startUserTurn(state, promptBlocksToUserBlocks(event.blocks));
+    case 'queue_state':
+      // #10 — the slot projection only: park, clear-on-cancel, clear-on-
+      // flush. The flushed row itself comes from the user_message echo the
+      // server emits right after the flush clear.
       return { ...state, queued: event.prompt };
-    }
     case 'session_config':
       return {
         ...state,
@@ -465,31 +482,6 @@ export function fold(state: FoldState, action: FoldAction): FoldState {
   switch (action.type) {
     case 'reset':
       return createFoldState();
-
-    case 'user_message': {
-      // A new user message starts a turn: sweep leftovers, open a running
-      // step (renders the "thinking…" placeholder until the first chunk).
-      const swept = sweepRows(state, false);
-      const step: AssistantStep = {
-        stepId: nextKey(state, 'step'),
-        status: 'running',
-        blocks: [],
-        startedAt: Date.now(),
-      };
-      const rows: ConversationRow[] = [
-        ...swept,
-        { row: 'user', key: nextKey(state, 'u'), blocks: action.blocks },
-        { row: 'assistant', key: `a-${step.stepId}`, step },
-      ];
-      return {
-        ...state,
-        rows,
-        currentStepIdx: rows.length - 1,
-        stepClosed: false,
-        turnStartedAt: Date.now(),
-        turnActive: true,
-      };
-    }
 
     case 'event':
       return applyEvent(state, action.event);

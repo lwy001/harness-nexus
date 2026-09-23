@@ -1069,6 +1069,10 @@ describe('session lifecycle', () => {
       browser,
       (e) => e.kind === 'queue_state' && e.prompt === null && e.flushed === true,
     );
+    // #11 — the flush ALSO echoes the parked prompt to the room as a
+    // user_message: every viewer paints the user row from the echo.
+    // (Subscribed BEFORE the idle emission — the burst arrives together.)
+    const flushUserMsgP = nextEvent(browser, (e) => e.kind === 'user_message');
     const flushPromptP = once(daemon, 'chat:message.send');
     daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'idle' } });
     await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'idle');
@@ -1076,10 +1080,26 @@ describe('session lifecycle', () => {
     const flushed = (await flushPromptP) as { sessionId: string; prompt: unknown[] };
     expect(flushed.sessionId).toBe(sessionId);
     expect(flushed.prompt).toEqual([{ type: 'text', text: 'follow-up question' }]);
+    expect(await flushUserMsgP).toEqual({
+      kind: 'user_message',
+      blocks: [{ type: 'text', text: 'follow-up question' }],
+    });
 
     // A parked entry is DROPPED by turn cancel (not auto-sent).
     daemon.emit('chat:event', { sessionId, event: { kind: 'session_status', state: 'active' } });
     await nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'active');
+
+    // #11 — a mid-turn history batch is followed by a synthetic active
+    // status: the fold's history rebuild force-closes running rows, so the
+    // server must re-assert turn state after the batch (refresh / rejoin).
+    const resyncStatusP = nextEvent(browser, (e) => e.kind === 'session_status' && e.state === 'active');
+    daemon.emit('chat:history', {
+      sessionId,
+      items: [{ type: 'user', blocks: [{ type: 'text', text: 'resync me' }] }],
+    });
+    await once(browser, 'chat:history');
+    expect(await resyncStatusP).toEqual({ kind: 'session_status', state: 'active' });
+
     let sendsAfterPark = 0;
     daemon.on('chat:message.send', () => {
       sendsAfterPark += 1;
@@ -1102,6 +1122,21 @@ describe('session lifecycle', () => {
     daemon.off('chat:message.send', () => {
       sendsAfterPark += 1;
     });
+
+    // #11 — an idle DIRECT send echoes to the room too (the sending tab is
+    // just another viewer of the user_message broadcast).
+    const directEchoP = nextEvent(browser, (e) => e.kind === 'user_message');
+    const directP = once(daemon, 'chat:message.send');
+    const direct = await emitAck(browser, 'chat:message.send', {
+      sessionId,
+      content: 'direct while idle',
+    });
+    expect(direct).toEqual({ accepted: true, queued: false });
+    expect(await directEchoP).toEqual({
+      kind: 'user_message',
+      blocks: [{ type: 'text', text: 'direct while idle' }],
+    });
+    await directP;
 
     await emitAck(browser, 'chat:session.close', { sessionId });
     },
