@@ -56,9 +56,13 @@ open http://127.0.0.1:15922
 ```
 
 Web 端口默认只绑定 127.0.0.1。要对外开放，先在前面试一层 TLS（Caddy、nginx
-都行）：API 的 token 走请求头传输，务必上 HTTPS。也可以从源码构建，运行
-`docker compose up --build -d` 即可；镜像构建走国内源（apt 用 TUNA，npm 用
-npmmirror），不需要代理，想换回官方源就把 Dockerfile 里的镜像源配置删掉。
+都行）：API 的 token 走请求头传输，务必上 HTTPS。如果打算把 profile 通过
+Claude Code 的 plugin marketplace 部署，还要在 `.env` 里设置 `PUBLIC_BASE_URL`
+为你的公开 https 域名——marketplace 地址由它拼接，默认值
+`http://localhost:8080` 只在所有东西都跑在同一台机器上时才可用。也可以从源码
+构建，运行 `docker compose up --build -d` 即可；镜像构建走国内源（apt 用
+TUNA，npm 用 npmmirror），不需要代理，想换回官方源就把 Dockerfile 里的镜像源
+配置删掉。
 
 ### 从源码运行（开发）
 
