@@ -2,13 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpIcon,
   CircleStopIcon,
-  ClockIcon,
   ImageIcon,
   PaperclipIcon,
-  PencilIcon,
   PlusIcon,
   SquareSlashIcon,
-  XIcon,
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
@@ -87,13 +84,6 @@ interface ComposerProps {
   onConfigSet: (set: ChatConfigSetPayload) => void;
   /** 9 W15 — the agent's advertised slash commands (fold slice). */
   commands: CommandView[];
-  // ---- #10 — the live sender while a turn runs ----
-  /** The parked queue slot (fold slice, server-owned depth 1). */
-  queued: PromptBlock[] | null;
-  /** Take the parked chip back into the draft (cancel + prefill). */
-  onQueueEdit: () => void;
-  /** Drop the parked chip. */
-  onQueueCancel: () => void;
 }
 
 /** Mode ids that WEAKEN the permission gate — confirm before switching. */
@@ -111,7 +101,7 @@ function formatTokens(n: number): string {
 }
 
 /** #10 — one-line preview of the parked queue chip's blocks. */
-function queuedPreview(blocks: PromptBlock[]): string {
+export function queuedPreview(blocks: PromptBlock[]): string {
   const parts: string[] = [];
   const text = blocks
     .filter((b): b is Extract<PromptBlock, { type: 'text' }> => b.type === 'text')
@@ -326,9 +316,6 @@ export function Composer({
   config,
   onConfigSet,
   commands,
-  queued,
-  onQueueEdit,
-  onQueueCancel,
 }: ComposerProps) {
   const { t } = useI18n();
   const textRef = useRef<HTMLTextAreaElement | null>(null);
@@ -500,37 +487,6 @@ export function Composer({
               </button>
             </span>
           ))}
-        </div>
-      ) : null}
-
-      {queued !== null ? (
-        <div className="flex px-3.5 pt-3">
-          <span
-            className="bg-muted inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-xs"
-            title={t('chat.queuedLabel')}
-          >
-            <ClockIcon className="text-muted-foreground size-3 shrink-0" />
-            <span className="text-muted-foreground shrink-0">{t('chat.queuedLabel')}</span>
-            <span className="truncate font-mono">{queuedPreview(queued)}</span>
-            <button
-              type="button"
-              onClick={onQueueEdit}
-              className="text-muted-foreground hover:text-foreground ml-0.5 shrink-0"
-              aria-label={t('chat.queuedEditAria')}
-              title={t('chat.queuedEditAria')}
-            >
-              <PencilIcon className="size-3" />
-            </button>
-            <button
-              type="button"
-              onClick={onQueueCancel}
-              className="text-muted-foreground hover:text-foreground shrink-0"
-              aria-label={t('chat.queuedCancelAria')}
-              title={t('chat.queuedCancelAria')}
-            >
-              <XIcon className="size-3.5" />
-            </button>
-          </span>
         </div>
       ) : null}
 
