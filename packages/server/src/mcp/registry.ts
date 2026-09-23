@@ -17,7 +17,12 @@
  */
 import type { FastifyBaseLogger } from 'fastify';
 import type { McpServer, McpTransport, Profile, UnitOfWork } from '@harness-nexus/core';
-import { resolveDialSite, resolvePlaceholders, type McpToolInfo } from '@harness-nexus/shared';
+import {
+  resolveDialSite,
+  resolvePlaceholders,
+  transportPlaceholderNames,
+  type McpToolInfo,
+} from '@harness-nexus/shared';
 import {
   UpstreamPool,
   RegistryError,
@@ -27,6 +32,7 @@ import {
   type UpstreamDefinition,
 } from '@harness-nexus/mcp-runtime';
 import { decryptSecret } from '../infra/crypto.js';
+import { findCredentialForOwner } from '../infra/credential-scope.js';
 
 export { NAMESPACE_SEP } from '@harness-nexus/mcp-runtime';
 export { RegistryError };
@@ -82,10 +88,9 @@ export class McpRegistry {
   /** The McpServers this platform itself dials (the `/mcp` outlet's set). */
   private async serverDialedDefinitions(): Promise<UpstreamDefinition[]> {
     const servers = await this.uow.mcpServers.list();
-    const distributable = await this.distributabilityIndex();
     const defs: UpstreamDefinition[] = [];
     for (const server of servers) {
-      if (resolveDialSite(server, (name) => distributable.get(name) === true) !== 'server') {
+      if ((await this.dialSiteFor(server)) !== 'server') {
         continue;
       }
       // A row whose transport cannot resolve — stdio can never be server-dialed
@@ -99,7 +104,7 @@ export class McpRegistry {
         defs.push({
           id: server.id,
           name: server.name,
-          transport: await this.resolveTransport(server.transport),
+          transport: await this.resolveTransport(server.transport, server.ownerId),
         });
       } catch (err) {
         this.logger.warn(
@@ -112,19 +117,24 @@ export class McpRegistry {
   }
 
   /**
-   * name → distributable for every stored credential. Names are not unique
-   * across scopes; first occurrence wins, mirroring `findByName` semantics.
+   * name → distributable for every stored credential, resolved within the
+   * given owner's namespace (#21) — the row owner's personal rows shadow
+   * same-named global rows, so derivation and decryption always agree.
    */
-  private async distributabilityIndex(): Promise<Map<string, boolean>> {
-    const index = new Map<string, boolean>();
-    for (const cred of await this.uow.credentials.list()) {
-      if (!index.has(cred.name)) index.set(cred.name, cred.distributable);
+  private async dialSiteFor(server: McpServer): Promise<'client' | 'server'> {
+    const dist = new Map<string, boolean>();
+    for (const name of transportPlaceholderNames(server.transport)) {
+      const cred = await findCredentialForOwner(this.uow, name, server.ownerId);
+      dist.set(name, cred?.distributable === true);
     }
-    return index;
+    return resolveDialSite(server, (name) => dist.get(name) === true);
   }
 
   /** Substitute every `${cred:NAME}` in a transport config (server-side dial). */
-  private async resolveTransport(t: McpTransport): Promise<ResolvedTransport> {
+  private async resolveTransport(
+    t: McpTransport,
+    ownerId: string | null,
+  ): Promise<ResolvedTransport> {
     if (t.type === 'stdio') {
       // Defensive: the route layer rejects stdio server-dial (409); auto only
       // derives it when a referenced credential is missing/non-distributable
@@ -133,18 +143,18 @@ export class McpRegistry {
       // crashing the pool.
       throw new Error(`stdio upstream "${t.command}" cannot be server-dialed`);
     }
-    const url = await this.resolve(t.url);
+    const url = await this.resolve(t.url, ownerId);
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(t.headers ?? {})) {
-      headers[k] = await this.resolve(v);
+      headers[k] = await this.resolve(v, ownerId);
     }
     return { type: t.type, url, ...(Object.keys(headers).length > 0 ? { headers } : {}) };
   }
 
-  /** Resolve placeholders in a string by looking the credential up by name. */
-  private async resolve(input: string): Promise<string> {
+  /** Resolve placeholders in a string within the row owner's namespace. */
+  private async resolve(input: string, ownerId: string | null): Promise<string> {
     return resolvePlaceholders(input, async (name) => {
-      const cred = await this.uow.credentials.findByName(name);
+      const cred = await findCredentialForOwner(this.uow, name, ownerId);
       if (!cred) {
         throw new Error(`credential "${name}" not found (referenced by placeholder)`);
       }
@@ -239,8 +249,7 @@ export class McpRegistry {
     if (!server) {
       throw new RegistryError(`MCP server not pooled: ${id}`, 'not_found');
     }
-    const distributable = await this.distributabilityIndex();
-    const site = resolveDialSite(server, (name) => distributable.get(name) === true);
+    const site = await this.dialSiteFor(server);
     if (site !== 'server' || server.transport.type === 'stdio') {
       throw new RegistryError(
         `MCP server "${server.name}" is dialed by the client, not the platform (dial site: ${site})`,
@@ -250,7 +259,7 @@ export class McpRegistry {
     return {
       id: server.id,
       name: server.name,
-      transport: await this.resolveTransport(server.transport),
+      transport: await this.resolveTransport(server.transport, server.ownerId),
     };
   }
 

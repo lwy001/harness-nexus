@@ -352,9 +352,12 @@ export function sqliteCredentialRepository(db: Database): CredentialRepository {
         CredentialRow | undefined;
       return row ? mapCredential(row) : null;
     },
-    async findByName(name) {
-      const row = db.prepare('SELECT * FROM credentials WHERE name = ?').get(name) as
-        CredentialRow | undefined;
+    async findByName(name, scope, ownerId) {
+      const row = db
+        .prepare(
+          'SELECT * FROM credentials WHERE name = ? AND scope = ? AND (scope = ? OR owner_id = ?)',
+        )
+        .get(name, scope, 'global', ownerId ?? '') as CredentialRow | undefined;
       return row ? mapCredential(row) : null;
     },
     async list(filter) {

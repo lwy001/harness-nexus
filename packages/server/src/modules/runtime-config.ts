@@ -10,6 +10,7 @@ import {
   type RuntimeConfigView,
 } from '@harness-nexus/shared';
 import { generateId } from '../infra/crypto.js';
+import { findCredentialForOwner } from '../infra/credential-scope.js';
 import { jobView } from '../jobs/service.js';
 
 /**
@@ -169,10 +170,11 @@ export async function runtimeConfigRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // The credential gate (dial-site rules): the plaintext must be allowed to
-      // leave the server, and a personal credential of another user does not
-      // exist as far as this caller is concerned.
-      const cred = await app.uow.credentials.findByName(spec.credentialName);
-      if (!cred || (cred.scope === 'personal' && cred.ownerId !== req.user!.id)) {
+      // leave the server, and it must resolve in the CALLER's namespace (#21) —
+      // another user's same-named personal secret does not exist as far as
+      // this caller is concerned.
+      const cred = await findCredentialForOwner(app.uow, spec.credentialName, req.user!.id);
+      if (!cred) {
         throw new AppError(
           `Credential "${spec.credentialName}" not found`,
           404,

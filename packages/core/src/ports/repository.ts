@@ -99,8 +99,16 @@ export interface McpServerRepository {
 
 export interface CredentialRepository {
   findById(id: string): Promise<Credential | null>;
-  /** Find by name (used to resolve `${cred:NAME}` placeholders). Names are not unique across scopes; returns the first match. */
-  findByName(name: string): Promise<Credential | null>;
+  /**
+   * Find by name within one scope (used to resolve `${cred:NAME}` placeholders).
+   * Name uniqueness is per (name, scope, owner) — the route enforces it — so a
+   * same-named credential in another tenant's namespace never resolves.
+   */
+  findByName(
+    name: string,
+    scope: 'global' | 'personal',
+    ownerId?: string,
+  ): Promise<Credential | null>;
   list(filter?: { scope?: 'global' | 'personal'; ownerId?: string }): Promise<Credential[]>;
   save(credential: Credential): Promise<Credential>;
   delete(id: string): Promise<void>;

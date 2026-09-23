@@ -129,8 +129,13 @@ export function createMemoryUnitOfWork(): UnitOfWork {
     async findById(id) {
       return credentials.get(id) ?? null;
     },
-    async findByName(name) {
-      return [...credentials.values()].find((c) => c.name === name) ?? null;
+    async findByName(name, scope, ownerId) {
+      return (
+        [...credentials.values()].find(
+          (c) =>
+            c.name === name && c.scope === scope && (scope === 'global' || c.ownerId === ownerId),
+        ) ?? null
+      );
     },
     async list(filter) {
       return [...credentials.values()]
