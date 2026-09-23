@@ -156,6 +156,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
         .filter((s) => (filter?.scope ? s.scope === filter.scope : true))
         .filter((s) => (filter?.ownerId ? s.ownerId === filter.ownerId : true))
         .filter((s) => (filter?.dialSite ? s.dialSite === filter.dialSite : true))
+        .filter((s) => (filter?.includeDeleted ? true : s.deletedAt === undefined))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async save(server) {
@@ -184,6 +185,9 @@ export function createMemoryUnitOfWork(): UnitOfWork {
         .filter((p) => (filter?.scope ? p.scope === filter.scope : true))
         .filter((p) => (filter?.ownerId ? p.ownerId === filter.ownerId : true))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async listAll() {
+      return [...profiles.values()];
     },
     async save(profile) {
       profiles.set(profile.id, profile);
@@ -214,6 +218,7 @@ export function createMemoryUnitOfWork(): UnitOfWork {
         .filter((r) => (filter?.scope ? r.scope === filter.scope : true))
         .filter((r) => (filter?.ownerId ? r.ownerId === filter.ownerId : true))
         .filter((r) => (filter?.target ? r.targets.includes(filter.target) : true))
+        .filter((r) => (filter?.includeDeleted ? true : r.deletedAt === undefined))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async save(resource) {

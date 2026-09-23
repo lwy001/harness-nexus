@@ -655,8 +655,10 @@ export class HarnessNexusClient {
     return this.request('POST', '/api/mcp-servers', input);
   }
 
-  async listMcpServers(): Promise<McpServer[]> {
-    const res = await this.request('GET', '/api/mcp-servers');
+  /** `includeDeleted` also returns soft-deleted rows (profile editor greys them). */
+  async listMcpServers(opts?: { includeDeleted?: boolean }): Promise<McpServer[]> {
+    const q = opts?.includeDeleted ? '?includeDeleted=1' : '';
+    const res = await this.request('GET', `/api/mcp-servers${q}`);
     return res.mcpServers;
   }
 
@@ -667,8 +669,13 @@ export class HarnessNexusClient {
     return this.request('PATCH', `/api/mcp-servers/${id}`, input);
   }
 
-  async deleteMcpServer(id: string): Promise<void> {
-    await this.request('DELETE', `/api/mcp-servers/${id}`);
+  /**
+   * Two-stage delete: the first call soft-deletes (mode 'soft'); a second
+   * call physically removes the row (mode 'hard') once no profile references
+   * it — otherwise the server answers 409 ASSET_STILL_REFERENCED.
+   */
+  async deleteMcpServer(id: string): Promise<{ ok: boolean; mode: 'soft' | 'hard' }> {
+    return this.request('DELETE', `/api/mcp-servers/${id}`);
   }
 
   /**
@@ -767,9 +774,12 @@ export class HarnessNexusClient {
     kind?: ResourceKind;
     scope?: 'global' | 'personal';
     target?: AgentTarget;
+    /** Also return soft-deleted rows (profile editor greys them). */
+    includeDeleted?: boolean;
   }): Promise<Resource[]> {
     const qs = new URLSearchParams();
     if (filter?.kind) qs.set('kind', filter.kind);
+    if (filter?.includeDeleted) qs.set('includeDeleted', '1');
     if (filter?.scope) qs.set('scope', filter.scope);
     if (filter?.target) qs.set('target', filter.target);
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
@@ -796,8 +806,9 @@ export class HarnessNexusClient {
     return this.request('PATCH', `/api/resources/${id}`, input);
   }
 
-  async deleteResource(id: string): Promise<void> {
-    await this.request('DELETE', `/api/resources/${id}`);
+  /** Two-stage delete — see deleteMcpServer. */
+  async deleteResource(id: string): Promise<{ ok: boolean; mode: 'soft' | 'hard' }> {
+    return this.request('DELETE', `/api/resources/${id}`);
   }
 
   // ---- skills hub (Phase 7.2) ----

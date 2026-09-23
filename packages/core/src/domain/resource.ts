@@ -49,6 +49,13 @@ export interface Resource {
   /** Target tools this resource is compatible with. */
   targets: AgentTarget[];
   labels?: Record<string, string>;
+  /**
+   * Two-stage delete (2026-09): soft-deleted first — hidden from management
+   * lists, greyed in profile editors (saving strips it), skipped by every
+   * deploy path; physically removed by a second DELETE once no profile
+   * references it. Absent = live.
+   */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

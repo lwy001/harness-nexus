@@ -170,7 +170,9 @@ export class McpRegistry {
     for (const entry of profile.entries) {
       if (entry.kind !== 'mcp') continue;
       const server = await this.uow.mcpServers.findById(entry.resourceId);
-      if (!server || !serverVisibleBy(server, userId, role)) {
+      // Soft-deleted rows are skipped (two-stage delete), not fatal.
+      if (!server || server.deletedAt !== undefined) continue;
+      if (!serverVisibleBy(server, userId, role)) {
         throw new Error(`profile entry ${entry.resourceId} not accessible`);
       }
       serverIds.push(server.id);

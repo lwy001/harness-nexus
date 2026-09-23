@@ -87,7 +87,11 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
       kind?: ResourceKind;
       scope?: 'global' | 'personal';
       target?: Resource['targets'][number];
+      includeDeleted?: string;
     };
+    // `includeDeleted=1` also returns soft-deleted rows (the profile editor
+    // greys them out; management pages use the default view).
+    const includeDeleted = q.includeDeleted === '1';
 
     const wantPersonal = q.scope !== 'global';
     const wantGlobal = q.scope !== 'personal';
@@ -99,6 +103,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
             scope: 'personal',
             ownerId: req.user!.id,
             ...(q.target ? { target: q.target } : {}),
+            includeDeleted,
           })
         : Promise.resolve([]),
       wantGlobal
@@ -106,6 +111,7 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
             ...(q.kind ? { kind: q.kind } : {}),
             scope: 'global',
             ...(q.target ? { target: q.target } : {}),
+            includeDeleted,
           })
         : Promise.resolve([]),
     ]);
@@ -173,13 +179,29 @@ export async function resourcesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- DELETE /api/resources/:id ----
+  // ---- DELETE /api/resources/:id — two-stage (see mcp-servers) ----
   app.delete<{ Params: { id: string } }>('/api/resources/:id', guard, async (req) => {
     const existing = await app.uow.resources.findById(req.params.id);
     if (!existing || !ownsOrAdmin(existing, req.user!.id, req.user!.role)) {
       throw new AppError('Resource not found', 404, 'RESOURCE_NOT_FOUND');
     }
+    if (existing.deletedAt === undefined) {
+      const now = new Date().toISOString();
+      await app.uow.resources.save({ ...existing, deletedAt: now, updatedAt: now });
+      return { ok: true, mode: 'soft' as const };
+    }
+    const refs = (await app.uow.profiles.listAll()).filter((p) =>
+      p.entries.some((e) => e.resourceId === existing.id),
+    );
+    if (refs.length > 0) {
+      throw new AppError(
+        `Still referenced by profile(s): ${refs.map((r) => r.name).join(', ')} — save those profiles (soft-deleted entries are stripped automatically) and delete again`,
+        409,
+        'ASSET_STILL_REFERENCED',
+      );
+    }
     await app.uow.resources.delete(existing.id);
-    return { ok: true };
+    return { ok: true, mode: 'hard' as const };
   });
 }
 

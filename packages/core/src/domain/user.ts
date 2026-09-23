@@ -66,6 +66,13 @@ export interface McpServer {
   dialSite: DialSite;
   scope: 'global' | 'personal';
   ownerId: string | null;
+  /**
+   * Two-stage delete (2026-09): the first DELETE soft-deletes (the row leaves
+   * management lists and every deploy path skips it; profile editors grey it
+   * out and strip it on save). Once no profile references it, a second DELETE
+   * physically removes the row. Absent = live.
+   */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

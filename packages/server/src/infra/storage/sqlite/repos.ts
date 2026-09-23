@@ -79,6 +79,7 @@ interface McpServerRow {
   dial_site: string;
   scope: string;
   owner_id: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +108,7 @@ interface ResourceRow {
   owner_id: string | null;
   targets: string;
   labels: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +155,7 @@ const mapMcpServer = (r: McpServerRow): McpServer => ({
   dialSite: r.dial_site as McpServer['dialSite'],
   scope: r.scope as McpServer['scope'],
   ownerId: r.owner_id,
+  ...(r.deleted_at ? { deletedAt: r.deleted_at } : {}),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -189,6 +192,7 @@ const mapResource = (r: ResourceRow): Resource => {
     scope: r.scope as Resource['scope'],
     ownerId: r.owner_id,
     targets: JSON.parse(r.targets) as AgentTarget[],
+    ...(r.deleted_at ? { deletedAt: r.deleted_at } : {}),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -422,6 +426,7 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         where.push('dial_site = @dialSite');
         params.dialSite = filter.dialSite;
       }
+      if (!filter?.includeDeleted) where.push('deleted_at IS NULL');
       const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const rows = db
         .prepare(`SELECT * FROM mcp_servers ${clause} ORDER BY created_at`)
@@ -430,14 +435,15 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
     },
     async save(server) {
       db.prepare(
-        `INSERT INTO mcp_servers (id, name, transport, dial_site, scope, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @transport, @dial_site, @scope, @owner_id, @created_at, @updated_at)
+        `INSERT INTO mcp_servers (id, name, transport, dial_site, scope, owner_id, deleted_at, created_at, updated_at)
+         VALUES (@id, @name, @transport, @dial_site, @scope, @owner_id, @deleted_at, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            name       = excluded.name,
            transport  = excluded.transport,
            dial_site  = excluded.dial_site,
            scope      = excluded.scope,
            owner_id   = excluded.owner_id,
+           deleted_at = excluded.deleted_at,
            updated_at = excluded.updated_at`,
       ).run({
         id: server.id,
@@ -446,6 +452,7 @@ export function sqliteMcpServerRepository(db: Database): McpServerRepository {
         dial_site: server.dialSite,
         scope: server.scope,
         owner_id: server.ownerId,
+        deleted_at: server.deletedAt ?? null,
         created_at: server.createdAt,
         updated_at: server.updatedAt,
       });
@@ -491,6 +498,10 @@ export function sqliteProfileRepository(db: Database): ProfileRepository {
       const rows = db
         .prepare(`SELECT * FROM profiles ${clause} ORDER BY created_at`)
         .all(params) as ProfileRow[];
+      return rows.map(mapProfile);
+    },
+    async listAll() {
+      const rows = db.prepare('SELECT * FROM profiles ORDER BY created_at').all() as ProfileRow[];
       return rows.map(mapProfile);
     },
     async save(profile) {
@@ -569,6 +580,7 @@ export function sqliteResourceRepository(db: Database): ResourceRepository {
         where.push('targets LIKE @target');
         params.target = `%"${filter.target}"%`;
       }
+      if (!filter?.includeDeleted) where.push('deleted_at IS NULL');
       const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const rows = db
         .prepare(`SELECT * FROM resources ${clause} ORDER BY created_at`)
@@ -578,8 +590,8 @@ export function sqliteResourceRepository(db: Database): ResourceRepository {
     async save(resource) {
       db.prepare(
         `INSERT INTO resources
-           (id, key, kind, name, description, version, source, scope, owner_id, targets, labels, created_at, updated_at)
-         VALUES (@id, @key, @kind, @name, @description, @version, @source, @scope, @owner_id, @targets, @labels, @created_at, @updated_at)
+           (id, key, kind, name, description, version, source, scope, owner_id, targets, labels, deleted_at, created_at, updated_at)
+         VALUES (@id, @key, @kind, @name, @description, @version, @source, @scope, @owner_id, @targets, @labels, @deleted_at, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            key         = excluded.key,
            kind        = excluded.kind,
@@ -591,6 +603,7 @@ export function sqliteResourceRepository(db: Database): ResourceRepository {
            owner_id    = excluded.owner_id,
            targets     = excluded.targets,
            labels      = excluded.labels,
+           deleted_at  = excluded.deleted_at,
            updated_at  = excluded.updated_at`,
       ).run({
         id: resource.id,
@@ -604,6 +617,7 @@ export function sqliteResourceRepository(db: Database): ResourceRepository {
         owner_id: resource.ownerId,
         targets: JSON.stringify(resource.targets),
         labels: resource.labels ? JSON.stringify(resource.labels) : null,
+        deleted_at: resource.deletedAt ?? null,
         created_at: resource.createdAt,
         updated_at: resource.updatedAt,
       });

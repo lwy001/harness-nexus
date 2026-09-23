@@ -20,7 +20,9 @@ const en = {
   // Row lifecycle toasts/confirms (delete lives on the page, connect/disconnect on the row).
   loadFailed: 'Failed to load MCP servers',
   confirmDelete: 'Delete MCP server "{name}"?',
-  deletedToast: 'MCP server deleted',
+  deletedSoftToast:
+    'Removed. Profiles still listing it show the entry greyed; saving them strips it.',
+  deletedHardToast: 'MCP server permanently deleted',
   confirmDisconnect: 'Disconnect "{name}"? It will stay configured but go offline.',
   connectingToast: 'Connecting to "{name}"…',
   disconnectedToast: '"{name}" disconnected',
@@ -120,7 +122,8 @@ const zh: typeof en = {
   // 行生命周期提示与确认（删除在页面级，连接/断开在行级）。
   loadFailed: '加载 MCP 服务器失败',
   confirmDelete: '删除 MCP 服务器“{name}”？',
-  deletedToast: 'MCP 服务器已删除',
+  deletedSoftToast: '已移除。仍引用它的配置集会灰显该条目，保存后自动剔除。',
+  deletedHardToast: 'MCP 服务器已彻底删除',
   confirmDisconnect: '断开“{name}”？该服务器将保留配置但转为离线。',
   connectingToast: '正在连接“{name}”…',
   disconnectedToast: '“{name}”已断开',

@@ -60,6 +60,8 @@ type ProfileEntryRow = Profile['entries'][number];
 /**
  * Fetch the MCP servers + resources the caller can see — the entry-checkbox
  * universe for both the create and the edit dialogs (independent → Promise.all).
+ * Soft-deleted rows are included so the EDIT dialog can grey them out; the
+ * create dialog simply shows them disabled (they cannot be re-added).
  */
 function useEntryLists(): {
   servers: McpServer[] | null;
@@ -68,7 +70,10 @@ function useEntryLists(): {
   const [servers, setServers] = useState<McpServer[] | null>(null);
   const [resources, setResources] = useState<Resource[] | null>(null);
   useEffect(() => {
-    Promise.all([api.listMcpServers(), api.listResources()])
+    Promise.all([
+      api.listMcpServers({ includeDeleted: true }),
+      api.listResources({ includeDeleted: true }),
+    ])
       .then(([s, r]) => {
         setServers(s);
         setResources(r);
@@ -93,16 +98,21 @@ function toggleIn(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id:
 
 /**
  * Build the PATCH entries from the checkbox state. Still-selected ids that
- * already had a row keep their pinnedVersion/installOptions; ids absent from
- * the fetched lists (their target was deleted) drop out — saving self-heals
- * dead references instead of 409-ing forever.
+ * already had a row keep their pinnedVersion/installOptions. Soft-deleted
+ * targets (two-stage delete) and ids absent from the fetched lists drop out —
+ * saving self-heals dead references instead of 409-ing forever.
  */
 function buildEntries(
   originals: ProfileEntryRow[],
+  servers: McpServer[],
   resources: Resource[],
   selectedServers: Set<string>,
   selectedResources: Set<string>,
 ): ProfileEntryInput[] {
+  const liveIds = (rows: Array<{ id: string; deletedAt?: string }>): Set<string> =>
+    new Set(rows.filter((x) => x.deletedAt === undefined).map((x) => x.id));
+  const liveServers = liveIds(servers);
+  const liveResources = liveIds(resources);
   const extrasFor = (id: string) => {
     const o = originals.find((e) => e.resourceId === id);
     return {
@@ -113,12 +123,16 @@ function buildEntries(
     };
   };
   return [
-    ...[...selectedServers].map((mcpServerId) => ({ mcpServerId, ...extrasFor(mcpServerId) })),
-    ...[...selectedResources].map((resourceId) => ({
-      resourceId,
-      kind: resources.find((r) => r.id === resourceId)!.kind as NonMcpKind,
-      ...extrasFor(resourceId),
-    })),
+    ...[...selectedServers]
+      .filter((id) => liveServers.has(id))
+      .map((mcpServerId) => ({ mcpServerId, ...extrasFor(mcpServerId) })),
+    ...[...selectedResources]
+      .filter((id) => liveResources.has(id))
+      .map((resourceId) => ({
+        resourceId,
+        kind: resources.find((r) => r.id === resourceId)!.kind as NonMcpKind,
+        ...extrasFor(resourceId),
+      })),
   ];
 }
 
@@ -152,18 +166,25 @@ function EntryPickers({
             {servers.map((s) => (
               <label
                 key={s.id}
-                className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                className={`border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm${
+                  s.deletedAt !== undefined ? ' text-muted-foreground opacity-60' : ''
+                }`}
               >
                 <input
                   type="checkbox"
-                  checked={selectedServers.has(s.id)}
+                  checked={s.deletedAt === undefined && selectedServers.has(s.id)}
                   onChange={() => onToggleServer(s.id)}
+                  disabled={s.deletedAt !== undefined}
                   className="size-4"
                 />
                 <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                <span className="text-muted-foreground font-mono text-[10px]">
-                  {s.transport.type}
-                </span>
+                {s.deletedAt !== undefined ? (
+                  <span className="font-mono text-[10px]">{t('profiles.deletedEntry')}</span>
+                ) : (
+                  <span className="text-muted-foreground font-mono text-[10px]">
+                    {s.transport.type}
+                  </span>
+                )}
               </label>
             ))}
           </div>
@@ -189,16 +210,21 @@ function EntryPickers({
                 {of.map((r) => (
                   <label
                     key={r.id}
-                    className="border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm"
+                    className={`border-border flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm${
+                      r.deletedAt !== undefined ? ' text-muted-foreground opacity-60' : ''
+                    }`}
                   >
                     <input
                       type="checkbox"
-                      checked={selectedResources.has(r.id)}
+                      checked={r.deletedAt === undefined && selectedResources.has(r.id)}
                       onChange={() => onToggleResource(r.id)}
+                      disabled={r.deletedAt !== undefined}
                       className="size-4"
                     />
                     <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                    <span className="text-muted-foreground font-mono text-[10px]">{r.key}</span>
+                    <span className="text-muted-foreground font-mono text-[10px]">
+                      {r.deletedAt !== undefined ? t('profiles.deletedEntry') : r.key}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -480,6 +506,7 @@ function EditProfile({
             version,
             entries: buildEntries(
               profile.entries,
+              servers ?? [],
               resources ?? [],
               selectedServers,
               selectedResources,
@@ -587,7 +614,13 @@ function CreateProfile({ onClose, onCreated }: { onClose: () => void; onCreated:
     try {
       // Mixed entry arms (Phase 3.5): mcpServerId for MCP, {resourceId, kind}
       // for everything else — exactly the two REST shapes.
-      const entries = buildEntries([], resources ?? [], selectedServers, selectedResources);
+      const entries = buildEntries(
+        [],
+        servers ?? [],
+        resources ?? [],
+        selectedServers,
+        selectedResources,
+      );
       await withAuthGuard(
         () =>
           api.createProfile({

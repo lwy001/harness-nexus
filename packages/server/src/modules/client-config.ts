@@ -65,7 +65,10 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
     for (const entry of profile.entries) {
       if (entry.kind !== 'mcp') continue;
       const server = await app.uow.mcpServers.findById(entry.resourceId);
-      if (!server || !visibleServer(server, caller.userId, caller.role)) {
+      // Soft-deleted (or already physically removed) rows are skipped, not
+      // fatal — two-stage delete keeps profiles deployable with dangling refs.
+      if (!server || server.deletedAt !== undefined) continue;
+      if (!visibleServer(server, caller.userId, caller.role)) {
         throw new AppError(
           'A profile entry references an MCP server you cannot access',
           403,
@@ -114,9 +117,12 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
 
     const artifacts: unknown[] = [];
     for (const entry of profile.entries) {
+      // Soft-deleted (or already physically removed) rows are skipped, not
+      // fatal — two-stage delete keeps profiles deployable with dangling refs.
       if (entry.kind === 'mcp') {
         const server = await app.uow.mcpServers.findById(entry.resourceId);
-        if (!server || !visibleServer(server, caller.userId, caller.role)) {
+        if (!server || server.deletedAt !== undefined) continue;
+        if (!visibleServer(server, caller.userId, caller.role)) {
           throw new AppError(
             'A profile entry references an MCP server you cannot access',
             403,
@@ -126,8 +132,8 @@ export async function clientConfigRoutes(app: FastifyInstance): Promise<void> {
         artifacts.push({ entryId: entry.resourceId, kind: 'mcp', mcpServer: server });
       } else {
         const resource = await app.uow.resources.findById(entry.resourceId);
+        if (!resource || resource.deletedAt !== undefined) continue;
         if (
-          !resource ||
           resource.kind !== entry.kind ||
           !(
             resource.scope === 'global' ||
