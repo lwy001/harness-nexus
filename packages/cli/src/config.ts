@@ -1,12 +1,16 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { InstallError } from './errors.js';
 
 /**
- * Daemon configuration (~/.hnx/config.json, 0600). Written by `hnx enroll`,
- * read by `hnx daemon`. The machine token is a capability-scoped PAT
- * (scopes ['machine-ctl']) — REST-rejected, realtime-only — so this file is
- * the single local secret the client keeps (OS keychain later).
+ * Daemon configuration (~/.hnx/config.json, 0600). Written by `hnx enroll`
+ * and by `hnx daemon` whenever it holds a complete identity (see #20: the
+ * web-UI enrollment flow passes --server/--token/--machine-id as CLI args,
+ * and the `hnx mcp serve` shim later reads the token from THIS file). The
+ * machine token is a capability-scoped PAT (scopes ['machine-ctl']) —
+ * REST-rejected, realtime-only — so this file is the single local secret the
+ * client keeps (OS keychain later).
  */
 export interface HnxDaemonConfig {
   server: string;
@@ -28,6 +32,32 @@ export function loadDaemonConfig(): HnxDaemonConfig | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Merge explicit CLI args over the stored config into a complete identity.
+ * Throws (VALIDATION_FAILED) when the result is still incomplete — the
+ * machine name from the stored config is carried over when present.
+ */
+export function mergeDaemonConfig(
+  args: { server?: string; token?: string; machineId?: string },
+  existing: HnxDaemonConfig | null,
+): HnxDaemonConfig {
+  const server = args.server ?? existing?.server;
+  const token = args.token ?? existing?.token;
+  const machineId = args.machineId ?? existing?.machineId;
+  if (!server || !token || !machineId) {
+    throw new InstallError(
+      'No daemon configuration found. Run "hnx enroll" first, or pass --server/--token/--machine-id.',
+      'VALIDATION_FAILED',
+    );
+  }
+  return {
+    server,
+    token,
+    machineId,
+    ...(existing?.machineName !== undefined ? { machineName: existing.machineName } : {}),
+  };
 }
 
 export function saveDaemonConfig(config: HnxDaemonConfig): void {

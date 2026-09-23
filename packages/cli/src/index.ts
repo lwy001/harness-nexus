@@ -28,7 +28,12 @@ import { getCodexPlanWarnings } from './install/adapters/codex.js';
 import { getDeepseekPlanWarnings } from './install/adapters/deepseek.js';
 import { getPiPlanWarnings } from './install/adapters/pi.js';
 import { applyUninstall, planUninstall } from './install/uninstaller.js';
-import { daemonConfigPath, loadDaemonConfig, saveDaemonConfig } from './config.js';
+import {
+  daemonConfigPath,
+  loadDaemonConfig,
+  mergeDaemonConfig,
+  saveDaemonConfig,
+} from './config.js';
 import { runDaemon } from './daemon/client.js';
 import { runMcpServe } from './mcp/serve.js';
 import { HarnessNexusClient } from '@harness-nexus/sdk';
@@ -432,17 +437,14 @@ function parseDaemonArgs(argv: string[]): DaemonArgs {
 }
 
 async function runDaemonCommand(args: DaemonArgs): Promise<void> {
-  const config = loadDaemonConfig();
-  const server = args.server ?? config?.server;
-  const token = args.token ?? config?.token;
-  const machineId = args.machineId ?? config?.machineId;
-  if (!server || !token || !machineId) {
-    throw new InstallError(
-      'No daemon configuration found. Run "hnx enroll" first, or pass --server/--token/--machine-id.',
-      'VALIDATION_FAILED',
-    );
-  }
-  await runDaemon({ server, token, machineId });
+  const merged = mergeDaemonConfig(args, loadDaemonConfig());
+  // #20: the web-UI enrollment flow hands the identity over as CLI args
+  // (Machines → Enroll → `hnx daemon --server --token --machine-id`).
+  // Persist the merged identity — `hnx mcp serve`, spawned by agent tools
+  // from the emitted .mcp.json, reads its token from this file; without the
+  // save every MCP session died with a missing-token error.
+  saveDaemonConfig(merged);
+  await runDaemon({ server: merged.server, token: merged.token, machineId: merged.machineId });
 }
 
 interface McpServeArgs {
